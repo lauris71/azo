@@ -58,7 +58,7 @@ static unsigned int azo_parser_parse_prefix_expression (AZOParser *parser, AZOTo
 static unsigned int azo_parser_parse_assignment_expression (AZOParser *parser, AZOToken *token);
 static unsigned int azo_parser_parse_function_definition (AZOParser *parser, AZOToken *token, unsigned int has_return_type, unsigned int is_member);
 
-static void parser_report_error (AZOParser *parser, unsigned int errval);
+static void parser_report_error (AZOParser *parser, const AZOToken *token, unsigned int errval);
 
 static unsigned int azo_parser_type = 0;
 static AZOParserClass *azo_parser_class = NULL;
@@ -92,15 +92,15 @@ azo_parser_release (AZOParser *parser)
 AZOExpression *
 azo_parser_parse (AZOParser *parser)
 {
-	AZOToken token;
+	AZOToken token = {0};
 	unsigned int result;
 
 	if (azo_tokenizer_get_next_token (&parser->tokenizer, &token)) {
 		result = parse_program (parser, &token);
 		if (result) {
-			parser_report_error (parser, result);
+			parser_report_error (parser, &token, result);
 		}
-		if (azo_tokenizer_has_next_token (&parser->tokenizer)) {
+		if (azo_tokenizer_has_next_token(&parser->tokenizer, &token)) {
 			/* Either parsing error or unexpected end of block */
 		}
 	}
@@ -109,14 +109,14 @@ azo_parser_parse (AZOParser *parser)
 }
 
 static void
-parser_report_error (AZOParser *parser, unsigned int errval)
+parser_report_error (AZOParser *parser, const AZOToken *token, unsigned int errval)
 {
 	fprintf (stderr, "%s at line ", parser_errors[errval]);
-	if (!azo_tokenizer_is_eof (&parser->tokenizer)) {
+	if (!azo_tokenizer_is_eof (&parser->tokenizer, token)) {
 		unsigned int first, last;
-		if (azo_source_find_line_range (parser->tokenizer.src, parser->tokenizer.tokens[parser->tokenizer.c_token].start, parser->tokenizer.tokens[parser->tokenizer.c_token].end, &first, &last)) {
+		if (azo_source_find_line_range (parser->tokenizer.src, token->start, token->end, &first, &last)) {
 			fprintf (stderr, "%d near ", first);
-			azo_tokenizer_print_token (&parser->tokenizer, &parser->tokenizer.tokens[parser->tokenizer.c_token], stderr);
+			azo_tokenizer_print_token (&parser->tokenizer, token, stderr);
 			fprintf (stderr, "\n");
 			/* fixme: Keep track of the last processed token */
 			azo_source_print_lines (parser->tokenizer.src, first, last + 1);
@@ -229,7 +229,7 @@ static unsigned int parse_array_element (AZOParser *parser, AZOToken *token);
 static unsigned int
 parse_program (AZOParser *parser, AZOToken *token)
 {
-	AZOExpression *expr = azo_expression_new (AZO_EXPRESSION_PROGRAM, EXPRESSION_GENERIC, token->start, 0);
+	AZOExpression *expr = azo_expression_new (AZO_EXPRESSION_PROGRAM, EXPRESSION_GENERIC, token->start, token->end);
 	parser->parent = expr;
 	unsigned int result = azo_parser_parse_sentences (parser, token);
 	if (result != ERROR_NONE) return result;
@@ -252,7 +252,7 @@ static unsigned int
 azo_parser_parse_sentences (AZOParser *parser, AZOToken *token)
 {
 	unsigned int result = ERROR_NONE;
-	while (!result && !azo_tokenizer_is_eof (&parser->tokenizer)) {
+	while (!result && (token->type != AZO_TOKEN_EOF)) {
 		/* Sentence list is terminated either by EOF or closing BRACE */
 		if (token->type == AZO_TOKEN_RIGHT_BRACE) return ERROR_NONE;
 		result = azo_parser_parse_sentence (parser, token);
@@ -303,7 +303,7 @@ azo_parser_parse_block (AZOParser *parser, AZOToken *token)
 	result = azo_parser_parse_sentences (parser, token);
 	if (result) return result;
 	/* Block has to end with "}" */
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_RIGHT_BRACE) return ERROR_END_OF_BLOCK_MISSING;
 	expr->end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
@@ -432,7 +432,7 @@ azo_parser_parse_step_statement (AZOParser *parser, AZOToken *token)
 		if (result) return result;
 	}
 	/* If a naked word follows it is declaration */
-	if (!azo_tokenizer_is_eof (&parser->tokenizer) && (token->type == AZO_TOKEN_WORD)) {
+	if (token->type == AZO_TOKEN_WORD) {
 		return azo_parser_parse_declaration_expression (parser, token, qual_static, qual_final);
 	} else {
 		AZOExpression *expr;
@@ -552,7 +552,7 @@ azo_parser_parse_silent_statement (AZOParser *parser, AZOToken *token)
 static unsigned int
 azo_parser_parse_expression (AZOParser *parser, AZOToken *token, unsigned int left_precedence)
 {
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type == AZO_TOKEN_LEFT_PARENTHESIS) {
 		/* Parenthesed_expression */
 		return azo_parser_parse_parenthesed_expression (parser, token, left_precedence);
@@ -573,7 +573,7 @@ azo_parser_parse_parenthesed_expression (AZOParser *parser, AZOToken *token, uns
 	unsigned int result;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return ERROR_UNEXPECTED_EOF;
 	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) return ERROR_SYNTAX;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	return azo_parser_continue_expression (parser, token, left_precedence);
@@ -596,7 +596,7 @@ azo_parser_parse_naked_expression (AZOParser *parser, AZOToken *token, unsigned 
 {
 	AZOExpression *expr = NULL;
 	unsigned int result;
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (azo_token_is_keyword (parser->src, token, AZO_KEYWORD_NULL)) {
 		/* null */
 		expr = azo_expression_new (EXPRESSION_CONSTANT, AZ_TYPE_NONE, token->start, token->end);
@@ -666,7 +666,7 @@ azo_parser_parse_member (AZOParser *parser, AZOToken *token, unsigned int left_p
 {
 	AZOExpression *expr = NULL;
 	unsigned int result;
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (azo_token_is_keyword (parser->src, token, AZO_KEYWORD_FUNCTION)) {
 		/* function */
 		result = azo_parser_parse_function_definition (parser, token, 0, 1);
@@ -691,7 +691,7 @@ static unsigned int
 azo_parser_continue_expression (AZOParser *parser, AZOToken *token, unsigned int left_precedence)
 {
 	/* If operator or ( or [ is following analyze whether we have to proceed further */
-	while (!azo_tokenizer_is_eof (&parser->tokenizer)) {
+	while (token->type != AZO_TOKEN_EOF) {
 		unsigned int error;
 		if (AZO_TOKEN_IS_OPERATOR (token)) {
 			unsigned int op, rightprecedence;
@@ -1084,7 +1084,7 @@ parse_list (AZOParser *parser, AZOToken *token)
 	unsigned int start, error;
 	start = token->start;
 	/* ( */
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return ERROR_SYNTAX;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return ERROR_UNEXPECTED_EOF;
 
@@ -1115,7 +1115,7 @@ parse_list (AZOParser *parser, AZOToken *token)
 			return error;
 		}
 		need_separator = 1;
-		if (azo_tokenizer_is_eof (&parser->tokenizer)) {
+		if (token->type == AZO_TOKEN_EOF) {
 			parser_pop (parser);
 			parser_detach_last (parser);
 			azo_expression_free_tree (expr);
@@ -1160,16 +1160,15 @@ parse_argument_definition (AZOParser *parser, AZOToken *token)
 {
 	AZOExpression *left, *right, *decl;
 	unsigned int result, start;
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	start = token->start;
 	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
 	if (result) return result;
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type == AZO_TOKEN_WORD) {
 		AZOExpression *name = azo_expression_new_reference (REFERENCE_VARIABLE, parser->src, token);
 		parser_append (parser, name);
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return ERROR_UNEXPECTED_EOF;
-		if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
 		right = parser_detach_last (parser);
 		left = parser_detach_last (parser);
 	} else {
@@ -1191,7 +1190,7 @@ parse_arguments_definition (AZOParser *parser, AZOToken *token)
 	unsigned int start, result;
 	start = token->start;
 	/* ( */
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return ERROR_SYNTAX;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return ERROR_UNEXPECTED_EOF;
 
@@ -1346,7 +1345,7 @@ parse_array_element (AZOParser *parser, AZOToken *token)
 		if (error) return error;
 		right = parser_detach_last (parser);
 	}
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_RIGHT_BRACKET) return ERROR_SYNTAX;
 	end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
@@ -1379,7 +1378,7 @@ parse_array_literal (AZOParser *parser, AZOToken *token)
 	while (token->type != AZO_TOKEN_RIGHT_BRACE) {
 		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
 		if (error) return error;
-		if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+		if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 		if (token->type == AZO_TOKEN_COMMA) {
 			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return ERROR_UNEXPECTED_EOF;
 		} else if (token->type != AZO_TOKEN_RIGHT_BRACE) {
@@ -1437,7 +1436,7 @@ parse_while (AZOParser *parser, AZOToken *token)
 	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
 	if (error) return error;
 	/* ) */
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) return ERROR_SYNTAX;
 	/* Statement/Block */
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return ERROR_UNEXPECTED_EOF;
@@ -1477,21 +1476,21 @@ parse_for (AZOParser *parser, AZOToken *token)
 	error = azo_parser_parse_step_statement (parser, token);
 	if (error) return error;
 	/* ; */
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_SEMICOLON) return ERROR_SYNTAX;
 	/* Condition */
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return ERROR_UNEXPECTED_EOF;
 	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
 	if (error) return error;
 	/* ; */
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_SEMICOLON) return ERROR_SYNTAX;
 	/* Step */
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return ERROR_UNEXPECTED_EOF;
 	error = azo_parser_parse_silent_statement (parser, token);
 	if (error) return error;
 	/* ) */
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) return ERROR_SYNTAX;
 	/* Statement/Block */
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return ERROR_UNEXPECTED_EOF;
@@ -1532,7 +1531,7 @@ parse_if (AZOParser *parser, AZOToken *token)
 	if (error) return error;
 	cond = parser_detach_last (parser);
 	/* ) */
-	if (azo_tokenizer_is_eof (&parser->tokenizer)) return ERROR_UNEXPECTED_EOF;
+	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) return ERROR_CLOSING_PARENTHESIS_MISSING;
 	/* Statement/Block */
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return ERROR_UNEXPECTED_EOF;

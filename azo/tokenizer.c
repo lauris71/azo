@@ -39,7 +39,6 @@ static void
 tokenizer_finalize (AZOTokenizerClass *klass, AZOTokenizer *tokenizer)
 {
 	azo_source_unref(tokenizer->src);
-	if (tokenizer->tokens) free (tokenizer->tokens);
 }
 
 struct AZOTokenDescription {
@@ -89,31 +88,37 @@ azo_tokenizer_release (AZOTokenizer *tokenizer)
 }
 
 unsigned int
-azo_tokenizer_is_eof (AZOTokenizer *tokenizer)
+azo_tokenizer_is_eof (AZOTokenizer *tokenizer, const AZOToken *current)
 {
-	return tokenizer->cpos >= tokenizer->src->csize;
+	return !azo_tokenizer_has_next_token(tokenizer, current);
 }
 
 unsigned int
-azo_tokenizer_has_next_token (AZOTokenizer *tokenizer)
+azo_tokenizer_has_next_token (AZOTokenizer *tokenizer, const AZOToken *current)
 {
-	while ((tokenizer->cpos < tokenizer->src->csize) && (tokenizer->src->cdata[tokenizer->cpos] <= ' ')) {
-		tokenizer->cpos += 1;
+	unsigned int cpos = current->end;
+	while ((cpos < tokenizer->src->csize) && (tokenizer->src->cdata[cpos] <= ' ')) {
+		cpos += 1;
 	}
-	return tokenizer->cpos < tokenizer->src->csize;
+	return cpos < tokenizer->src->csize;
 }
 
 unsigned int
-azo_tokenizer_get_next_token (AZOTokenizer *tokenizer, AZOToken *token)
+azo_tokenizer_get_next_token (AZOTokenizer *tokenizer, AZOToken *current)
 {
 	while (tokenizer->cpos < tokenizer->src->csize) {
-		while ((tokenizer->cpos < tokenizer->src->csize) && (tokenizer->src->cdata[tokenizer->cpos] <= ' ')) {
-			tokenizer->cpos += 1;
+		unsigned int cpos = tokenizer->cpos;
+		if (cpos != current->end) {
+			fprintf(stderr, ".");
 		}
+		while ((cpos < tokenizer->src->csize) && (tokenizer->src->cdata[cpos] <= ' ')) {
+			cpos += 1;
+		}
+		tokenizer->cpos = cpos;
 		if (tokenizer->cpos >= tokenizer->src->csize) break;
-		token->start = tokenizer->cpos;
-		tokenizer->cpos += get_token (tokenizer, token);
-		switch (token->type) {
+		current->start = tokenizer->cpos;
+		tokenizer->cpos += get_token (tokenizer, current);
+		switch (current->type) {
 			case AZO_TOKEN_INVALID:
 				return 0;
 				break;
@@ -126,7 +131,7 @@ azo_tokenizer_get_next_token (AZOTokenizer *tokenizer, AZOToken *token)
 				break;
 		}
 	}
-	*token = (AZOToken) {tokenizer->cpos, tokenizer->cpos, AZO_TOKEN_EOF};
+	*current = (AZOToken) {tokenizer->cpos, tokenizer->cpos, AZO_TOKEN_EOF};
 	return 0;
 }
 
@@ -276,13 +281,17 @@ get_token (AZOTokenizer *tokenizer, AZOToken *token)
 	}
 	/* Text */
 	if (cdata[p] == '\"') {
-		unsigned int start = p + 1;
+		unsigned int start = p;
 		p += 1;
 		while ((p < csize) && (cdata[p] != '\"')) {
 			if (cdata[p] < ' ') {
 				token->type = AZO_TOKEN_INVALID;
 				token->end = token->start + p;
 				return p;
+			}
+			if (cdata[p] == '\\') {
+				p += 1;
+				if (p >= csize) break;
 			}
 			p += 1;
 		}
@@ -293,7 +302,7 @@ get_token (AZOTokenizer *tokenizer, AZOToken *token)
 		}
 		token->type = AZO_TOKEN_TEXT;
 		token->start = start + (unsigned int) (cdata - tokenizer->src->cdata);
-		token->end = token->start + p - start;
+		token->end = token->start + p + 1 - start;
 		return p + 1;
 	}
 
@@ -324,7 +333,7 @@ get_token (AZOTokenizer *tokenizer, AZOToken *token)
 }
 
 void
-azo_tokenizer_print_token (AZOTokenizer *tokenizer, AZOToken *token, FILE *ofs)
+azo_tokenizer_print_token (AZOTokenizer *tokenizer, const AZOToken *token, FILE *ofs)
 {
 	unsigned int i;
 	for (i = token->start; i < token->end; i++) {

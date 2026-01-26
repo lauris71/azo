@@ -73,8 +73,8 @@ azo_expression_clone_tree (AZOExpression *expr)
 AZOExpression *
 azo_expression_new_text (const AZOSource *src, const AZOToken *token)
 {
-	AZOExpression *expr = azo_expression_new (EXPRESSION_CONSTANT, AZ_TYPE_STRING, token->start, token->end);
-	AZString *str = az_string_new_length (src->cdata + token->start, token->end - token->start);
+	AZOExpression *expr = azo_expression_new (EXPRESSION_CONSTANT, AZ_TYPE_STRING, token->start + 1, token->end - 1);
+	AZString *str = az_string_new_length (src->cdata + token->start + 1, token->end - token->start - 2);
 	az_packed_value_transfer_string (&expr->value, str);
 	return expr;
 }

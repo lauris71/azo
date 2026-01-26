@@ -69,12 +69,6 @@ typedef struct _AZOToken AZOToken;
 struct _AZOTokenizer {
 	AZOSource *src;
 	unsigned int cpos;
-
-	unsigned int ntokens;
-	AZOToken *tokens;
-	unsigned int tokens_size;
-	/* Current token */
-	unsigned int c_token;
 };
 
 struct _AZOTokenizerClass {
@@ -84,7 +78,6 @@ struct _AZOTokenizerClass {
 unsigned int azo_tokenizer_get_type (void);
 
 struct _AZOToken {
-	/* const unsigned char *cdata; */
 	unsigned int start;
 	unsigned int end;
 	unsigned int type;
@@ -93,12 +86,12 @@ struct _AZOToken {
 void azo_tokenizer_setup (AZOTokenizer *tokenizer, const unsigned char *cdata, unsigned int csize);
 void azo_tokenizer_release (AZOTokenizer *tokenizer);
 
-unsigned int azo_tokenizer_is_eof (AZOTokenizer *tokenizer);
-unsigned int azo_tokenizer_has_next_token (AZOTokenizer *tokenizer);
+unsigned int azo_tokenizer_is_eof (AZOTokenizer *tokenizer, const AZOToken *current);
+unsigned int azo_tokenizer_has_next_token (AZOTokenizer *tokenizer, const AZOToken *current);
 /* Return true on success */
-unsigned int azo_tokenizer_get_next_token (AZOTokenizer *tokenizer, AZOToken *token);
+unsigned int azo_tokenizer_get_next_token (AZOTokenizer *tokenizer, AZOToken *current);
 
-void azo_tokenizer_print_token (AZOTokenizer *tokenizer, AZOToken *token, FILE *ofs);
+void azo_tokenizer_print_token (AZOTokenizer *tokenizer, const AZOToken *token, FILE *ofs);
 
 #ifdef __cplusplus
 }
