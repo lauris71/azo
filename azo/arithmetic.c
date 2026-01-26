@@ -145,7 +145,7 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZOExpression *lhs, co
 	if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
 	if (!azo_compiler_compile_expression (comp, rhs, src)) return 0;
 	/* LHS RHS */
-	switch (expr->subtype) {
+	switch (expr->term.subtype) {
 	case ARITHMETIC_PLUS:
 	case ARITHMETIC_MINUS:
 	case ARITHMETIC_SLASH:
@@ -156,12 +156,12 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZOExpression *lhs, co
 	case ARITHMETIC_AND:
 	case ARITHMETIC_OR:
 	case ARITHMETIC_CARET:
-		return azo_compiler_compile_arithmetic_any_any (comp, expr->subtype);
+		return azo_compiler_compile_arithmetic_any_any (comp, expr->term.subtype);
 	case ARITHMETIC_ANDAND:
 	case ARITHMETIC_OROR:
-		return azo_compiler_compile_arithmetic_boolean (comp, expr->subtype);
+		return azo_compiler_compile_arithmetic_boolean (comp, expr->term.subtype);
 	default:
-		fprintf (stderr, "azo_compiler_compile_arithmetic: Unknown subtype %u\n", expr->subtype);
+		fprintf (stderr, "azo_compiler_compile_arithmetic: Unknown subtype %u\n", expr->term.subtype);
 		break;
 	}
 	return 0;

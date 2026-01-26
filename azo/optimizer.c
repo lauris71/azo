@@ -38,7 +38,7 @@ static unsigned int
 token_is_equal (AZOOptimizer *opt, AZOExpression *expr, const char *word, const unsigned char *cdata)
 {
 	unsigned int i;
-	for (i = expr->start; i < expr->end; i++) {
+	for (i = expr->term.start; i < expr->term.end; i++) {
 		if (opt->src->cdata[i] != word[i]) return 0;
 	}
 	return 1;

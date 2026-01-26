@@ -25,7 +25,17 @@ struct _AZOCompiler {
 	/* This context */
 	AZOContext *ctx;
 
+	/**
+	 * @brief Force typecode argument checking
+	 * 
+	 * This is only needed to debug compiler/interpreter
+	 * 
+	 */
 	unsigned int check_args : 1;
+	/**
+	 * @brief Write debug symbols
+	 * 
+	 */
 	unsigned int debug : 1;
 
 	AZOFrame *root;

@@ -308,9 +308,9 @@ compile_comparison_any_const_eq (AZOCompiler *comp, const AZOExpression *lhs, co
 static unsigned int
 azo_compiler_compile_comparison_eq (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, unsigned int comp_type, const AZOSource *src, unsigned int reg)
 {
-	if (rhs->type == EXPRESSION_CONSTANT) {
+	if (rhs->term.type == EXPRESSION_CONSTANT) {
 		return compile_comparison_any_const_eq (comp, lhs, rhs, comp_type, src, reg);
-	} else if (lhs->type == EXPRESSION_CONSTANT) {
+	} else if (lhs->term.type == EXPRESSION_CONSTANT) {
 		return compile_comparison_any_const_eq (comp, rhs, lhs, comp_type, src, reg);
 	} else {
 		return azo_compiler_compile_comparison_eq_any_any (comp, lhs, rhs, comp_type, src, reg);
@@ -388,7 +388,7 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, const AZOExpressi
 		azo_compiler_write_DEBUG_STACK (comp);
 	}
 
-	switch (expr->subtype) {
+	switch (expr->term.subtype) {
 	case COMPARISON_LT:
 		is_true = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NEGATIVE, 0);
 		is_false = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
@@ -406,7 +406,7 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, const AZOExpressi
 		is_false = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
 		break;
 	default:
-		fprintf (stderr, "azo_compiler_compile_comparison_lg_any_any: Invalid subtype %u\n", expr->subtype);
+		fprintf (stderr, "azo_compiler_compile_comparison_lg_any_any: Invalid subtype %u\n", expr->term.subtype);
 		return 0;
 	}
 
@@ -469,7 +469,7 @@ compile_comparison_any_const_lg (AZOCompiler *comp, const AZOExpression *lhs, co
 	azo_compiler_update_JMP_32 (comp, types_equal_2);
 	azo_compiler_write_instruction_1 (comp, COMPARE);
 
-	switch (expr->subtype) {
+	switch (expr->term.subtype) {
 	case COMPARISON_LT:
 		is_true = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NEGATIVE, 0);
 		is_false = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
@@ -487,7 +487,7 @@ compile_comparison_any_const_lg (AZOCompiler *comp, const AZOExpression *lhs, co
 		is_false = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
 		break;
 	default:
-		fprintf (stderr, "compile_comparison_any_const_lg: Invalid subtype %u\n", expr->subtype);
+		fprintf (stderr, "compile_comparison_any_const_lg: Invalid subtype %u\n", expr->term.subtype);
 		return 0;
 		break;
 	}
@@ -517,11 +517,11 @@ compile_comparison_any_const_lg (AZOCompiler *comp, const AZOExpression *lhs, co
 unsigned int
 azo_compiler_compile_comparison (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, const AZOSource *src, unsigned int reg)
 {
-	if ((expr->subtype == COMPARISON_E) || (expr->subtype == COMPARISON_NE)) {
-		return azo_compiler_compile_comparison_eq (comp, lhs, rhs, expr->subtype, src, reg);
+	if ((expr->term.subtype == COMPARISON_E) || (expr->term.subtype == COMPARISON_NE)) {
+		return azo_compiler_compile_comparison_eq (comp, lhs, rhs, expr->term.subtype, src, reg);
 	} else {
 #if 0
-		if ((lhs->type != EXPRESSION_CONSTANT) && (rhs->type == EXPRESSION_CONSTANT)) {
+		if ((lhs->term.type != EXPRESSION_CONSTANT) && (rhs->term.type == EXPRESSION_CONSTANT)) {
 			if (!compile_comparison_any_const_lg (comp, lhs, rhs, expr, text, reg)) return 0;
 			write_PUSH_FROM (comp, reg);
 			return 1;

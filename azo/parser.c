@@ -196,7 +196,7 @@ parser_pop (AZOParser *parser)
 }
 
 static unsigned int
-expression_is_silent_statement (AZOExpression *expr)
+term_is_silent_statement (AZOTerm *expr)
 {
 	if (expr->type == AZO_TERM_EMPTY) return 1;
 	if (expr->type == EXPRESSION_ASSIGN) return 1;
@@ -232,14 +232,14 @@ parse_program (AZOParser *parser, AZOToken *token)
 	AZOExpression *expr = azo_expression_new (AZO_EXPRESSION_PROGRAM, EXPRESSION_GENERIC, token->start, token->end);
 	parser->parent = expr;
 	unsigned int result = azo_parser_parse_sentences (parser, token);
-	if (result != ERROR_NONE) return result;
+	expr->term.end = token->start;
+	if (result) return result;
 	if (token->type != AZO_TOKEN_EOF) {
-		return ERROR_UNEXPECTED_EOF;
+		return ERROR_SYNTAX;
 	}
 	if (parser->parent != expr) {
 		fprintf(stderr, "parse_program: Internal error\n");
 	}
-	expr->end = token->start;
 	return result;
 }
 
@@ -252,10 +252,15 @@ static unsigned int
 azo_parser_parse_sentences (AZOParser *parser, AZOToken *token)
 {
 	unsigned int result = ERROR_NONE;
-	while (!result && (token->type != AZO_TOKEN_EOF)) {
-		/* Sentence list is terminated either by EOF or closing BRACE */
-		if (token->type == AZO_TOKEN_RIGHT_BRACE) return ERROR_NONE;
-		result = azo_parser_parse_sentence (parser, token);
+	// fixme: Skip until '}' or ';' instead
+	/* Sentence list is terminated either by EOF or closing BRACE */
+	while ((token->type != AZO_TOKEN_EOF) && (token->type != AZO_TOKEN_RIGHT_BRACE)) {
+		unsigned int lresult = azo_parser_parse_sentence (parser, token);
+		if (lresult) {
+			/* On errors try to parse the full body but return failure */
+			azo_tokenizer_skip_line(&parser->tokenizer, token);
+			if (!result) result = lresult;
+		}
 	}
 	return result;
 }
@@ -301,13 +306,13 @@ azo_parser_parse_block (AZOParser *parser, AZOToken *token)
 	parser_append (parser, expr);
 	parser_push (parser);
 	result = azo_parser_parse_sentences (parser, token);
+	expr->term.end = token->end;
+	parser_pop (parser);
 	if (result) return result;
 	/* Block has to end with "}" */
 	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_RIGHT_BRACE) return ERROR_END_OF_BLOCK_MISSING;
-	expr->end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
-	parser_pop (parser);
 	return result;
 }
 
@@ -373,7 +378,7 @@ azo_parser_parse_return (AZOParser *parser, AZOToken *token)
 			fprintf (stderr, "azo_parser_parse_return: Expression resulted in no value\n");
 			return ERROR_SYNTAX;
 		}
-		end = val->end;
+		end = val->term.end;
 	}
 	expr = azo_expression_new (EXPRESSION_KEYWORD, AZO_KEYWORD_RETURN, start, end);
 	expr->children = val;
@@ -438,7 +443,7 @@ azo_parser_parse_step_statement (AZOParser *parser, AZOToken *token)
 		AZOExpression *expr;
 		if (qual_static || qual_const || qual_final) return ERROR_SYNTAX;
 		expr = parser_get_last (parser);
-		if (!expression_is_silent_statement (expr)) return ERROR_SYNTAX;
+		if (!term_is_silent_statement (&expr->term)) return ERROR_SYNTAX;
 		return ERROR_NONE;
 	}
 }
@@ -457,7 +462,7 @@ azo_parser_parse_declaration_expression (AZOParser *parser, AZOToken *token, uns
 	AZOExpression *declr, *type, *last;
 	/* Create topmost declaration list */
 	type = parser_detach_last (parser);
-	declr = azo_expression_new (EXPRESSION_DECLARATION_LIST, EXPRESSION_GENERIC, type->start, token->end);
+	declr = azo_expression_new (EXPRESSION_DECLARATION_LIST, EXPRESSION_GENERIC, type->term.start, token->end);
 	declr->children = type;
 	/* fixme: Qualifiers */
 	last = type;
@@ -471,7 +476,7 @@ azo_parser_parse_declaration_expression (AZOParser *parser, AZOToken *token, uns
 		expr = parser_detach_last(parser);
 		last->next = expr;
 		last = expr;
-		declr->end = expr->end;
+		declr->term.end = expr->term.end;
 		if (token->type != AZO_TOKEN_COMMA) break;
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
 			azo_expression_free_tree (declr);
@@ -509,13 +514,13 @@ azo_parser_parse_single_declaration (AZOParser *parser, AZOToken *token)
 		if (result) return result;
 		right = parser_detach_last (parser);
 		left = parser_detach_last (parser);
-		end = right->end;
+		end = right->term.end;
 	} else {
 		right = NULL;
 		left = parser_detach_last (parser);
-		end = left->end;
+		end = left->term.end;
 	}
-	expr = azo_expression_new (EXPRESSION_DECLARATION, EXPRESSION_GENERIC, left->start, end);
+	expr = azo_expression_new (EXPRESSION_DECLARATION, EXPRESSION_GENERIC, left->term.start, end);
 	expr->children = left;
 	left->next = right;
 	parser_append (parser, expr);
@@ -539,7 +544,7 @@ azo_parser_parse_silent_statement (AZOParser *parser, AZOToken *token)
 	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
 	if (result) return result;
 	expr = parser_get_last (parser);
-	if (!expression_is_silent_statement (expr)) return ERROR_SYNTAX;
+	if (!term_is_silent_statement (&expr->term)) return ERROR_SYNTAX;
 	return ERROR_NONE;
 }
 
@@ -763,12 +768,15 @@ azo_parser_parse_prefix_expression (AZOParser *parser, AZOToken *token)
 	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_UNARY);
 	if (error) return error;
 	right = parser_detach_last (parser);
-	expr = azo_expression_new (EXPRESSION_PREFIX, subtype, start, right->end);
+	expr = azo_expression_new (EXPRESSION_PREFIX, subtype, start, right->term.end);
 	expr->children = right;
 	parser_append (parser, expr);
 	/* fixme: Allowed next - operator */
 	return ERROR_NONE;
 }
+
+//static unsigned int tr[][2] = {{}
+//}
 
 static unsigned int
 azo_parser_parse_assignment_expression (AZOParser *parser, AZOToken *token)
@@ -784,27 +792,27 @@ azo_parser_parse_assignment_expression (AZOParser *parser, AZOToken *token)
 	if (!left || !right) return ERROR_SYNTAX;
 	expr = NULL;
 	if (subtype == AZO_OPERATOR_ASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN, left->term.start, right->term.end);
 	} else if (subtype == AZO_OPERATOR_PLUSASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_PLUS, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_PLUS, left->term.start, right->term.end);
 	} else if (subtype == AZO_OPERATOR_MINUSASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_MINUS, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_MINUS, left->term.start, right->term.end);
 	} else if (subtype == AZO_OPERATOR_SLASHASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SLASH, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SLASH, left->term.start, right->term.end);
 	} else if (subtype == AZO_OPERATOR_STARASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_STAR, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_STAR, left->term.start, right->term.end);
 	} else if (subtype == AZO_OPERATOR_PERCENT_ASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_PERCENT, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_PERCENT, left->term.start, right->term.end);
 	} else if (subtype == AZO_OPERATOR_SHIFT_LEFT_ASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SHIFT_LEFT, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SHIFT_LEFT, left->term.start, right->term.end);
 	} else if (subtype == AZO_OPERATOR_SHIFT_RIGHT_ASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SHIFT_RIGHT, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SHIFT_RIGHT, left->term.start, right->term.end);
 	} else if (subtype == AZO_OPERATOR_AND_ASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_AND, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_AND, left->term.start, right->term.end);
 	} else if (subtype == AZO_OPERATOR_OR_ASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_OR, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_OR, left->term.start, right->term.end);
 	} else if (subtype == AZO_OPERATOR_CARET_ASSIGN) {
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_XOR, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_XOR, left->term.start, right->term.end);
 	}
 	expr->children = left;
 	left->next = right;
@@ -841,14 +849,14 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		error = azo_parser_parse_member (parser, token, precendence);
 		if (error) return error;
 		right = parser_detach_last (parser);
-		if (right->type == EXPRESSION_FUNCTION) {
+		if (right->term.type == EXPRESSION_FUNCTION) {
 			/* value.function construct, left is already consumed */
 			parser_append (parser, right);
-		} else if (right->type == EXPRESSION_REFERENCE) {
+		} else if (right->term.type == EXPRESSION_REFERENCE) {
 			/* ref.ref construct */
 			left = parser_detach_last (parser);
 			if (!left || !right) return ERROR_SYNTAX;
-			expr = azo_expression_new (EXPRESSION_REFERENCE, REFERENCE_MEMBER, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_REFERENCE, REFERENCE_MEMBER, left->term.start, right->term.end);
 			expr->children = left;
 			left->next = right;
 			parser_append (parser, expr);
@@ -865,7 +873,7 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		right = parser_detach_last (parser);
 		left = parser_detach_last (parser);
 		if (!left || !right) return ERROR_SYNTAX;
-		expr = azo_expression_new (EXPRESSION_COMMA, EXPRESSION_GENERIC, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_COMMA, EXPRESSION_GENERIC, left->term.start, right->term.end);
 		expr->children = left;
 		left->next = right;
 		parser_append (parser, expr);
@@ -876,7 +884,7 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		right = parser_detach_last (parser);
 		left = parser_detach_last (parser);
 		if (!left || !right) return ERROR_SYNTAX;
-		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN, left->start, right->end);
+		expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN, left->term.start, right->term.end);
 		expr->children = left;
 		left->next = right;
 		parser_append (parser, expr);
@@ -894,23 +902,23 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		if (!left || !right) return ERROR_SYNTAX;
 		expr = NULL;
 		if (subtype == AZO_OPERATOR_EQUAL) {
-			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_E, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_E, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_NE) {
-			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_NE, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_NE, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_GE) {
-			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_LE, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_LE, left->term.start, right->term.end);
 			tmp = left;
 			left = right;
 			right = tmp;
 		} else if (subtype == AZO_OPERATOR_GT) {
-			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_LT, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_LT, left->term.start, right->term.end);
 			tmp = left;
 			left = right;
 			right = tmp;
 		} else if (subtype == AZO_OPERATOR_LE) {
-			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_LE, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_LE, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_LT) {
-			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_LT, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_COMPARISON, COMPARISON_LT, left->term.start, right->term.end);
 		}
 		expr->children = left;
 		left->next = right;
@@ -936,29 +944,29 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		if (!left || !right) return ERROR_SYNTAX;
 		expr = NULL;
 		if (subtype == AZO_OPERATOR_PLUS) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_PLUS, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_PLUS, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_MINUS) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_MINUS, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_MINUS, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_SLASH) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_SLASH, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_SLASH, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_STAR) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_STAR, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_STAR, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_PERCENT) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_PERCENT, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_PERCENT, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_SHIFT_LEFT) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_SHIFT_LEFT, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_SHIFT_LEFT, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_SHIFT_RIGHT) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_SHIFT_RIGHT, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_SHIFT_RIGHT, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_ANDAND) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_ANDAND, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_ANDAND, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_AND) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_AND, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_AND, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_OROR) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_OROR, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_OROR, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_OR) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_OR, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_OR, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_CARET) {
-			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_CARET, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_BINARY, ARITHMETIC_CARET, left->term.start, right->term.end);
 		}
 		expr->children = left;
 		left->next = right;
@@ -968,14 +976,14 @@ parse_operator (AZOParser *parser, AZOToken *token)
 	case AZO_OPERATOR_PLUSPLUS:
 		left = parser_detach_last (parser);
 		if (!left) return ERROR_SYNTAX;
-		expr = azo_expression_new (EXPRESSION_SUFFIX, SUFFIX_INCREMENT, left->start, end);
+		expr = azo_expression_new (EXPRESSION_SUFFIX, SUFFIX_INCREMENT, left->term.start, end);
 		expr->children = left;
 		parser_append (parser, expr);
 		return ERROR_NONE;
 	case AZO_OPERATOR_MINUSMINUS:
 		left = parser_detach_last (parser);
 		if (!left) return ERROR_SYNTAX;
-		expr = azo_expression_new (EXPRESSION_SUFFIX, SUFFIX_DECREMENT, left->start, end);
+		expr = azo_expression_new (EXPRESSION_SUFFIX, SUFFIX_DECREMENT, left->term.start, end);
 		expr->children = left;
 		parser_append (parser, expr);
 		return ERROR_NONE;
@@ -997,25 +1005,25 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		if (!left || !right) return ERROR_SYNTAX;
 		expr = NULL;
 		if (subtype == AZO_OPERATOR_PLUSASSIGN) {
-			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_PLUS, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_PLUS, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_MINUSASSIGN) {
-			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_MINUS, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_MINUS, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_SLASHASSIGN) {
-			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SLASH, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SLASH, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_STARASSIGN) {
-			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_STAR, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_STAR, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_PERCENT_ASSIGN) {
-			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_PERCENT, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_PERCENT, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_SHIFT_LEFT_ASSIGN) {
-			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SHIFT_LEFT, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SHIFT_LEFT, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_SHIFT_RIGHT_ASSIGN) {
-			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SHIFT_RIGHT, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_SHIFT_RIGHT, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_AND_ASSIGN) {
-			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_AND, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_AND, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_OR_ASSIGN) {
-			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_OR, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_OR, left->term.start, right->term.end);
 		} else if (subtype == AZO_OPERATOR_CARET_ASSIGN) {
-			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_XOR, left->start, right->end);
+			expr = azo_expression_new (EXPRESSION_ASSIGN, ASSIGN_XOR, left->term.start, right->term.end);
 		}
 		expr->children = left;
 		left->next = right;
@@ -1059,9 +1067,9 @@ parse_type_operator (AZOParser *parser, AZOToken *token)
 	left = parser_detach_last (parser);
 	if (!left || !right) return ERROR_SYNTAX;
 	if (op_type == 0) {
-		expr = azo_expression_new (AZO_EXPRESSION_TEST, AZO_TYPE_IS, left->start, right->end);
+		expr = azo_expression_new (AZO_EXPRESSION_TEST, AZO_TYPE_IS, left->term.start, right->term.end);
 	} else {
-		expr = azo_expression_new (AZO_EXPRESSION_TEST, AZO_TYPE_IMPLEMENTS, left->start, right->end);
+		expr = azo_expression_new (AZO_EXPRESSION_TEST, AZO_TYPE_IMPLEMENTS, left->term.start, right->term.end);
 	}
 	expr->children = left;
 	left->next = right;
@@ -1122,7 +1130,7 @@ parse_list (AZOParser *parser, AZOToken *token)
 			return ERROR_UNEXPECTED_EOF;
 		}
 	}
-	expr->end = token->end;
+	expr->term.end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	parser_pop (parser);
 	return ERROR_NONE;
@@ -1148,7 +1156,7 @@ parse_function_call (AZOParser *parser, AZOToken *token)
 	right = parser_detach_last (parser);
 	left = parser_detach_last (parser);
 	if (!left || !right) return ERROR_SYNTAX;
-	expr = azo_expression_new (EXPRESSION_FUNCTION_CALL, EXPRESSION_GENERIC, left->start, right->start);
+	expr = azo_expression_new (EXPRESSION_FUNCTION_CALL, EXPRESSION_GENERIC, left->term.start, right->term.start);
 	expr->children = left;
 	left->next = right;
 	parser_append (parser, expr);
@@ -1208,7 +1216,7 @@ parse_arguments_definition (AZOParser *parser, AZOToken *token)
 		if (result) return result;
 		need_separator = 1;
 	}
-	expr->end = token->end;
+	expr->term.end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	parser_pop (parser);
 	return ERROR_NONE;
@@ -1302,7 +1310,7 @@ azo_parser_parse_function_definition (AZOParser *parser, AZOToken *token, unsign
 		args = parser_detach_last (parser);
 		type = parser_detach_last (parser);
 		obj = parser_detach_last (parser);
-		expr = azo_expression_new (EXPRESSION_FUNCTION, FUNCTION_MEMBER, obj->start, body->end);
+		expr = azo_expression_new (EXPRESSION_FUNCTION, FUNCTION_MEMBER, obj->term.start, body->term.end);
 		expr->children = type;
 		type->next = obj;
 		obj->next = args;
@@ -1312,7 +1320,7 @@ azo_parser_parse_function_definition (AZOParser *parser, AZOToken *token, unsign
 		body = parser_detach_last (parser);
 		args = parser_detach_last (parser);
 		type = parser_detach_last (parser);
-		expr = azo_expression_new (EXPRESSION_FUNCTION, FUNCTION_STATIC, type->start, body->end);
+		expr = azo_expression_new (EXPRESSION_FUNCTION, FUNCTION_STATIC, type->term.start, body->term.end);
 		expr->children = type;
 		type->next = args;
 		args->next = body;
@@ -1385,7 +1393,7 @@ parse_array_literal (AZOParser *parser, AZOToken *token)
 			return ERROR_SYNTAX;
 		}
 	}
-	expr->end = token->end;
+	expr->term.end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	parser_pop (parser);
 	return ERROR_NONE;
@@ -1408,8 +1416,8 @@ parse_new (AZOParser *parser, AZOToken *token)
 	error = azo_parser_parse_expression (parser, token, 3);
 	if (error) return error;
 	right = parser_detach_last (parser);
-	if (right->type != EXPRESSION_FUNCTION_CALL) return ERROR_SYNTAX;
-	expr = azo_expression_new (EXPRESSION_KEYWORD, AZO_KEYWORD_NEW, start, right->end);
+	if (right->term.type != EXPRESSION_FUNCTION_CALL) return ERROR_SYNTAX;
+	expr = azo_expression_new (EXPRESSION_KEYWORD, AZO_KEYWORD_NEW, start, right->term.end);
 	expr->children = right->children;
 	azo_expression_free (right);
 	parser_append (parser, expr);
@@ -1445,9 +1453,9 @@ parse_while (AZOParser *parser, AZOToken *token)
 	block = parser_detach_last (parser);
 	middle = parser_detach_last (parser);
 	if (!middle || !block) return ERROR_SYNTAX;
-	left = azo_expression_new (AZO_TERM_EMPTY, EXPRESSION_GENERIC, middle->start, middle->start);
-	right = azo_expression_new (AZO_TERM_EMPTY, EXPRESSION_GENERIC, middle->start, middle->start);
-	expr = azo_expression_new (EXPRESSION_KEYWORD, AZO_KEYWORD_FOR, start, block->end);
+	left = azo_expression_new (AZO_TERM_EMPTY, EXPRESSION_GENERIC, middle->term.start, middle->term.start);
+	right = azo_expression_new (AZO_TERM_EMPTY, EXPRESSION_GENERIC, middle->term.start, middle->term.start);
+	expr = azo_expression_new (EXPRESSION_KEYWORD, AZO_KEYWORD_FOR, start, block->term.end);
 	expr->children = left;
 	left->next = middle;
 	middle->next = right;
@@ -1501,7 +1509,7 @@ parse_for (AZOParser *parser, AZOToken *token)
 	middle = parser_detach_last (parser);
 	left = parser_detach_last (parser);
 	if (!left || !middle || !right || !block) return ERROR_SYNTAX;
-	expr = azo_expression_new (EXPRESSION_KEYWORD, AZO_KEYWORD_FOR, start, block->end);
+	expr = azo_expression_new (EXPRESSION_KEYWORD, AZO_KEYWORD_FOR, start, block->term.end);
 	expr->children = left;
 	left->next = middle;
 	middle->next = right;
@@ -1538,7 +1546,7 @@ parse_if (AZOParser *parser, AZOToken *token)
 	error = azo_parser_parse_sentence (parser, token);
 	if (error) return error;
 	if_true = parser_detach_last (parser);
-	end = if_true->end;
+	end = if_true->term.end;
 	/* Potential else */
 	if_false = NULL;
 	if (azo_token_is_keyword (parser->src, token, AZO_KEYWORD_ELSE)) {
@@ -1547,7 +1555,7 @@ parse_if (AZOParser *parser, AZOToken *token)
 		error = azo_parser_parse_sentence (parser, token);
 		if (error) return error;
 		if_false = parser_detach_last (parser);
-		end = if_false->end;
+		end = if_false->term.end;
 	}
 	if (!cond || !if_true) return ERROR_SYNTAX;
 	expr = azo_expression_new (EXPRESSION_KEYWORD, AZO_KEYWORD_IF, start, end);

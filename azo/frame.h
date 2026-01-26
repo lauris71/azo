@@ -7,7 +7,7 @@
  * Copyright (C) Lauris Kaplinski 2021
  */
 
-typedef struct _AZOTerm AZOExpression;
+typedef struct _AZOExpression AZOExpression;
 
 typedef struct _AZOVariable AZOVariable;
 typedef struct _AZOScope AZOScope;

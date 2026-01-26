@@ -72,7 +72,7 @@ struct AZOTokenDescription descriptions[] = {
 
 static void tokenizer_ensure_lines (AZOTokenizer *tokenizer, unsigned int req);
 static void tokenizer_ensure_tokens (AZOTokenizer *tokenizer, unsigned int req);
-static unsigned int get_token (AZOTokenizer *tokenizer, AZOToken *token);
+static unsigned int get_token (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token);
 
 void
 azo_tokenizer_setup (AZOTokenizer *tokenizer, const unsigned char *cdata, unsigned int csize)
@@ -106,40 +106,52 @@ azo_tokenizer_has_next_token (AZOTokenizer *tokenizer, const AZOToken *current)
 unsigned int
 azo_tokenizer_get_next_token (AZOTokenizer *tokenizer, AZOToken *current)
 {
-	while (tokenizer->cpos < tokenizer->src->csize) {
-		unsigned int cpos = tokenizer->cpos;
-		if (cpos != current->end) {
-			fprintf(stderr, ".");
-		}
+	unsigned int cpos = current->end;
+	while (cpos < tokenizer->src->csize) {
 		while ((cpos < tokenizer->src->csize) && (tokenizer->src->cdata[cpos] <= ' ')) {
 			cpos += 1;
 		}
-		tokenizer->cpos = cpos;
-		if (tokenizer->cpos >= tokenizer->src->csize) break;
-		current->start = tokenizer->cpos;
-		tokenizer->cpos += get_token (tokenizer, current);
+		if (cpos >= tokenizer->src->csize) break;
+		current->start = cpos;
+		cpos += get_token (tokenizer, cpos, current);
 		switch (current->type) {
-			case AZO_TOKEN_INVALID:
-				return 0;
-				break;
 			case AZO_TOKEN_NONE:
 			case AZO_TOKEN_EMPTY:
 			case AZO_TOKEN_COMMENT:
-				break;
+				continue;
+			case AZO_TOKEN_INVALID:
+				return 0;
 			default:
 				return 1;
-				break;
 		}
 	}
-	*current = (AZOToken) {tokenizer->cpos, tokenizer->cpos, AZO_TOKEN_EOF};
+	*current = (AZOToken) {cpos, cpos, AZO_TOKEN_EOF};
 	return 0;
 }
 
-static unsigned int
-get_number (AZOTokenizer *tokenizer, AZOToken *token)
+unsigned int
+azo_tokenizer_skip_line (AZOTokenizer *tokenizer, AZOToken *current)
 {
-	const unsigned char *cdata = tokenizer->src->cdata + tokenizer->cpos;
-	unsigned int csize = tokenizer->src->csize - tokenizer->cpos;
+	current->start = current->end;
+	if (current->start >= tokenizer->src->csize) {
+		current->type = AZO_TOKEN_EOF;
+		return 0;
+	}
+	current->type = AZO_TOKEN_NONE;
+	while (current->end < tokenizer->src->csize) {
+		if (tokenizer->src->cdata[current->end] == '\n') {
+			current->end += 1;
+			break;
+		}
+	}
+	return 1;
+}
+
+static unsigned int
+get_number (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
+{
+	const unsigned char *cdata = tokenizer->src->cdata + cpos;
+	unsigned int csize = tokenizer->src->csize - cpos;
 	unsigned int p = 0;
 	unsigned int type = AZO_TOKEN_INTEGER;
 	if ((cdata[p] == '0') && (csize >= 3)) {
@@ -192,29 +204,27 @@ get_number (AZOTokenizer *tokenizer, AZOToken *token)
 	}
 	token->type = type;
 	token->end = token->start + p;
-	tokenizer->cpos += p;
-	return 0;
+	return p;
 }
 
 static unsigned int
-get_cpp_comment (AZOTokenizer *tokenizer, AZOToken *token)
+get_cpp_comment (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 {
-	const unsigned char *cdata = tokenizer->src->cdata + tokenizer->cpos;
-	unsigned int csize = tokenizer->src->csize - tokenizer->cpos;
+	const unsigned char *cdata = tokenizer->src->cdata + cpos;
+	unsigned int csize = tokenizer->src->csize - cpos;
 	unsigned int p = 2;
 	/* C++ style comment until the end of line */
 	while ((p < csize) && !IS_LINE_END (cdata[p])) p += 1;
 	token->type = AZO_TOKEN_COMMENT;
 	token->end = token->start + p;
-	tokenizer->cpos += p;
-	return 0;
+	return p;
 }
 
 static unsigned int
-get_c_comment (AZOTokenizer *tokenizer, AZOToken *token)
+get_c_comment (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 {
-	const unsigned char *cdata = tokenizer->src->cdata + tokenizer->cpos;
-	unsigned int csize = tokenizer->src->csize - tokenizer->cpos;
+	const unsigned char *cdata = tokenizer->src->cdata + cpos;
+	unsigned int csize = tokenizer->src->csize - cpos;
 	unsigned int p = 2;
 	/* C style comment (possibly multi-line) */
 	while (p < (csize - 1)) {
@@ -222,33 +232,31 @@ get_c_comment (AZOTokenizer *tokenizer, AZOToken *token)
 			p += 2;
 			token->type = AZO_TOKEN_COMMENT;
 			token->end = token->start + p;
-			tokenizer->cpos += p;
-			return 0;
+			return p;
 		} else {
 			p += 1;
 		}
 	}
 	token->type = AZO_TOKEN_INVALID;
 	token->end = token->start + p;
-	tokenizer->cpos += p;
-	return 0;
+	return p;
 }
 
 static unsigned int
-get_token (AZOTokenizer *tokenizer, AZOToken *token)
+get_token (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 {
 	unsigned int unival;
 	unsigned int i;
 
-	const unsigned char *cdata = tokenizer->src->cdata + tokenizer->cpos;
-	unsigned int csize = tokenizer->src->csize - tokenizer->cpos;
+	const unsigned char *cdata = tokenizer->src->cdata + cpos;
+	unsigned int csize = tokenizer->src->csize - cpos;
 	unsigned int p = 0;
 	/* Comments */
 	if ((csize >= 2) && !strncmp ((const char *) cdata + p, "//", 2)) {
-		return get_cpp_comment(tokenizer, token);
+		return get_cpp_comment(tokenizer, cpos, token);
 	}
 	if ((csize >= 2) && !strncmp ((const char *) cdata + p, "/*", 2)) {
-		return get_c_comment(tokenizer, token);
+		return get_c_comment(tokenizer, cpos, token);
 	}
 
 	/* Operators */
@@ -277,7 +285,7 @@ get_token (AZOTokenizer *tokenizer, AZOToken *token)
 
 	/* Numbers */
 	if (IS_NUMBER_10 (cdata[p])) {
-		return get_number (tokenizer, token);
+		return get_number (tokenizer, cpos, token);
 	}
 	/* Text */
 	if (cdata[p] == '\"') {

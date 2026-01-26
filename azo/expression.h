@@ -7,7 +7,7 @@
 * Copyright (C) Lauris Kaplinski 2016
 */
 
-typedef struct _AZOTerm AZOExpression;
+typedef struct _AZOExpression AZOExpression;
 typedef struct _AZOTerm AZOTerm;
 
 typedef struct _AZOFrame AZOFrame;
@@ -22,7 +22,7 @@ typedef struct _AZOFrame AZOFrame;
 extern "C" {
 #endif
 
-#define AZO_EXPRESSION_IS(e,t,st) (((e)->type == (t)) && ((e)->subtype == (st)))
+#define AZO_EXPRESSION_IS(e,t,st) (((e)->term.type == (t)) && ((e)->term.subtype == (st)))
 
 /* Expression types */
 enum {
@@ -161,16 +161,43 @@ enum {
 };
 
 struct _AZOTerm {
-	/* Tree implementation */
-	AZOTerm *parent;
-	AZOTerm *next;
-	AZOTerm *children;
+	/**
+	 * @brief Term main type
+	 * 
+	 */
+	uint32_t type;
+	/**
+	 * @brief Term subtype
+	 * 
+	 */
+	uint32_t subtype;
 
+	/**
+	 * @brief Term start in source code
+	 * 
+	 */
+	unsigned int start;
+	/**
+	 * @brief Term end in source code
+	 * 
+	 */
+	unsigned int end;
+};
+
+struct _AZOExpression {
+	/* Tree implementation */
+	AZOExpression *parent;
+	AZOExpression *next;
+	AZOExpression *children;
+
+	AZOTerm term;
+#if 0
 	unsigned int type;
 	unsigned int subtype;
 
 	unsigned int start;
 	unsigned int end;
+#endif
 
 	/* Need to align 16 bytes anyways */
 	union {

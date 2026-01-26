@@ -68,7 +68,6 @@ typedef struct _AZOToken AZOToken;
 
 struct _AZOTokenizer {
 	AZOSource *src;
-	unsigned int cpos;
 };
 
 struct _AZOTokenizerClass {
@@ -89,7 +88,24 @@ void azo_tokenizer_release (AZOTokenizer *tokenizer);
 unsigned int azo_tokenizer_is_eof (AZOTokenizer *tokenizer, const AZOToken *current);
 unsigned int azo_tokenizer_has_next_token (AZOTokenizer *tokenizer, const AZOToken *current);
 /* Return true on success */
+/**
+ * @brief Get the next token following the current one
+ * 
+ * @param tokenizer a tokenizer object
+ * @param current the current token
+ * @return true if valid token, false if INVALID or EOF
+ */
 unsigned int azo_tokenizer_get_next_token (AZOTokenizer *tokenizer, AZOToken *current);
+/**
+ * @brief Skip until the end of line
+ * 
+ * Forms TOKEN_NONE from the remainder text
+ * 
+ * @param tokenizer a tokenizer object
+ * @param current the current token
+ * @return true if valid token, false if INVALID or EOF
+ */
+unsigned int azo_tokenizer_skip_line (AZOTokenizer *tokenizer, AZOToken *current);
 
 void azo_tokenizer_print_token (AZOTokenizer *tokenizer, const AZOToken *token, FILE *ofs);
 
