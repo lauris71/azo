@@ -1,0 +1,161 @@
+Program:
+  Sentences
+
+Sentences:
+  [Sentence...]
+
+Sentence:
+  Block
+  Line
+  for
+  while
+  if
+  
+Block:
+  { Sentences }
+
+Line:
+  Statement;
+
+Statement:
+  Step_statement
+  Return
+
+Return:
+  return [Expression]
+
+Step_statement:
+  Declaration
+  Silent_statement
+
+Declaration:
+  Qualifiers Type Single_declaration [, Single_declaration ...]
+
+Qualifiers:
+  [static] [const] [final]
+
+Type:
+  Expression
+  function
+
+Single_declaration:
+  Pure_declaration
+  Declaration_initialization
+
+Pure_declaration:
+  NAME
+
+Declaration_initialization:
+  Pure_declaration = Expression
+
+Silent_statement:
+  Empty_statement
+  Assignment
+  Function_call
+  Prefix_arithmetic
+  Suffix_arithmetic
+
+Empty statement:
+
+Assignment:
+  LValue = Expression;
+  LValue += Expression;
+  LValue -= Expression;
+  LValue *= Expression;
+  LValue /= Expression;
+  LValue %= Expression;
+  LValue >>= Expression;
+  LValue <<= Expression;
+
+LValue:
+  Variable_reference
+  Array_reference
+
+Variable_reference:
+  Singular_reference
+  Member_reference
+
+Singular_reference:
+  NAME
+
+Member_reference:
+  Expression.NAME
+
+Array_reference:
+  Expression[Expression]
+  
+Expression:
+  Parenthesed_expression
+  Naked_expression
+  
+Parenthesed_expression:
+  (Expression)
+
+Naked_expression:
+  LValue
+  RValue
+
+RValue:
+  null
+  this
+  Literal
+  New
+  Function_definition
+  Function_call
+  Unary_operation
+  Binary_operation
+  
+Literal:
+  BOOLEAN_LITERAL
+  INTEGER_LITERAL
+  FLOAT_LITERAL
+  STRING_LITERAL
+  Structured_literal
+
+Structured_literal:
+  {Expression [, Expression ...] }
+
+New:
+  new Expression Arguments
+  new Function_definition
+
+Arguments:
+  (Expression [, Expression ...])
+
+Function_definition:
+  function Signature_definition Block
+
+Signature_definition:
+  [Type|void] Arguments_definition Block
+
+Arguments_definition:
+  ([Argument_definition] [, Argument_definition ...])
+
+Argument_definition:
+  Type NAME
+
+Function_call:
+  Expression Arguments
+
+Prefix_arithmetic:
+  ++ LValue
+  -- LValue
+
+Suffix_arithmetic:
+  LValue ++
+  LValue --
+
+for:
+  for (Step_statement; Expression; Silent_statement) Sentence
+
+while:
+  while (Expression) Sentence
+  
+if:
+  if (Expression) Sentence [else Sentence]
+
+Unary_operation:
+  [+|-|!] Expression
+
+Binary_operation
+  Expression [+ - * / % | & ~ || && ^ << >> is implements] Expression

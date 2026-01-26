@@ -1,0 +1,31 @@
+Conversion rules
+
+1. Silent conversion
+Happens automatically when needed (function arguments, promotion)
+Exception: invalid type
+1.1. Anything can be converted to supertype
+1.2. Arithmetic types can be converted if they preserve value perfectly
+
+2. Explicit conversion
+Need explicit cast or implicit cast
+Implicit cast happens in expressions when promoted result is cast back to argument type (if needed)
+Exceptions: invalid conversion, [truncation, loss of precision]
+1.1. Silent conversion rules apply
+1.2. All arithmetic types can be converted to each other
+1.3. Boolean can be converted to arithmetic types (0 - false, 1 true)
+1.4. Arithmetic types can be converted to boolean (0, (-0) - false, other values true)
+1.5. Pointer can be converted to uint64
+1.6. Anything can be converted to string
+1.7. String can be converted to anything
+1.8. Types can be converted by explicit cast-to operator
+
+3. Reinterpretation
+Exception: invalid type
+Real arithmetic types with identical bitsizes can be reinterpreted
+
+Expressions:
+Arguments are converted to (in the following order):
+1. If all arguments are unsigned integrals - MIN(uint32, max_bitsize)
+2. If all arguments are integrals - MIN(int32, max_bitsize)
+3. If all arguments are reals - MIN(bitsize)
+4. Complex MIN(bitsize)

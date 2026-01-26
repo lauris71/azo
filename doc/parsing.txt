@@ -1,0 +1,54 @@
+Step statement
+  Declaration
+    Qualifiers Single_declaration
+	Single_declaration
+	  Pure_declaration
+	    Class ID
+		  Function_class
+		    [Class] function Class_list
+          Array_class
+			Class[]
+			Class[POSITIVE_INTEGER]
+          Expression
+			Parenthesed_expression
+			  (Expression)
+			Naked_expression
+			    Variable_reference
+				Member_reference
+				Array_reference
+				Function_call
+				new
+				function
+				Operation
+				Literal
+	  Declaration_initialization
+		Pure_declaration = Expression
+  Silent_statement
+	Assignment
+	  Expression = Expression;
+	  Expression += Expression;
+	  Expression -= Expression;
+	  Expression *= Expression;
+	  Expression /= Expression;
+	  Expression %= Expression;
+	  Expression >>= Expression;
+	  Expression <<= Expression;
+	Expression
+
+* if Qualifiers parse as Declaration
+* parse expression with LHS affinity > assignment
+  If next is ID - parse as Declaration
+  Else parse as Silent statement
+
+(Class) alfa + beeta gamma
+
+(A) (B) C
+Declare variable D as type ((A) (B))
+
+Special rule:
+  If next is () continue with cast preference
+  If next is unary?
+  (A) -B
+    Either cast of -B or A-B
+
+ - parse next with cast precedence

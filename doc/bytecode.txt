@@ -1,0 +1,112 @@
+All types in arithmetic expression are promoted to highest type or Int32, whichever is larger
+Mixed signed/unsigned arithmetic is evaluated as is, but result promoted according to the previous rule
+
+conversion pointer<->uint64
+
+comparisons
+==
+!=
+null-null TRUE
+pointer-null FALSE
+block-null FALSE
+primitive-primitive
+block-block (only if either is subtype)
+Comparison result is Boolean
+
+<>
+integers and reals
+Comparison result is Uint32 sign
+
+Arithmetic
+int32-int32
+uint32-uint32
+int64-int64
+uint64-uint64
+float-float
+double-double
+complex float-complex float
+complex-double-complex double
+
+Compare any-any lg
+if LHS.type < Int8 goto invalid_type
+if LHS.type > Double goto invalid_type
+if RHS.type < Int8 goto invalid_type
+if RHS.type > Double goto invalid_type
+if LHS.type == RHS.type goto types_equal
+if LHS.type > RHS.type goto lhs_gt_rhs
+	// LHS < RHS
+	// Promote LHS->RHS
+	PROMOTE LHS RHS.type
+	goto types_equal
+lhs_gt_rhs:
+	// LHS > RHS
+	PROMOTE RHS LHS
+types_equal:
+COMPARE RHS.type LHS RHS
+goto finished
+invalid_type:
+	exception
+finished:
+
+Compare any-any e
+if (LHS.type == None) goto lhs_is_none
+if (RHS.type == None) goto rhs_is_none
+if (LHS.type == Boolean) goto lhs_is_boolean
+if (LHS.type == Pointer) goto lhs_is_pointer
+if (LHS.type == Block) goto lhs_is_block
+if LHS.type < Int8 goto invalid_type
+if LHS.type > Complex Double goto invalid_type
+if RHS.type < Int8 goto invalid_type
+if RHS.type > Complex Double goto invalid_type
+if LHS.type == RHS.type goto types_equal
+if LHS.type > RHS.type goto lhs_gt_rhs
+	// LHS < RHS
+	// Promote LHS->RHS
+	PROMOTE LHS RHS.type
+	goto types_equal
+lhs_gt_rhs:
+	// LHS > RHS
+	PROMOTE RHS LHS
+types_equal:
+	(eq/ne) EQUALS RHS.type LHS RHS
+goto finished
+
+lhs_is_none:
+	EXCHANGE
+rhs_is_none:
+	POP 1
+if (top.type == None) goto E_TRUE
+if (top.type == Block) goto E_FALSE
+if (top.type != pointer) goto invalid_type
+	LOAD IMMEDIATE Pointer 0
+	COMPARE Pointer
+	if equal goto E_TRUE
+	goto E_FALSE
+
+lhs_is_boolean
+	if (RHS.type != Boolean) goto invalid_type
+	(eq/ne) EQUALS boolean
+	goto finished
+
+lhs_is_pointer
+	if (RHS.type != Boolean) goto invalid_type
+	(eq/ne) EQUALS boolean
+	goto finished
+
+lhs_is_block:
+	if (rhs subtype lhs) goto can_compare_blocks
+	if not (rhs supertype lhs) goto invalid_type
+cab_compare_blocks:
+	(eq/ne) EQUALS block
+	goto finished
+	
+E_TRUE:
+	(eq/ne) LOAD_IMMEDIATE Boolean true
+	goto finished
+E_FALSE:
+	(eq/ne) LOAD_IMMEDIATE Boolean false
+	goto finished
+	
+invalid_type:
+	exception
+finished:
