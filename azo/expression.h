@@ -191,13 +191,6 @@ struct _AZOExpression {
 	AZOExpression *children;
 
 	AZOTerm term;
-#if 0
-	unsigned int type;
-	unsigned int subtype;
-
-	unsigned int start;
-	unsigned int end;
-#endif
 
 	/* Need to align 16 bytes anyways */
 	union {
@@ -217,6 +210,8 @@ AZOExpression *azo_expression_new (unsigned int type, unsigned int subtype, unsi
 void azo_expression_free (AZOExpression *expr);
 void azo_expression_free_tree (AZOExpression *expr);
 AZOExpression *azo_expression_clone_tree (AZOExpression *expr);
+
+unsigned int azo_expression_count_nodes(AZOExpression *tree);
 
 AZOExpression *azo_expression_new_number (const AZOSource *src, const AZOToken *token);
 AZOExpression *azo_expression_new_integer (const AZOSource *src, const AZOToken *token);

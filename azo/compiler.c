@@ -81,16 +81,26 @@ void
 azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, const AZValue *this_val, unsigned int ret_type)
 {
 	AZOFrame *frame = azo_frame_new (comp->current, this_impl, this_val, ret_type);
+#if 1
+	if (comp->current->children) {
+		azo_frame_delete_tree(comp->current->children);
+	}
+#else
 	frame->next = comp->current->children;
+#endif
 	comp->current->children = frame;
 	comp->current = frame;
 }
 
-void
+AZOFrame *
 azo_compiler_pop_frame (AZOCompiler *comp)
 {
 	assert (comp->current->parent);
+	AZOFrame *frame = comp->current;
 	comp->current = comp->current->parent;
+	//azo_frame_delete_tree(comp->current->children);
+	comp->current->children = NULL;
+	return frame;
 }
 
 void

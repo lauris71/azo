@@ -49,7 +49,7 @@ AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOExpression *expr, const 
 AZOProgram *azo_compiler_compile_text (AZOCompiler *comp, const unsigned char *cdata, unsigned int csize);
 
 void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, const AZValue *this_val, unsigned int ret_type);
-void azo_compiler_pop_frame (AZOCompiler *comp);
+AZOFrame *azo_compiler_pop_frame (AZOCompiler *comp);
 
 /* Declares variable at next free position unless already known */
 void azo_compiler_declare_variable (AZOCompiler *comp, AZString *name);

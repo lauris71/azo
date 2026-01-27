@@ -67,6 +67,16 @@ azo_expression_clone_tree (AZOExpression *expr)
 	return clone;
 }
 
+unsigned int
+azo_expression_count_nodes(AZOExpression *tree)
+{
+	unsigned int count = 1;
+	for (AZOExpression *child = tree->children; child; child = child->next) {
+		count += azo_expression_count_nodes(child);
+	}
+	return count;
+}
+
 AZOExpression *
 azo_expression_new_text (const AZOSource *src, const AZOToken *token)
 {

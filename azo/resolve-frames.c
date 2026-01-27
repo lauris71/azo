@@ -113,8 +113,6 @@ resolve_function (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 		n_args += 1;
 	}
 
-	expr->frame = comp->current;
-
 	azo_compiler_resolve_frame (comp, body);
 
 	if (comp->current->n_parent_vars) {
@@ -130,7 +128,7 @@ resolve_function (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 		comp->current->parent_vars = prev;
 	}
 
-	azo_compiler_pop_frame (comp);
+	expr->frame = azo_compiler_pop_frame (comp);
 	return 0;
 }
 
