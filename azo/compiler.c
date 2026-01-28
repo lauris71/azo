@@ -65,15 +65,14 @@ azo_compiler_new (AZOContext *ctx, const AZImplementation *this_impl, const AZVa
 	memset (comp, 0, sizeof (AZOCompiler));
 	comp->ctx = ctx;
 	comp->check_args = 1;
-	comp->root = azo_frame_new (NULL, this_impl, this_val, ret_type);
-	comp->current = comp->root;
+	comp->current = azo_frame_new (NULL, this_impl, this_val, ret_type);
 	return comp;
 }
 
 void
 azo_compiler_delete (AZOCompiler *comp)
 {
-	azo_frame_delete_tree (comp->root);
+	azo_frame_delete_tree (comp->current);
 	free (comp);
 }
 
@@ -81,14 +80,7 @@ void
 azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, const AZValue *this_val, unsigned int ret_type)
 {
 	AZOFrame *frame = azo_frame_new (comp->current, this_impl, this_val, ret_type);
-#if 1
-	if (comp->current->children) {
-		azo_frame_delete_tree(comp->current->children);
-	}
-#else
-	frame->next = comp->current->children;
-#endif
-	comp->current->children = frame;
+	frame->parent = comp->current;
 	comp->current = frame;
 }
 
@@ -98,16 +90,14 @@ azo_compiler_pop_frame (AZOCompiler *comp)
 	assert (comp->current->parent);
 	AZOFrame *frame = comp->current;
 	comp->current = comp->current->parent;
-	//azo_frame_delete_tree(comp->current->children);
-	comp->current->children = NULL;
 	return frame;
 }
 
 void
-azo_compiler_declare_variable (AZOCompiler *comp, AZString *name)
+azo_compiler_declare_variable (AZOCompiler *comp, AZString *name, unsigned int type)
 {
 	unsigned int result;
-	if (!azo_frame_declare_variable (comp->current, name, &result)) {
+	if (!azo_frame_declare_variable (comp->current, name, type, &result)) {
 		fprintf (stderr, "azo_compiler_declare_variable: Variable %s is already defined in current scope\n", name->str);
 	}
 }
@@ -1499,18 +1489,18 @@ azo_compiler_compile_noresolve (AZOCompiler *comp, AZOExpression *expr, const AZ
 }
 
 AZOProgram *
-azo_compiler_compile (AZOCompiler *comp, AZOExpression *expr, const AZOSource *src)
+azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, const AZOSource *src)
 {
 	AZOProgram *prog;
 
-	expr = azo_compiler_resolve_frame (comp, expr);
+	root = azo_compiler_resolve_frame (comp, root);
 
-	if (expr->term.type == AZO_EXPRESSION_PROGRAM) {
-		if (!compile_program (comp, expr, src)) return NULL;
-	} else if (expr->term.type == AZO_EXPRESSION_BLOCK) {
-		if (!compile_sentence (comp, expr, src)) return NULL;
+	if (root->term.type == AZO_EXPRESSION_PROGRAM) {
+		if (!compile_program (comp, root, src)) return NULL;
+	} else if (root->term.type == AZO_EXPRESSION_BLOCK) {
+		if (!compile_sentence (comp, root, src)) return NULL;
 	} else {
-		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", expr->term.type);
+		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", root->term.type);
 		return NULL;
 	}
 	prog = (AZOProgram *) malloc (sizeof (AZOProgram));

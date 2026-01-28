@@ -106,7 +106,8 @@ resolve_function (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 			fprintf (stderr, "resolve_function: Invalid expression type %u/%u in signature\n", name->term.type, name->term.subtype);
 			return 1;
 		}
-		if (!azo_frame_declare_variable (comp->current, name->value.v.string, &result)) {
+		// fixme: Use type
+		if (!azo_frame_declare_variable (comp->current, name->value.v.string, AZ_TYPE_ANY, &result)) {
 			fprintf (stderr, "resolve_function: Repeated variable name %s\n", name->value.v.string->str);
 			return result;
 		}
@@ -144,7 +145,8 @@ resolve_declaration (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 		fprintf (stderr, "resolve_declaration: Variable %s already declared in scope\n", id->value.v.string->str);
 		return 1;
 	}
-	var = azo_frame_declare_variable (comp->current, id->value.v.string, &result);
+	// fixme: Use type
+	var = azo_frame_declare_variable (comp->current, id->value.v.string, AZ_TYPE_ANY, &result);
 	if (result) return result;
 	if (value) {
 		value = azo_compiler_resolve_expression (comp, value, flags, &result);

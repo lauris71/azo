@@ -37,22 +37,24 @@ struct _AZOCompiler {
 	 * 
 	 */
 	unsigned int debug : 1;
-
-	AZOFrame *root;
+	/**
+	 * @brief Current compilation frame
+	 * 
+	 */
 	AZOFrame *current;
 };
 
 AZOCompiler *azo_compiler_new (AZOContext *ctx, const AZImplementation *this_impl, const AZValue *this_val, unsigned int ret_type);
 void azo_compiler_delete (AZOCompiler *comp);
 
-AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOExpression *expr, const AZOSource *src);
+AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, const AZOSource *src);
 AZOProgram *azo_compiler_compile_text (AZOCompiler *comp, const unsigned char *cdata, unsigned int csize);
 
 void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, const AZValue *this_val, unsigned int ret_type);
 AZOFrame *azo_compiler_pop_frame (AZOCompiler *comp);
 
 /* Declares variable at next free position unless already known */
-void azo_compiler_declare_variable (AZOCompiler *comp, AZString *name);
+void azo_compiler_declare_variable (AZOCompiler *comp, AZString *name, unsigned int type);
 
 void azo_compiler_write_instruction_1 (AZOCompiler *comp, unsigned int ic);
 

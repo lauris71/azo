@@ -54,11 +54,23 @@ AZOVariable *azo_scope_ensure_local_var (AZOScope *scope, AZOVariable *var);
 #define AZO_FRAME_VARIABLE_DEFINED 1
 #define AZO_FRAME_VARIABLE_NOT_DEFINED 1
 
+/**
+ * @brief The compilation context
+ * 
+ * A container for independent bytecode object (program or function)
+ * AZOFrame manages scopes and implements closure, const data and bytecode storage
+ */
 struct _AZOFrame {
+	/**
+	 * @brief Link to the parent frame (containing function)
+	 * 
+	 */
 	AZOFrame *parent;
-	AZOFrame *children;
-	AZOFrame *next;
-	/* NONE for void context */
+	/**
+	 * @brief Return type of this code block
+	 * 
+	 * NULL for void block.
+	 */
 	unsigned int ret_type;
 	/* NULL for static, Any for relocatable code */
 	const AZImplementation *this_impl;
@@ -108,7 +120,7 @@ unsigned int azo_frame_append_string (AZOFrame *frame, AZString *str);
 unsigned int azo_frame_append_object (AZOFrame *frame, AZObject *obj);
 
 /* Declares variable in current scope */
-AZOVariable *azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int *result);
+AZOVariable *azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, unsigned int *result);
 AZOVariable *azo_frame_ensure_variable (AZOFrame *frame, AZString *name);
 
 #ifdef __cplusplus

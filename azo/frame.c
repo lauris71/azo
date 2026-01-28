@@ -136,11 +136,7 @@ azo_frame_delete (AZOFrame *frame)
 void
 azo_frame_delete_tree (AZOFrame *frame)
 {
-	while (frame->children) {
-		AZOFrame *child = frame->children;
-		frame->children = child->next;
-		azo_frame_delete (child);
-	}
+	if (frame->parent) azo_frame_delete_tree(frame->parent);
 	azo_frame_delete (frame);
 }
 
@@ -333,7 +329,7 @@ azo_frame_append_object (AZOFrame *frame, AZObject *obj)
 }
 
 AZOVariable *
-azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int *result)
+azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, unsigned int *result)
 {
 	if (azo_scope_lookup (frame->scope, name)) {
 		*result = AZO_FRAME_VARIABLE_DEFINED;
@@ -353,7 +349,7 @@ azo_frame_ensure_variable (AZOFrame *frame, AZString *name)
 	if (var) return var;
 	if (frame->parent) {
 		AZOVariable *prev = azo_frame_ensure_variable (frame->parent, name);
-		if (!prev) NULL;
+		if (!prev) return NULL;
 		var = azo_compiler_var_new (name, frame->parent_vars, 1, frame->n_parent_vars++);
 		var->parent_is_val = prev->is_val;
 		var->parent_pos = prev->pos;
