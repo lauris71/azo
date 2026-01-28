@@ -10,7 +10,7 @@
 
 #include <azo/bytecode.h>
 
-#include <azo/arithmetic.h>
+#include <azo/compiler/arithmetic.h>
 
 static uint8_t uint8_one = 1;
 static uint32_t uint16_type = AZ_TYPE_UINT16;

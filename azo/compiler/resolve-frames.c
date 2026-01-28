@@ -11,7 +11,7 @@
 
 #include <az/string.h>
 
-#include <azo/compiler.h>
+#include <azo/compiler/compiler.h>
 #include <azo/expression.h>
 #include <azo/keyword.h>
 #include <azo/optimizer.h>

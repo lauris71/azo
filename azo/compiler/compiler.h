@@ -12,7 +12,7 @@ typedef struct _AZOCompiler AZOCompiler;
 #include <stdint.h>
 
 #include <azo/context.h>
-#include <azo/frame.h>
+#include <azo/compiler/frame.h>
 #include <azo/expression.h>
 #include <azo/interpreter.h>
 #include <azo/source.h>
@@ -22,9 +22,11 @@ extern "C" {
 #endif
 
 struct _AZOCompiler {
-	/* This context */
+	/**
+	 * @brief Global definitions
+	 * 
+	 */
 	AZOContext *ctx;
-
 	/**
 	 * @brief Force typecode argument checking
 	 * 
@@ -44,13 +46,12 @@ struct _AZOCompiler {
 	AZOFrame *current;
 };
 
-AZOCompiler *azo_compiler_new (AZOContext *ctx, const AZImplementation *this_impl, const AZValue *this_val, unsigned int ret_type);
-void azo_compiler_delete (AZOCompiler *comp);
+void azo_compiler_init (AZOCompiler *compiler, AZOContext *ctx);
+void azo_compiler_finalize (AZOCompiler *compiler);
 
 AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, const AZOSource *src);
-AZOProgram *azo_compiler_compile_text (AZOCompiler *comp, const unsigned char *cdata, unsigned int csize);
 
-void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, const AZValue *this_val, unsigned int ret_type);
+void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type);
 AZOFrame *azo_compiler_pop_frame (AZOCompiler *comp);
 
 /* Declares variable at next free position unless already known */

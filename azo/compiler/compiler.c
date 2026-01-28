@@ -30,10 +30,10 @@ static const int debug = 0;
 #include <azo/bytecode.h>
 #include <azo/keyword.h>
 
-#include <azo/arithmetic.h>
+#include <azo/compiler/arithmetic.h>
 #include <azo/compare.h>
 
-#include <azo/compiler.h>
+#include <azo/compiler/compiler.h>
 
 typedef struct _LValue LValue;
 
@@ -58,28 +58,24 @@ struct _LValue {
 
 static AZOProgram *azo_compiler_compile_noresolve (AZOCompiler *comp, AZOExpression *expr, const AZOSource *src);
 
-AZOCompiler *
-azo_compiler_new (AZOContext *ctx, const AZImplementation *this_impl, const AZValue *this_val, unsigned int ret_type)
+void
+azo_compiler_init(AZOCompiler *compiler, AZOContext *ctx)
 {
-	AZOCompiler *comp = (AZOCompiler *) malloc (sizeof (AZOCompiler));
-	memset (comp, 0, sizeof (AZOCompiler));
-	comp->ctx = ctx;
-	comp->check_args = 1;
-	comp->current = azo_frame_new (NULL, this_impl, this_val, ret_type);
-	return comp;
+	memset (compiler, 0, sizeof (AZOCompiler));
+	compiler->ctx = ctx;
+	compiler->check_args = 1;
 }
 
 void
-azo_compiler_delete (AZOCompiler *comp)
+azo_compiler_finalize(AZOCompiler *compiler)
 {
-	azo_frame_delete_tree (comp->current);
-	free (comp);
+	if (compiler->current) azo_frame_delete_tree(compiler->current);
 }
 
 void
-azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, const AZValue *this_val, unsigned int ret_type)
+azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type)
 {
-	AZOFrame *frame = azo_frame_new (comp->current, this_impl, this_val, ret_type);
+	AZOFrame *frame = azo_frame_new (comp->current, this_impl, this_inst, ret_type);
 	frame->parent = comp->current;
 	comp->current = frame;
 }
@@ -1516,24 +1512,5 @@ azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, const AZOSource *s
 	comp->current->data = NULL;
 	comp->current->data_size = 0;
 	comp->current->data_len = 0;
-	return prog;
-}
-
-AZOProgram *
-azo_compiler_compile_text (AZOCompiler *comp, const unsigned char *cdata, unsigned int csize)
-{
-	AZOSource *src;
-	AZOParser parser;
-	AZOExpression *expr;
-	AZOProgram *prog;
-	src = azo_source_new_static (cdata, csize);
-	azo_parser_setup (&parser, src);
-	expr = azo_parser_parse (&parser);
-	if (debug > 0) {
-		azo_print_expression_list (expr, stderr, "\n");
-	}
-	prog = azo_compiler_compile (comp, expr, src);
-	azo_parser_release (&parser);
-	azo_source_unref(src);
 	return prog;
 }

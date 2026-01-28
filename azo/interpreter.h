@@ -42,6 +42,7 @@ struct _AZOInterpreter {
 AZOInterpreter *azo_interpreter_new (AZOContext *ctx);
 void interpreter_delete (AZOInterpreter *intr);
 
+void azo_intepreter_push_instance (AZOInterpreter *intr, const AZImplementation *impl, void *inst);
 void azo_intepreter_push_value (AZOInterpreter *intr, const AZImplementation *impl, const AZValue *val);
 void azo_intepreter_push_values (AZOInterpreter *intr, const AZImplementation **impls, const AZValue **vals, unsigned int n_vals);
 /* Create new frame containing n_elements elements at the top of stack */
@@ -50,7 +51,7 @@ void azo_interpreter_pop_frame (AZOInterpreter *intr);
 void azo_interpreter_clear_frame (AZOInterpreter *intr);
 void azo_interpreter_restore_frame (AZOInterpreter *intr, unsigned int frame);
 
-void interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplementation **ret_impl, AZValue64 *ret_val);
+void interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size);
 
 void azo_intepreter_print_stack (AZOInterpreter *intr, FILE *ofs);
 

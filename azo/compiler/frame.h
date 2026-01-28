@@ -72,9 +72,14 @@ struct _AZOFrame {
 	 * NULL for void block.
 	 */
 	unsigned int ret_type;
-	/* NULL for static, Any for relocatable code */
+	/**
+	 * @brief Reference to this
+	 * 
+	 * It is up to invoker to ensure that this stays valid.
+	 * Implementation is NULL for static code, instance is NULL for relocatable code.
+	 */
 	const AZImplementation *this_impl;
-	const AZValue *this_val;
+	void *this_inst;
 	/* Current scope */
 	AZOScope *scope;
 	/* Parent variables */
@@ -91,7 +96,7 @@ struct _AZOFrame {
 	AZPackedValue *data;
 };
 
-AZOFrame *azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, const AZValue *this_val, unsigned int ret_type);
+AZOFrame *azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type);
 void azo_frame_delete (AZOFrame *frame);
 void azo_frame_delete_tree (AZOFrame *frame);
 

@@ -37,12 +37,18 @@ azo_expression_free (AZOExpression *expr)
 void
 azo_expression_free_tree (AZOExpression *expr)
 {
+	azo_expression_clear_children(expr);
+	azo_expression_free (expr);
+}
+
+void
+azo_expression_clear_children (AZOExpression *expr)
+{
 	while (expr->children) {
 		AZOExpression *next = expr->children->next;
 		azo_expression_free_tree (expr->children);
 		expr->children = next;
 	}
-	azo_expression_free (expr);
 }
 
 AZOExpression *

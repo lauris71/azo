@@ -15,10 +15,22 @@
 #include <az/string.h>
 
 #include <az/classes/attrib-dict.h>
-#include <azo/compiler.h>
+#include <azo/compiler/compiler.h>
 #include <azo/expression.h>
 #include <azo/keyword.h>
 #include <azo/optimizer.h>
+
+static void
+describe(FILE *ofs, const char *text, const AZString *name, const AZImplementation *impl, AZValue *val)
+{
+	if (impl) {
+		uint8_t buf[1024];
+		az_instance_to_string(impl, az_value_get_inst(impl, val), buf, 1024);
+		fprintf(ofs, text, name->str, buf);
+	} else {
+		fprintf(ofs, text, name->str);
+	}
+}
 
 static unsigned int
 resolve_member_class (AZOCompiler *comp, AZOExpression *member, const AZClass *klass, unsigned int flags)
@@ -35,7 +47,7 @@ resolve_member_impl (AZOCompiler *comp, AZOExpression *member, const AZClass *kl
 #define noDEBUG_MEMBER_INST
 
 static unsigned int
-resolve_member_inst (AZOCompiler *comp, AZOExpression *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str, unsigned int flags)
+resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str, unsigned int flags)
 {
 	const AZClass *def_class;
 	const AZImplementation *def_impl;
@@ -46,28 +58,17 @@ resolve_member_inst (AZOCompiler *comp, AZOExpression *expr, const AZClass *klas
 		if (!inst && (field->spec == AZ_FIELD_INSTANCE)) return 0;
 		if (!impl && (field->spec == AZ_FIELD_IMPLEMENTATION)) return 0;
 		if (field->is_final && !field->is_function) {
-			const AZImplementation *prop_impl;
-			AZValue64 prop_val;
-			if (!az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &prop_impl, &prop_val.value, 64, NULL)) {
+			az_packed_value_clear(&expr->value);
+			if (!az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &expr->value.impl, &expr->value.v, 16, NULL)) {
 				fprintf (stderr, "resolve_member: Property %s is not readable\n", str->str);
 				return 1;
 			}
-			az_packed_value_set_from_impl_value (&expr->value, prop_impl, &prop_val.value);
 			expr->term.type = EXPRESSION_CONSTANT;
-			if (prop_impl) {
-				expr->term.subtype = AZ_IMPL_TYPE(prop_impl);
-				az_value_clear (prop_impl, &prop_val.value);
-			} else {
-				// Final undefined value, not normal but we have to handle it
-				expr->term.subtype = 0;
-			}
-			while (expr->children) {
-				AZOExpression *child = expr->children;
-				expr->children = child->next;
-				azo_expression_free_tree (child);
-			}
-#ifdef DEBUG_MEMBER_INST
-			fprintf (stderr, "resolve_member: Replaced final property %s with constant\n", str->str);
+			/* Final undefined value is not normal but we have to handle it */
+			expr->term.subtype = (expr->value.impl) ? AZ_IMPL_TYPE(expr->value.impl) : 0;
+			azo_expression_clear_children(expr);
+#ifdef noDEBUG_MEMBER_INST
+			describe(stderr, "resolve_member: Replaced final property %s with '%s'\n", str, expr->value.impl, &expr->value.v);
 #endif
 			return 0;
 		}
@@ -92,8 +93,8 @@ resolve_member_inst (AZOCompiler *comp, AZOExpression *expr, const AZClass *klas
 				expr->children = child->next;
 				azo_expression_free_tree (child);
 			}
-#ifdef DEBUG_MEMBER_INST
-			fprintf (stderr, "resolve_member: Replaced final attribute %s with constant\n", str->str);
+#ifdef noDEBUG_MEMBER_INST
+			describe(stderr, "resolve_member: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
 #endif
 			return 0;
 		}
@@ -121,7 +122,7 @@ resolve_member (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 			const AZClass *klass = az_type_get_class (parent->term.subtype);
 			const AZImplementation *impl = parent->value.impl;
 			void *inst = az_value_get_inst(parent->value.impl, &parent->value.v);
-			return resolve_member_inst (comp, expr, klass, impl, inst, member->value.v.string, flags);
+			return resolve_member_inst (comp->current, expr, klass, impl, inst, member->value.v.string, flags);
 		}
 	}
 	return 0;
@@ -135,12 +136,7 @@ static unsigned int
 resolve_this_reference (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 {
 	const AZClass *klass = AZ_CLASS_FROM_IMPL(comp->current->this_impl);
-	const AZImplementation *impl = comp->current->this_impl;
-	void *inst = NULL;
-	if (comp->current->this_val) {
-		inst = az_value_get_inst(impl, comp->current->this_val);
-	}
-	return resolve_member_inst (comp, expr, klass, impl, inst, expr->value.v.string, flags);
+	return resolve_member_inst (comp->current, expr, klass, comp->current->this_impl, comp->current->this_inst, expr->value.v.string, flags);
 }
 
 #define noDEBUG_RESOLVE_VARIABLE
@@ -166,15 +162,15 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	AZOVariable *var = azo_frame_lookup_var (comp->current, expr->value.v.string);
 	if (var) {
 		if (!(flags & AZO_COMPILER_VAR_IS_LVALUE) && var->const_expr) {
-#ifdef DEBUG_RESOLVE_VARIABLE
-			fprintf (stderr, "resolve_variable: Local %s is constant in this scope, replacing with constant expression\n", var->name->str);
-#endif
 			expr->term.type = EXPRESSION_CONSTANT;
 			expr->term.subtype = var->const_expr->term.subtype;
 			az_packed_value_copy (&expr->value, &var->const_expr->value);
+#ifdef noDEBUG_RESOLVE_VARIABLE
+			describe(stderr, "resolve_variable: Local %s is constant in this scope, replacing with '%s'\n", var->name, expr->value.impl, &expr->value.v);
+#endif
 			return 0;
 		}
-#ifdef DEBUG_RESOLVE_VARIABLE
+#ifdef noDEBUG_RESOLVE_VARIABLE
 		fprintf (stderr, "resolve_variable: Local %s at pos %u\n", expr->value.v.string->str, var->pos);
 #endif
 		expr->term.type = EXPRESSION_VARIABLE;
@@ -187,12 +183,12 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	var = azo_frame_lookup_parent_var (comp->current, expr->value.v.string);
 	if (var) {
 		if (!(flags & AZO_COMPILER_VAR_IS_LVALUE) && var->const_expr) {
-#ifdef noDEBUG_RESOLVE_VARIABLE
-			fprintf (stderr, "resolve_variable: Known parent %s is constant in this scope, replacing with constant expression\n", var->name->str);
-#endif
 			expr->term.type = EXPRESSION_CONSTANT;
 			expr->term.subtype = var->const_expr->term.subtype;
 			az_packed_value_copy (&expr->value, &var->const_expr->value);
+#ifdef noDEBUG_RESOLVE_VARIABLE
+			describe(stderr, "resolve_variable: Known parent %s is constant in this scope, replacing with '%s'\n", var->name, expr->value.impl, &expr->value.v);
+#endif
 			return 0;
 		}
 #ifdef DEBUG_RESOLVE_VARIABLE
@@ -211,12 +207,12 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 			/* Parent */
 			var = azo_frame_ensure_variable (comp->current, expr->value.v.string);
 			if (!(flags & AZO_COMPILER_VAR_IS_LVALUE) && var->const_expr) {
-#ifdef noDEBUG_RESOLVE_VARIABLE
-				fprintf (stderr, "resolve_variable: New parent %s is constant in this scope, replacing with constant expression\n", var->name->str);
-#endif
 				expr->term.type = EXPRESSION_CONSTANT;
 				expr->term.subtype = var->const_expr->term.subtype;
 				az_packed_value_copy (&expr->value, &var->const_expr->value);
+#ifdef noDEBUG_RESOLVE_VARIABLE
+				describe (stderr, "resolve_variable: New parent %s is constant in this scope, replacing with '%s'\n", var->name, expr->value.impl, &expr->value.v);
+#endif
 				return 0;
 			}
 
@@ -304,7 +300,7 @@ azo_compiler_resolve_function_call (AZOCompiler *comp, AZOExpression *expr, unsi
 		if (!comp->current->this_impl) return expr;
 		klass = AZ_CLASS_FROM_IMPL(comp->current->this_impl);
 		impl = comp->current->this_impl;
-		inst = (comp->current->this_val) ? az_value_get_inst(impl, comp->current->this_val) : NULL;
+		inst = comp->current->this_inst;
 		str = ref->value.v.string;
 	} else {
 		fprintf (stderr, "azo_compiler_resolve_function_call: unknown reference subtype\n");

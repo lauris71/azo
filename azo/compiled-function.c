@@ -121,11 +121,7 @@ compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, cons
 	/* We have to keep reference during invocation */
 	az_object_ref ((AZObject *) cfunc);
 
-	unsigned int frame = cfunc->ctx->intr->n_frames;
-	azo_interpreter_push_frame (cfunc->ctx->intr, 0);
-	azo_intepreter_push_values (cfunc->ctx->intr, arg_impls, arg_vals, cfunc->signature->n_args);
-	interpreter_interpret (cfunc->ctx->intr, cfunc->prog, ret_impl, ret_val);
-	azo_interpreter_restore_frame (cfunc->ctx->intr, frame);
+	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, arg_impls, arg_vals, cfunc->signature->n_args, ret_impl, &ret_val->value, 64);
 
 	az_object_unref ((AZObject *) cfunc);
 	ARIKKEI_CHECK_INTEGRITY ();

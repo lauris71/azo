@@ -21,8 +21,7 @@
 #include <az/primitives.h>
 #include <az/classes/value-array-ref.h>
 
-#include <azo/compiler.h>
-#include <azo/frame.h>
+#include <azo/compiler/compiler.h>
 #include <azo/keyword.h>
 #include <azo/optimizer.h>
 

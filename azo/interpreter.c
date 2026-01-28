@@ -63,6 +63,12 @@ interpreter_delete (AZOInterpreter *intr)
 }
 
 void
+azo_intepreter_push_instance (AZOInterpreter *intr, const AZImplementation *impl, void *inst)
+{
+	azo_stack_push_instance (&intr->stack, impl, inst);
+}
+
+void
 azo_intepreter_push_value (AZOInterpreter *intr, const AZImplementation *impl, const AZValue *val)
 {
 	azo_stack_push_value (&intr->stack, impl, val);
@@ -1442,20 +1448,19 @@ interpret_INVOKE (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_RETURN (AZOInterpreter *intr, const unsigned char *ip, const AZImplementation **ret_impl, AZValue64 *ret_val)
+interpret_RETURN (AZOInterpreter *intr, const unsigned char *ip, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
 {
 	if (ret_impl) {
 		if (ip[0] & AZO_TC_CHECK_ARGS) {
 			if (!test_stack_underflow (intr, ip, 0)) return NULL;
 		}
-		*ret_impl = azo_stack_impl_bw (&intr->stack, 0);
-		az_value_copy (*ret_impl, &ret_val->value, azo_stack_value_bw (&intr->stack, 0));
+		*ret_impl = az_value_copy_autobox(azo_stack_impl_bw(&intr->stack, 0), ret_val, azo_stack_value_bw(&intr->stack, 0), ret_size);
 	}
 	return NULL;
 }
 
 static const unsigned char *
-interpret_BIND (AZOInterpreter *intr, const unsigned char *ip, const AZImplementation **ret_impl, AZValue64 *ret_val)
+interpret_BIND (AZOInterpreter *intr, const unsigned char *ip)
 {
 	AZOCompiledFunction *cfunc;
 	uint32_t pos, i;
@@ -1893,7 +1898,7 @@ interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 /* End new stack methods */
 
 void
-interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplementation **ret_impl, AZValue64 *ret_val)
+interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
 {
 	const unsigned char *ipc;
 	AZOProgram *last_prog;
@@ -2069,10 +2074,10 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 			ipc = interpret_INVOKE (intr, ipc);
 			break;
 		case AZO_TC_RETURN:
-			ipc = interpret_RETURN (intr, ipc, ret_impl, ret_val);
+			ipc = interpret_RETURN (intr, ipc, ret_impl, ret_val, ret_size);
 			break;
 		case AZO_TC_BIND:
-			ipc = interpret_BIND (intr, ipc, ret_impl, ret_val);
+			ipc = interpret_BIND (intr, ipc);
 			break;
 
 		case NEW_ARRAY:

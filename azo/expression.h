@@ -209,6 +209,8 @@ struct _AZOExpression {
 AZOExpression *azo_expression_new (unsigned int type, unsigned int subtype, unsigned int start, unsigned int end);
 void azo_expression_free (AZOExpression *expr);
 void azo_expression_free_tree (AZOExpression *expr);
+void azo_expression_clear_children (AZOExpression *expr);
+
 AZOExpression *azo_expression_clone_tree (AZOExpression *expr);
 
 unsigned int azo_expression_count_nodes(AZOExpression *tree);
