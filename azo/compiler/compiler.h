@@ -49,7 +49,7 @@ struct _AZOCompiler {
 void azo_compiler_init (AZOCompiler *compiler, AZOContext *ctx);
 void azo_compiler_finalize (AZOCompiler *compiler);
 
-AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, const AZOSource *src);
+AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, unsigned int need_resolve, const AZOSource *src);
 
 void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type);
 AZOFrame *azo_compiler_pop_frame (AZOCompiler *comp);

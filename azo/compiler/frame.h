@@ -15,6 +15,8 @@ typedef struct _AZOFrame AZOFrame;
 
 #include <az/packed-value.h>
 
+#include <azo/code.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -86,14 +88,7 @@ struct _AZOFrame {
 	unsigned int n_parent_vars;
 	AZOVariable *parent_vars;
 	/* Compiled bytecode */
-	unsigned int bc_len;
-	unsigned int bc_size;
-	unsigned char *bc;
-	/* Data */
-	/* fixme: Implement as stack/array */
-	unsigned int data_size;
-	unsigned int data_len;
-	AZPackedValue *data;
+	AZOCode code;
 };
 
 AZOFrame *azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type);
@@ -107,8 +102,6 @@ AZOVariable *azo_frame_lookup_var (AZOFrame *frame, AZString *name);
 AZOVariable *azo_frame_lookup_parent_var (AZOFrame *frame, AZString *name);
 AZOVariable *azo_frame_lookup_chained (AZOFrame *frame, AZString *name);
 
-void azo_frame_ensure_bc_size (AZOFrame *frame, unsigned int amount);
-void azo_frame_ensure_data_size (AZOFrame *frame, unsigned int amount);
 void azo_frame_write_ic (AZOFrame *frame, unsigned int ic);
 void azo_frame_write_ic_u8 (AZOFrame *frame, unsigned int ic, unsigned int val);
 void azo_frame_write_ic_u32 (AZOFrame *frame, unsigned int ic, unsigned int val);

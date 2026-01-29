@@ -372,6 +372,5 @@ azo_compiler_resolve_frame (AZOCompiler *comp, AZOExpression *expr)
 	if (comp->current->ret_type && !ret_is_last) {
 		fprintf (stderr, "azo_compiler_resolve_frame: Missing return statement\n");
 	}
-	azo_frame_reserve_data (comp->current, comp->current->n_parent_vars);
 	return expr;
 }

@@ -56,8 +56,6 @@ struct _LValue {
 	unsigned int n_elements;
 };
 
-static AZOProgram *azo_compiler_compile_noresolve (AZOCompiler *comp, AZOExpression *expr, const AZOSource *src);
-
 void
 azo_compiler_init(AZOCompiler *compiler, AZOContext *ctx)
 {
@@ -240,7 +238,7 @@ azo_compiler_write_TYPE_OF (AZOCompiler *comp, unsigned int pos)
 unsigned int
 azo_compiler_write_JMP_32 (AZOCompiler *comp, unsigned int ic, unsigned int to)
 {
-	unsigned int pos = comp->current->bc_len;
+	unsigned int pos = comp->current->code.bc_len;
 	int32_t raddr = (int) to - (int) (pos + 5);
 	write_tc_u32 (comp, ic, raddr);
 	return pos;
@@ -942,7 +940,8 @@ compile_function (AZOCompiler *comp, const AZOExpression *expr, const AZOSource 
 
 	AZOFrame *prev = comp->current;
 	comp->current = expr->frame;
-	prog = azo_compiler_compile_noresolve (comp, body, src);
+
+	prog = azo_compiler_compile (comp, body, 0, src);
 	if (!prog) {
 		fprintf (stderr, "compile_function: error compiling function\n");
 		comp->current = prev;
@@ -1455,45 +1454,24 @@ compile_program (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *
 	return 1;
 }
 
-static AZOProgram *
-azo_compiler_compile_noresolve (AZOCompiler *comp, AZOExpression *expr, const AZOSource *src)
-{
-	AZOProgram *prog;
-
-	if (expr->term.type == AZO_EXPRESSION_PROGRAM) {
-		if (!compile_program (comp, expr, src)) return NULL;
-	} else if (expr->term.type == AZO_EXPRESSION_BLOCK) {
-		if (!compile_sentence (comp, expr, src)) return NULL;
-	} else {
-		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", expr->term.type);
-		return NULL;
-	}
-	prog = (AZOProgram *) malloc (sizeof (AZOProgram));
-	memset (prog, 0, sizeof (AZOProgram));
-	prog->ctx = comp->ctx;
-	prog->tcode = comp->current->bc;
-	prog->tcode_length = comp->current->bc_len;
-	comp->current->bc = NULL;
-	comp->current->bc_len = 0;
-	comp->current->bc_size = 0;
-	prog->values = comp->current->data;
-	prog->nvalues = comp->current->data_len;
-	comp->current->data = NULL;
-	comp->current->data_size = 0;
-	comp->current->data_len = 0;
-	return prog;
-}
-
 AZOProgram *
-azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, const AZOSource *src)
+azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, unsigned int need_resolve, const AZOSource *src)
 {
 	AZOProgram *prog;
 
-	root = azo_compiler_resolve_frame (comp, root);
+	if (need_resolve) {
+		root = azo_compiler_resolve_frame (comp, root);
+	}
+
+	/* Have to reserve closure before compilation */
+	/* fixme: Here we probably do not have parent vars */
+	azo_frame_reserve_data (comp->current, comp->current->n_parent_vars);
 
 	if (root->term.type == AZO_EXPRESSION_PROGRAM) {
+		/* Programs are lists of sentences */
 		if (!compile_program (comp, root, src)) return NULL;
 	} else if (root->term.type == AZO_EXPRESSION_BLOCK) {
+		/* Function bodies are blocks */
 		if (!compile_sentence (comp, root, src)) return NULL;
 	} else {
 		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", root->term.type);
@@ -1502,15 +1480,15 @@ azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, const AZOSource *s
 	prog = (AZOProgram *) malloc (sizeof (AZOProgram));
 	memset (prog, 0, sizeof (AZOProgram));
 	prog->ctx = comp->ctx;
-	prog->tcode = comp->current->bc;
-	prog->tcode_length = comp->current->bc_len;
-	comp->current->bc = NULL;
-	comp->current->bc_len = 0;
-	comp->current->bc_size = 0;
-	prog->values = comp->current->data;
-	prog->nvalues = comp->current->data_len;
-	comp->current->data = NULL;
-	comp->current->data_size = 0;
-	comp->current->data_len = 0;
+	prog->tcode = comp->current->code.bc;
+	prog->tcode_length = comp->current->code.bc_len;
+	comp->current->code.bc = NULL;
+	comp->current->code.bc_len = 0;
+	comp->current->code.bc_size = 0;
+	prog->values = comp->current->code.data;
+	prog->nvalues = comp->current->code.data_len;
+	comp->current->code.data = NULL;
+	comp->current->code.data_size = 0;
+	comp->current->code.data_len = 0;
 	return prog;
 }

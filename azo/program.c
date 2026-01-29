@@ -46,7 +46,7 @@ azo_program_compile_from_text(AZOContext *ctx,
 	AZOParser parser;
 	azo_parser_setup (&parser, src);
 	AZOExpression *expr = azo_parser_parse (&parser);
-	AZOProgram *prog = azo_compiler_compile (&comp, expr, src);
+	AZOProgram *prog = azo_compiler_compile (&comp, expr, 1, src);
 	azo_parser_release (&parser);
 	azo_source_unref(src);
 	azo_compiler_finalize(&comp);
