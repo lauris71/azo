@@ -176,60 +176,6 @@ azo_frame_lookup_chained (AZOFrame *frame, AZString *name)
 	return NULL;
 }
 
-void
-azo_frame_write_ic (AZOFrame *frame, unsigned int ic)
-{
-	uint8_t ic8 = ic;
-	azo_code_write_bc(&frame->code, &ic8, 1);
-}
-
-void
-azo_frame_write_ic_u8 (AZOFrame *frame, unsigned int ic, unsigned int val)
-{
-	uint8_t ic8[] = {(uint8_t) ic, (uint8_t) val};
-	azo_code_write_bc(&frame->code, &ic8, 2);
-}
-
-void
-azo_frame_write_ic_u32 (AZOFrame *frame, unsigned int ic, unsigned int val)
-{
-	uint8_t ic8 = ic;
-	azo_code_write_bc(&frame->code, &ic8, 1);
-	azo_code_write_bc(&frame->code, &val, 4);
-}
-
-void
-azo_frame_write_ic_u8_u32 (AZOFrame *frame, unsigned int ic, unsigned int val1, unsigned int val2)
-{
-	uint8_t ic8[] = {(uint8_t) ic, (uint8_t) val1};
-	azo_code_write_bc(&frame->code, &ic8, 2);
-	azo_code_write_bc(&frame->code, &val2, 4);
-}
-
-void
-azo_frame_write_ic_u32_u32 (AZOFrame *frame, unsigned int ic, unsigned int val1, unsigned int val2)
-{
-	uint8_t ic8 = ic;
-	azo_code_write_bc(&frame->code, &ic8, 1);
-	azo_code_write_bc(&frame->code, &val1, 4);
-	azo_code_write_bc(&frame->code, &val2, 4);
-}
-
-void
-azo_frame_write_ic_type_value (AZOFrame *frame, unsigned int ic, unsigned int type, const AZValue *val)
-{
-	uint8_t ic8 = ic;
-	azo_code_write_bc(&frame->code, &ic8, 1);
-	uint8_t t8 = type;
-	azo_code_write_bc(&frame->code, &t8, 1);
-	if (type) {
-		unsigned int val_size = az_class_value_size(AZ_CLASS_FROM_TYPE(type));
-		if (val_size) {
-			azo_code_write_bc(&frame->code, val, val_size);
-		}
-	}
-}
-
 unsigned int
 azo_frame_get_current_ip (AZOFrame *frame)
 {

@@ -79,7 +79,7 @@ azo_parser_setup (AZOParser *parser, AZOSource *src)
 	parser->src = src;
 	azo_source_ref(src);
 	azo_tokenizer_setup (&parser->tokenizer, src->cdata, src->csize);
-	parser->parent = NULL;
+	parser->current = NULL;
 }
 
 void
@@ -105,7 +105,7 @@ azo_parser_parse (AZOParser *parser)
 		}
 	}
 
-	return parser->parent;
+	return parser->current;
 }
 
 static void
@@ -132,9 +132,9 @@ AZOExpression *
 parser_get_last (AZOParser *parser)
 {
 	AZOExpression *last;
-	arikkei_return_val_if_fail (parser->parent != NULL, NULL);
-	arikkei_return_val_if_fail (parser->parent->children != NULL, NULL);
-	last = parser->parent->children;
+	arikkei_return_val_if_fail (parser->current != NULL, NULL);
+	arikkei_return_val_if_fail (parser->current->children != NULL, NULL);
+	last = parser->current->children;
 	while (last->next) last = last->next;
 	return last;
 }
@@ -144,9 +144,9 @@ parser_get_last (AZOParser *parser)
 static void
 parser_append (AZOParser *parser, AZOExpression *expr)
 {
-	expr->parent = parser->parent;
-	if (!parser->parent->children) {
-		parser->parent->children = expr;
+	expr->parent = parser->current;
+	if (!parser->current->children) {
+		parser->current->children = expr;
 	} else {
 		AZOExpression *last;
 		last = parser_get_last (parser);
@@ -159,10 +159,10 @@ AZOExpression *
 parser_detach_last (AZOParser *parser)
 {
 	AZOExpression *prev, *last;
-	arikkei_return_val_if_fail (parser->parent != NULL, NULL);
-	arikkei_return_val_if_fail (parser->parent->children != NULL, NULL);
+	arikkei_return_val_if_fail (parser->current != NULL, NULL);
+	arikkei_return_val_if_fail (parser->current->children != NULL, NULL);
 	prev = NULL;
-	last = parser->parent->children;
+	last = parser->current->children;
 	while (last->next) {
 		prev = last;
 		last = last->next;
@@ -170,7 +170,7 @@ parser_detach_last (AZOParser *parser)
 	if (prev) {
 		prev->next = NULL;
 	} else {
-		parser->parent->children = NULL;
+		parser->current->children = NULL;
 	}
 	return last;
 }
@@ -183,7 +183,7 @@ parser_push (AZOParser *parser)
 	AZOExpression *last;
 	last = parser_get_last (parser);
 	arikkei_return_if_fail (last != NULL);
-	parser->parent = last;
+	parser->current = last;
 }
 
 /* Pop current and go to previous parent */
@@ -191,8 +191,8 @@ parser_push (AZOParser *parser)
 static void
 parser_pop (AZOParser *parser)
 {
-	arikkei_return_if_fail (parser->parent->parent != NULL);
-	parser->parent = parser->parent->parent;
+	arikkei_return_if_fail (parser->current->parent != NULL);
+	parser->current = parser->current->parent;
 }
 
 static unsigned int
@@ -230,14 +230,14 @@ static unsigned int
 parse_program (AZOParser *parser, AZOToken *token)
 {
 	AZOExpression *expr = azo_expression_new (AZO_EXPRESSION_PROGRAM, EXPRESSION_GENERIC, token->start, token->end);
-	parser->parent = expr;
+	parser->current = expr;
 	unsigned int result = azo_parser_parse_sentences (parser, token);
 	expr->term.end = token->start;
 	if (result) return result;
 	if (token->type != AZO_TOKEN_EOF) {
 		return ERROR_SYNTAX;
 	}
-	if (parser->parent != expr) {
+	if (parser->current != expr) {
 		fprintf(stderr, "parse_program: Internal error\n");
 	}
 	return result;

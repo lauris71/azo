@@ -15,7 +15,6 @@ extern "C" {
 
 enum {
 	NOP = 0,
-	END,
 
 	/* EXCEPTION MASK(U32) */
 	AZO_TC_EXCEPTION,

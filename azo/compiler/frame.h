@@ -102,13 +102,6 @@ AZOVariable *azo_frame_lookup_var (AZOFrame *frame, AZString *name);
 AZOVariable *azo_frame_lookup_parent_var (AZOFrame *frame, AZString *name);
 AZOVariable *azo_frame_lookup_chained (AZOFrame *frame, AZString *name);
 
-void azo_frame_write_ic (AZOFrame *frame, unsigned int ic);
-void azo_frame_write_ic_u8 (AZOFrame *frame, unsigned int ic, unsigned int val);
-void azo_frame_write_ic_u32 (AZOFrame *frame, unsigned int ic, unsigned int val);
-void azo_frame_write_ic_u8_u32 (AZOFrame *frame, unsigned int ic, unsigned int val1, unsigned int val2);
-void azo_frame_write_ic_u32_u32 (AZOFrame *frame, unsigned int ic, unsigned int val1, unsigned int val2);
-void azo_frame_write_ic_type_value (AZOFrame *frame, unsigned int ic, unsigned int type, const AZValue *val);
-
 unsigned int azo_frame_get_current_ip (AZOFrame *frame);
 void azo_frame_update_JMP_to (AZOFrame *frame, unsigned int loc);
 

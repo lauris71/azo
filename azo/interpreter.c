@@ -1900,7 +1900,6 @@ interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 void
 interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
 {
-	const unsigned char *ipc;
 	AZOProgram *last_prog;
 
 	last_prog = intr->prog;
@@ -1909,8 +1908,9 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 	//fprintf (stderr, "Starting interpreter\n");
 	//azo_stack_print_contents (&intr->stack, stderr);
 
-	ipc = prog->tcode;
-	while (*ipc != END) {
+	const uint8_t *ipc = prog->tcode;
+	const uint8_t *end = ipc + prog->tcode_length;
+	while (ipc < end) {
 		// double start = arikkei_get_time ();
 		switch (*ipc & 127) {
 

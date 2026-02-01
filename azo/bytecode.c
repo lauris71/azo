@@ -53,9 +53,6 @@ print_0x00 (const unsigned char *ip)
 	case NOP:
 		fprintf (stdout, "NOP\n");
 		break;
-	case END:
-		fprintf (stdout, "END\n");
-		break;
 	}
 	return ip + 4;
 }
@@ -113,7 +110,6 @@ print_bytecode (AZOProgram *prog)
 		fprintf (stdout, "%04X ", (int) (ip - code));
 		switch (*ip & 127) {
 		case NOP:
-		case END:
 			ip = print_0x00 (ip);
 			break;
 		case AZO_TC_POP:
