@@ -53,7 +53,9 @@ set_property(TARGET azo PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(azo PUBLIC
 	${PROJECT_SOURCE_DIR}
 	${CMAKE_SOURCE_DIR}/arikkei
+	${CMAKE_SOURCE_DIR}/../arikkei
     ${CMAKE_SOURCE_DIR}/az
+    ${CMAKE_SOURCE_DIR}/../az
 )
 
 add_subdirectory(compiler)
