@@ -49,7 +49,8 @@ static const char *excnames[] = {
 	"Loss of precision",
 	"NULL dereference",
 	"Out of bounds",
-	"Invalid property"
+	"Invalid property",
+	"Invalid value"
 };
 
 unsigned int

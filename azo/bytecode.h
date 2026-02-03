@@ -20,6 +20,11 @@ enum {
 	AZO_TC_EXCEPTION,
 	AZO_TC_EXCEPTION_IF,
 	AZO_TC_EXCEPTION_IF_NOT,
+	/*
+	 * AZO_TC_EXCEPTION_IF_TYPE_IS_NOT pos type
+	 * Throw INVALID_TYPE if element at pos is not type
+	 */
+	AZO_TC_EXCEPTION_IF_TYPE_IS_NOT,
 
 	/* DEBUG OP(U32) [STRING] */
 	AZO_TC_DEBUG,
@@ -57,8 +62,13 @@ enum {
 	/* Exchange POS(U32) */
 	/* Exchanges element with topmost */
 	EXCHANGE,
-	/* EXCHANGE_FRAME POS(U32) */
-	/* Exchanges frame-relative element with topmost */
+	/**
+	 * @brief Exchanges frame-relative element with top of stack
+	 * 
+	 * EXCHANGE_FRAME U32:POS
+	 * [..., val1, ..., val2]
+	 * [..., val2, ..., val1]
+	 */
 	AZO_TC_EXCHANGE_FRAME,
 
 	/* Type tests */
@@ -218,7 +228,17 @@ enum {
 	AZO_TC_LOOKUP_PROPERTY,
 	/* fixme: remove this */
 	GET_ATTRIBUTE,
-	SET_ATTRIBUTE,
+	/**
+	 * @brief Set value in dictionary
+	 * 
+	 * SET_ATTRIBUTE
+	 * [instance, key, value]
+	 * []
+	 * 
+	 * Throws INVALID_TYPE if instance is not dictionary
+	 * Throws INVALID_VALUE if attribute cannot be set
+	 */
+	AZO_TC_SET_ATTRIBUTE,
 };
 
 /* Debug */

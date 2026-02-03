@@ -44,7 +44,7 @@ enum {
 	LVALUE_MEMBER,
 	/* Array element, stack(1) is array, stack(0) is index */
 	LVALUE_ELEMENT,
-	/* Contant */
+	/* Constant */
 	LVALUE_VALUE
 };
 
@@ -335,7 +335,7 @@ static unsigned int compile_step_statement (AZOCompiler *comp, const AZOExpressi
 static unsigned int compile_declaration (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
 static unsigned int compile_single_declaration (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src, unsigned int type);
 static unsigned int compile_silent_statement (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
-static unsigned int compile_assign (AZOCompiler *comp, const AZOExpression *left, const AZOExpression *right, const AZOExpression *expr, const AZOSource *src);
+static unsigned int compile_assign (AZOCompiler *comp, const AZOExpression *left, const AZOExpression *right, const AZOSource *src);
 /* Expressions */
 static unsigned int compile_variable_reference (AZOCompiler *comp, const AZOExpression *expr, unsigned int type, const AZOSource *src);
 static unsigned int compile_singular_reference (AZOCompiler *comp, const AZOExpression *expr);
@@ -375,64 +375,74 @@ azo_compiler_compile_constant (AZOCompiler *comp, const AZOExpression *expr, con
 	return 1;
 }
 
-/* Assign stack(0) to already compiled lvalue */
+/**
+ * @brief Assign top of stack to already compiled lvalue
+ * 
+ * Only LVALUE_STACK, LVALUE_MEMBER and LVALUE_ELEMENT allowed
+ * 
+ */
 
-static void
+static unsigned int
 compile_assign_to_lvalue (AZOCompiler *comp, LValue *lval, const AZOExpression *expr)
 {
 	if (lval->type == LVALUE_STACK) {
-		/* Value */
+		/* [..., prev, ..., value] */
 		write_tc_u32 (comp, AZO_TC_EXCHANGE_FRAME, lval->pos, expr);
-		azo_compiler_write_POP (comp, 1, NULL);
+		/* [..., value, ..., prev] */
+		azo_compiler_write_POP (comp, 1, expr);
+		/* [..., value, ...] */
 	} else if (lval->type == LVALUE_MEMBER) {
-		unsigned int finished_1, finished_2, invalid_type;
-		/* Object, member, value */
+		/* [instance, key, value] */
 		azo_compiler_write_ic (comp, AZO_TC_SET_PROPERTY, expr);
-		/* true | (object, member, value, false) */
-		finished_1 = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
-		/* Object, member, value */
-		azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 2, AZ_TYPE_ATTRIBUTE_DICT);
-		invalid_type = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
-		azo_compiler_write_ic (comp, SET_ATTRIBUTE, expr);
-		finished_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
-
-		azo_compiler_update_JMP_32 (comp, invalid_type);
-		azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, expr);
-
-		azo_compiler_update_JMP_32 (comp, finished_1);
-		azo_compiler_update_JMP_32 (comp, finished_2);
+		/* [true] */
+		/* [instance, key, value, false] */
+		unsigned int finished = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, expr);
+		/* [instance, key, value] */
+		azo_compiler_write_ic (comp, AZO_TC_SET_ATTRIBUTE, expr);
+		/* [] */
+		azo_compiler_update_JMP_32 (comp, finished);
 	} else if (lval->type == LVALUE_ELEMENT) {
-		/* Array, index, value */
+		/* [array, index, value] */
 		azo_compiler_write_ic (comp, WRITE_ARRAY_ELEMENT, expr);
-		azo_compiler_write_POP (comp, 1, NULL);
+		/* [array] */
+		azo_compiler_write_POP (comp, 1, expr);
+		/* [] */
 	} else {
 		fprintf (stderr, "Unassignable lvalue type\n");
+		return 0;
 	}
+	return 1;
 }
 
 /* Compile LValue expression into LValue structure */
-/* Only reference, function call and array element expressions are allowed here */
+/* Only variable, reference, function call and array element expressions are allowed here */
 
 static unsigned int
 compile_lvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src, LValue *lvalue, unsigned int read_only)
 {
-	AZOExpression *left, *right;
 	if (expr->term.type == EXPRESSION_VARIABLE) {
 		if (expr->term.subtype == VARIABLE_LOCAL) {
-			/* Declared in current instance */
+			/*
+			 * Declared in current instance
+			 *
+			 * No code, bare LValue
+			 */
 			lvalue->type = LVALUE_STACK;
 			//lvalue->pos = comp->current->n_sig_vars + comp->current->n_parent_vars + expr->var_pos;
 			lvalue->pos = expr->var_pos;
 			lvalue->n_elements = 0;
 			return 1;
 		} else {
-			/* Declared in parent frame */
+			/*
+			 * Declared in parent frame
+			 *
+			 * No code, bare LValue
+			 */
 			if (!read_only) {
 				fprintf (stderr, "Parent variable in writable lvalue\n");
 				return 0;
 			}
 			lvalue->type = LVALUE_VALUE;
-			//lvalue->pos = comp->current->n_sig_vars + expr->var_pos;
 			lvalue->pos = expr->var_pos;
 			lvalue->n_elements = 0;
 			return 1;
@@ -448,8 +458,8 @@ compile_lvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *s
 			return 1;
 		} else if (expr->term.subtype == REFERENCE_MEMBER) {
 			lvalue->type = LVALUE_MEMBER;
-			left = expr->children;
-			right = left->next;
+			AZOExpression *left = expr->children;
+			AZOExpression *right = left->next;
 			if (!azo_compiler_compile_expression (comp, left, src)) return 0;
 			compile_PUSH_VALUE_string (comp, right->value.v.string);
 			lvalue->n_elements = 2;
@@ -459,8 +469,8 @@ compile_lvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *s
 		}
 	} else if (expr->term.type == EXPRESSION_ARRAY_ELEMENT) {
 		lvalue->type = LVALUE_ELEMENT;
-		left = expr->children;
-		right = left->next;
+		AZOExpression *left = expr->children;
+		AZOExpression *right = left->next;
 		if (!azo_compiler_compile_expression (comp, left, src)) return 0;
 		if (!azo_compiler_compile_expression (comp, right, src)) return 0;
 		lvalue->n_elements = 2;
@@ -471,11 +481,18 @@ compile_lvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *s
 	return 1;
 }
 
+static void
+compile_type_exception(AZOCompiler *comp, const AZOExpression *expr, unsigned int type, const AZOSource *src)
+{
+	azo_code_write_ic_u32_u32 (&comp->current->code, AZO_TC_EXCEPTION_IF_TYPE_IS_NOT, 0, type, expr);
+}
+
 static unsigned int
 compile_expression_boolean (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
 {
-	/* fixme: Convert result or not? */
-	return azo_compiler_compile_expression (comp, expr, src);
+	if (!azo_compiler_compile_expression (comp, expr, src)) return 0;
+	compile_type_exception(comp, expr, AZ_TYPE_BOOLEAN, src);
+	return 1;
 }
 
 static unsigned int
@@ -1145,6 +1162,7 @@ compile_singular_reference (AZOCompiler *comp, const AZOExpression *expr)
 {
 	AZOVariable *var = azo_frame_lookup_var (comp->current, expr->value.v.string);
 	if (var) {
+		/* We have variable reference that is not resolved */
 		fprintf (stderr, "compile_singular_reference: Internal error - variable %s is not resolved\n", expr->value.v.string->str);
 		return 0;
 	} else {
@@ -1200,12 +1218,15 @@ azo_compiler_compile_expression (AZOCompiler *comp, const AZOExpression *expr, c
 }
 
 static unsigned int
-compile_assign (AZOCompiler *comp, const AZOExpression *left, const AZOExpression *right, const AZOExpression *expr, const AZOSource *src)
+compile_assign (AZOCompiler *comp, const AZOExpression *left, const AZOExpression *right, const AZOSource *src)
 {
 	LValue lval;
+	/* Push necessary components (instance+key or array+index) */
 	if (!compile_lvalue (comp, left, src, &lval, 0)) return 0;
+	/* Push value */
 	if (!azo_compiler_compile_expression (comp, right, src)) return 0;
-	compile_assign_to_lvalue (comp, &lval, NULL);
+	/* Actual assignment */
+	if (!compile_assign_to_lvalue (comp, &lval, left)) return 0;
 	return 1;
 }
 
@@ -1216,7 +1237,7 @@ compile_silent_statement (AZOCompiler *comp, const AZOExpression *expr, const AZ
 	case AZO_TERM_EMPTY:
 		break;
 	case EXPRESSION_ASSIGN:
-		if (!compile_assign (comp, expr->children, expr->children->next, expr, src)) return 0;
+		if (!compile_assign (comp, expr->children, expr->children->next, src)) return 0;
 		break;
 	case EXPRESSION_FUNCTION_CALL:
 		if (!compile_function_call (comp, expr->children, expr->children->next, src, 1)) return 0;

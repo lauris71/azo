@@ -336,6 +336,24 @@ interpret_EXCEPTION (AZOInterpreter *intr, const unsigned char *ip)
 	return NULL;
 }
 
+/*
+* AZO_TC_EXCEPTION_IF_TYPE_IS_NOT pos type
+* Throw INVALID_TYPE if element at pos is not type
+*/
+static const unsigned char *
+interpret_type_EXCEPTION (AZOInterpreter *intr, const unsigned char *ip)
+{
+	uint32_t pos, type;
+	memcpy (&pos, ip + 1, 4);
+	memcpy (&type, ip + 5, 4);
+	if ((*ip & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, pos + 1)) return NULL;
+	if (az_type_is_a(azo_stack_type_bw(&intr->stack, pos), type)) {
+		return ip + 9;
+	}
+	azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1U << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
+	return NULL;
+}
+
 static const unsigned char *
 interpret_DEBUG (AZOInterpreter *intr, AZOProgram *prog, const unsigned char *ip)
 {
@@ -1877,10 +1895,19 @@ interpret_GET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 	return ip + 1;
 }
 
+/**
+ * @brief Set value in dictionary
+ * 
+ * SET_ATTRIBUTE
+ * [instance, key, value]
+ * []
+ * 
+ * Throws INVALID_TYPE if instance is not dictionary
+ * Throws INVALID_VALUE if attribute cannot be set
+ */
 static const unsigned char *
 interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 {
-	AZString *key;
 	void *attrd_inst;
 	const AZAttribDictImplementation *attrd_impl;
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
@@ -1888,9 +1915,16 @@ interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 		if (!test_stack_type_implements (intr, ip, 2, AZ_TYPE_ATTRIBUTE_DICT)) return NULL;
 		if (!test_stack_type_exact (intr, ip, 1, AZ_TYPE_STRING)) return NULL;
 	}
-	key = ( AZString *) azo_stack_instance_bw (&intr->stack, 1);
+	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
 	attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 2), azo_stack_instance_bw (&intr->stack, 2), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
-	az_attrib_dict_set (attrd_impl, attrd_inst, key, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), 0);
+	if (!attrd_impl) {
+		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
+		return NULL;
+	}
+	if (!az_attrib_dict_set (attrd_impl, attrd_inst, key, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), 0)) {
+		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_VALUE, 1UL << AZO_EXCEPTION_INVALID_VALUE, (unsigned int) (ip - intr->prog->tcode));
+		return NULL;
+	}
 	azo_stack_pop (&intr->stack, 3);
 	return ip + 1;
 }
@@ -1918,6 +1952,9 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 		case AZO_TC_EXCEPTION_IF:
 		case AZO_TC_EXCEPTION_IF_NOT:
 			ipc = interpret_EXCEPTION (intr, ipc);
+			break;
+		case AZO_TC_EXCEPTION_IF_TYPE_IS_NOT:
+			ipc = interpret_type_EXCEPTION (intr, ipc);
 			break;
 
 		case AZO_TC_DEBUG:
@@ -2114,7 +2151,7 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 		case GET_ATTRIBUTE:
 			ipc = interpret_GET_ATTRIBUTE (intr, ipc);
 			break;
-		case SET_ATTRIBUTE:
+		case AZO_TC_SET_ATTRIBUTE:
 			ipc = interpret_SET_ATTRIBUTE (intr, ipc);
 			break;
 
