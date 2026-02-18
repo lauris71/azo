@@ -18,16 +18,16 @@ typedef struct _AZODebugInfo AZODebugInfo;
 
 struct _AZODebugTerm {
     AZOTerm term;
-    unsigned int tc_start;
-    unsigned int tc_end;
+    unsigned int line;
 };
 
 struct _AZODebugInfo {
     unsigned int n_terms;
     AZODebugTerm *terms;
-    unsigned int terms_size;
+    AZOSource *src;
 };
 
+void azo_debug_info_setup(AZODebugInfo *dbg, const AZOCode *code, AZOSource *src);
 void azo_debug_info_release(AZODebugInfo *dbg);
 
 #ifdef __cplusplus

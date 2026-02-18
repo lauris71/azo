@@ -51,6 +51,8 @@ void azo_interpreter_pop_frame (AZOInterpreter *intr);
 void azo_interpreter_clear_frame (AZOInterpreter *intr);
 void azo_interpreter_restore_frame (AZOInterpreter *intr, unsigned int frame);
 
+// fixme: Make return val part of program/interpreter
+void azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog);
 void interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size);
 
 void azo_intepreter_print_stack (AZOInterpreter *intr, FILE *ofs);

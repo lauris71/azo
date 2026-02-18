@@ -91,7 +91,7 @@ struct _AZOFrame {
 	AZOCode code;
 };
 
-AZOFrame *azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type);
+AZOFrame *azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int debug);
 void azo_frame_delete (AZOFrame *frame);
 void azo_frame_delete_tree (AZOFrame *frame);
 

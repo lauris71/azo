@@ -15,6 +15,30 @@
 
 #include <azo/program.h>
 
+AZOProgram *
+azo_program_new(AZOContext *ctx, AZOCode *code, AZOExpression *tree, AZOSource *src)
+{
+	AZOProgram *prog = (AZOProgram *) malloc(sizeof(AZOProgram));
+	memset (prog, 0, sizeof (AZOProgram));
+	prog->ctx = ctx;
+	prog->tcode = code->bc;
+	prog->tcode_length = code->bc_len;
+	prog->values = code->data;
+	prog->nvalues = code->data_len;
+	if (code->exprs) {
+		azo_debug_info_setup(&prog->debug, code, src);
+	}
+	/* Clear code */
+	code->bc = NULL;
+	code->bc_len = 0;
+	code->bc_size = 0;
+	code->data = NULL;
+	code->data_size = 0;
+	code->data_len = 0;
+
+	return prog;
+}
+
 void
 azo_program_delete (AZOProgram *program)
 {

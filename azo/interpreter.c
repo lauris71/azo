@@ -6,7 +6,7 @@
 * Copyright (C) Lauris Kaplinski 2016
 */
 
-#define debug 1
+#define DEBUG_COMP 1
 
 #include <assert.h>
 #include <math.h>

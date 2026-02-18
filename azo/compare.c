@@ -185,7 +185,7 @@ compile_comparison_eq_arithmetic_arithmetic (AZOCompiler *comp, unsigned int com
 }
 
 static unsigned int
-azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, unsigned int comp_type, const AZOSource *src, unsigned int reg)
+azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, unsigned int comp_type, AZOSource *src, unsigned int reg)
 {
 	unsigned int rhs_is_none, lhs_is_none, invalid_type_cmp_none;
 	unsigned int rhs_is_boolean, invalid_type_cmp_boolean;
@@ -269,7 +269,7 @@ azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, const AZOExpressi
 
 
 static unsigned int
-compile_comparison_any_const_eq (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, unsigned int comp_type, const AZOSource *src, unsigned int reg)
+compile_comparison_any_const_eq (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, unsigned int comp_type, AZOSource *src, unsigned int reg)
 {
 	unsigned int invalid_type, finished;
 	if (!rhs->value.impl) {
@@ -306,7 +306,7 @@ compile_comparison_any_const_eq (AZOCompiler *comp, const AZOExpression *lhs, co
 }
 
 static unsigned int
-azo_compiler_compile_comparison_eq (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, unsigned int comp_type, const AZOSource *src, unsigned int reg)
+azo_compiler_compile_comparison_eq (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, unsigned int comp_type, AZOSource *src, unsigned int reg)
 {
 	if (rhs->term.type == EXPRESSION_CONSTANT) {
 		return compile_comparison_any_const_eq (comp, lhs, rhs, comp_type, src, reg);
@@ -318,7 +318,7 @@ azo_compiler_compile_comparison_eq (AZOCompiler *comp, const AZOExpression *lhs,
 }
 
 static unsigned int
-azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, const AZOSource *src, unsigned int reg)
+azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, AZOSource *src, unsigned int reg)
 {
 	unsigned int lhs_type_lt_i8, lhs_type_gt_double, rhs_type_lt_i8, rhs_type_gt_double;
 	unsigned int types_equal_1, types_equal_2, lhs_type_gt_rhs_type;
@@ -435,7 +435,7 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, const AZOExpressi
 }
 
 static unsigned int
-compile_comparison_any_const_lg (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, const AZOSource *src, unsigned int reg)
+compile_comparison_any_const_lg (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, AZOSource *src, unsigned int reg)
 {
 	unsigned int lhs_type_lt_i8, lhs_type_gt_double;
 	unsigned int types_equal_1, types_equal_2, lhs_type_gt_rhs_type;
@@ -515,7 +515,7 @@ compile_comparison_any_const_lg (AZOCompiler *comp, const AZOExpression *lhs, co
 }
 
 unsigned int
-azo_compiler_compile_comparison (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, const AZOSource *src, unsigned int reg)
+azo_compiler_compile_comparison (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, AZOSource *src, unsigned int reg)
 {
 	if ((expr->term.subtype == COMPARISON_E) || (expr->term.subtype == COMPARISON_NE)) {
 		return azo_compiler_compile_comparison_eq (comp, lhs, rhs, expr->term.subtype, src, reg);

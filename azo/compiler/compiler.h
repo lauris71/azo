@@ -49,7 +49,7 @@ struct _AZOCompiler {
 void azo_compiler_init (AZOCompiler *compiler, AZOContext *ctx);
 void azo_compiler_finalize (AZOCompiler *compiler);
 
-AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, unsigned int need_resolve, const AZOSource *src);
+AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, unsigned int need_resolve, AZOSource *src);
 
 void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type);
 AZOFrame *azo_compiler_pop_frame (AZOCompiler *comp);
@@ -82,7 +82,7 @@ void azo_compiler_write_COMPARE_TYPED (AZOCompiler *comp, uint8_t type);
 void azo_compiler_write_ARITHMETIC_TYPED (AZOCompiler *comp, unsigned int typecode, uint8_t type);
 void azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint8_t type);
 
-unsigned int azo_compiler_compile_expression (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
+unsigned int azo_compiler_compile_expression (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
 
 #ifdef __cplusplus
 }

@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-	unsigned int azo_compiler_compile_comparison (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, const AZOSource *src, unsigned int reg);
+	unsigned int azo_compiler_compile_comparison (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, AZOSource *src, unsigned int reg);
 
 #ifdef __cplusplus
 }

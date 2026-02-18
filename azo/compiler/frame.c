@@ -100,7 +100,7 @@ azo_scope_ensure_local_var (AZOScope *scope, AZOVariable *var)
 }
 
 AZOFrame *
-azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type)
+azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int debug)
 {
 	AZOFrame *frame = (AZOFrame *) malloc (sizeof (AZOFrame));
 	memset (frame, 0, sizeof (AZOFrame));
@@ -110,6 +110,7 @@ azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_i
 	frame->this_inst = this_inst;
 	/* fixme: Declare this like other variables? */
 	frame->scope = azo_scope_new (NULL, 1);
+	azo_code_init(&frame->code, debug);
 	return frame;
 }
 

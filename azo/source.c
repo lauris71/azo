@@ -94,8 +94,8 @@ azo_source_find_line_range (AZOSource *src, unsigned int start, unsigned int end
 		if ((line_start <= (end - 1)) && (line_end > (end - 1))) l = i;
 	}
 	if ((f < src->n_lines) && (l < src->n_lines)) {
-		*first = f;
-		*last = l;
+		if (first) *first = f;
+		if (last) *last = l;
 		return 1;
 	}
 	return 0;
