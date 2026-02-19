@@ -83,6 +83,7 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, const AZImplementa
 	unsigned int frame = intr->n_frames;
 	azo_interpreter_push_frame (intr, 0);
 	azo_intepreter_push_values (intr, arg_impls, arg_vals, n_args);
-	interpreter_interpret (intr, prog, ret_impl, ret_val, ret_size);
+	azo_interpreter_run (intr, prog);
+	*ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
 	azo_interpreter_restore_frame (intr, frame);
 }

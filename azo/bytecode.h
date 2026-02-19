@@ -7,6 +7,8 @@
 * Copyright (C) Lauris Kaplinski 2016
 */
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -28,6 +30,8 @@ enum {
 
 	/* DEBUG OP(U32) [STRING] */
 	AZO_TC_DEBUG,
+	/* DEBUG u32:LOC */
+	AZO_TC_DEBUG_STR,
 
 	/* Stack management */
 
@@ -90,10 +94,22 @@ enum {
 	AZO_TC_TYPE_IS_SUPER_IMMEDIATE,
 	/* Test whether the element implements certain type */
 	AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE,
-	/* TYPE_OF POS(U8) */
-	/* Get type of stack element as UINT32 */
+	/**
+	 * @brief Get type of value
+	 * 
+	 * TYPE_OF u8:POS
+	 * [val, ...]
+	 * [val, ..., type]
+	 */
 	TYPE_OF,
-	TYPE_OF_CLASS,
+	/**
+	 * @brief Get type from class
+	 * 
+	 * TYPE_OF_CLASS u8:POS
+	 * [class, ...]
+	 * [class, ..., type]
+	 */
+	AZO_TC_TYPE_OF_CLASS,
 
 	/* Jumps */
 
@@ -107,11 +123,6 @@ enum {
 	JMP_32_IF_POSITIVE,
 	JMP_32_IF_NEGATIVE,
 
-	/* Conversions */
-	/* POINTER_TO_U64 */
-	/* Replaces topmost stack pointer with equivalent U64 */
-	POINTER_TO_U64,
-	U64_TO_POINTER,
 	/* PROMOTE POS(U8) */
 	/* Promote given element in-place ty tupe specified by stack(0) */
 	/* Only arithmetic types are allowed */
@@ -177,9 +188,20 @@ enum {
 
 	/* Invoke function */
 	AZO_TC_INVOKE,
-	/* Return */
-	/* Topmost stack element is return value (if applicable) */
+	/**
+	 * @brief Return from frame
+	 * 
+	 * RETURN
+	 * []
+	 */
 	AZO_TC_RETURN,
+	/**
+	 * @brief Return with value
+	 * 
+	 * RETURN_VALUE
+	 * [value]
+	 */
+	AZO_TC_RETURN_VALUE,
 	/* Bind function */
 	/* FUNCTION -> FUNCTION */
 	AZO_TC_BIND,
@@ -239,7 +261,23 @@ enum {
 	 * Throws INVALID_VALUE if attribute cannot be set
 	 */
 	AZO_TC_SET_ATTRIBUTE,
+	AZO_TC_END
 };
+
+/**
+ * @brief Print one bytecode instruction
+ * 
+ * Unless d_len is 0, the terminating 0 is always written
+ * 
+ * @param d the destination buffer
+ * @param d_len the size of destination buffer
+ * @param ipc bytecode buffer
+ * @param len the size of bytecode buffer
+ * @return 
+ */
+unsigned int azo_bc_print_instruction(uint8_t *d, unsigned int d_len, const uint8_t *ipc, unsigned int len);
+
+const uint8_t *azo_bc_next_instruction(const uint8_t *ipc, unsigned int len);
 
 /* Debug */
 typedef struct _AZOProgram AZOProgram;

@@ -140,7 +140,7 @@ azo_compiler_compile_arithmetic_boolean (AZOCompiler *comp, unsigned int operati
 }
 
 unsigned int
-azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, const AZOSource *src)
+azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, AZOSource *src)
 {
 	if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
 	if (!azo_compiler_compile_expression (comp, rhs, src)) return 0;
@@ -168,7 +168,7 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZOExpression *lhs, co
 }
 
 unsigned int
-azo_compiler_compile_tilde (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+azo_compiler_compile_tilde (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	unsigned int lt_i8, gt_i64, gt_cd, finished_1, finished_2;
 	if (!azo_compiler_compile_expression (comp, expr, src)) return 0;
@@ -188,7 +188,7 @@ azo_compiler_compile_tilde (AZOCompiler *comp, const AZOExpression *expr, const 
 }
 
 unsigned int
-azo_compiler_compile_increment (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *expr, const AZOSource *src)
+azo_compiler_compile_increment (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *expr, AZOSource *src)
 {
 	unsigned int lhs_type_lt_min, lhs_type_gt_max;
 	unsigned int types_equal;
@@ -225,7 +225,7 @@ azo_compiler_compile_increment (AZOCompiler *comp, const AZOExpression *lhs, con
 }
 
 unsigned int
-azo_compiler_compile_decrement (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *expr, const AZOSource *src)
+azo_compiler_compile_decrement (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *expr, AZOSource *src)
 {
 	unsigned int lhs_type_lt_min, lhs_type_gt_max;
 	unsigned int types_equal;

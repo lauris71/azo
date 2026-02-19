@@ -16,6 +16,7 @@
 #include <stdio.h>
 
 #include <arikkei/arikkei-iolib.h>
+#include <arikkei/arikkei-strlib.h>
 
 #include <az/classes/active-object.h>
 #include <az/boxed-interface.h>
@@ -49,6 +50,8 @@ azo_interpreter_new (AZOContext *ctx)
 
 	az_instance_init_by_type (&intr->stack, AZO_TYPE_STACK);
 	az_instance_init_by_type (&intr->exc, AZO_TYPE_EXCEPTION);
+
+	intr->flags = AZO_INTR_FLAG_CHECK_ARGS;
 
 	return intr;
 }
@@ -230,6 +233,8 @@ test_stack_type_exact (AZOInterpreter *intr, const unsigned char *ip, unsigned i
 	return 1;
 }
 
+#define CHECK_STACK_TYPE_EXACT(intr,ip,pos,type) if (((intr->flags & AZO_INTR_FLAG_CHECK_ARGS) || (*ip & AZO_TC_CHECK_ARGS)) && !test_stack_type_exact(intr, ip, pos, type)) return NULL;
+
 static unsigned int
 test_stack_type_is (AZOInterpreter *intr, const unsigned char *ip, unsigned int pos, unsigned int type)
 {
@@ -320,13 +325,13 @@ interpret_EXCEPTION (AZOInterpreter *intr, const unsigned char *ip)
 	uint32_t type;
 	memcpy (&type, ip + 1, 4);
 	if ((*ip & 0x7f) == AZO_TC_EXCEPTION_IF) {
-		if ((*ip & AZO_TC_CHECK_ARGS) && !test_stack_type_exact (intr, ip, 0, AZ_TYPE_BOOLEAN)) return NULL;
+		CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_BOOLEAN);
 		if(!azo_stack_boolean_bw(&intr->stack, 0)) {
 			azo_stack_pop (&intr->stack, 1);
 			return ip + 5;
 		}
 	} else if ((*ip & 0x7f) == AZO_TC_EXCEPTION_IF_NOT) {
-		if ((*ip & AZO_TC_CHECK_ARGS) && !test_stack_type_exact (intr, ip, 0, AZ_TYPE_BOOLEAN)) return NULL;
+		CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_BOOLEAN);
 		if (azo_stack_boolean_bw(&intr->stack, 0)) {
 			azo_stack_pop (&intr->stack, 1);
 			return ip + 5;
@@ -357,19 +362,15 @@ interpret_type_EXCEPTION (AZOInterpreter *intr, const unsigned char *ip)
 static const unsigned char *
 interpret_DEBUG (AZOInterpreter *intr, AZOProgram *prog, const unsigned char *ip)
 {
-	uint32_t op, len = 5;
+	uint32_t op;
 	memcpy (&op, ip + 1, 4);
-	if (op == 1) {
+	if ((*ip & 127) == AZO_TC_DEBUG) {
 		fprintf (stderr, "Debug: IPC = %u\n", (unsigned int) (ip - intr->prog->tcode));
 		azo_intepreter_print_stack (intr, stderr);
-		// azo_stack_print_contents (&intr->stack, 0, intr->stack.length, stderr);
-	} else if (op == 2) {
-		uint32_t loc;
-		memcpy (&loc, ip + 5, 4);
-		fprintf (stderr, "Debug: %s\n", prog->values[loc].v.string->str);
-		len += 4;
+	} else {
+		fprintf (stderr, "Debug: %s\n", prog->values[op].v.string->str);
 	}
-	return ip + len;
+	return ip + 5;
 }
 
 static const unsigned char *
@@ -530,7 +531,7 @@ interpret_TYPE (AZOInterpreter *intr, const unsigned char *ip)
 {
 	unsigned int pos, result;
 	pos = ip[1];
-	if ((*ip & AZO_TC_CHECK_ARGS) && !test_stack_type_exact (intr, ip, 0, AZ_TYPE_UINT32)) return NULL;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_UINT32);
 	if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, pos + 1)) return NULL;
 	uint32_t type = azo_stack_uint32_bw(&intr->stack, 0);
 	switch (ip[0] & 127) {
@@ -588,7 +589,7 @@ interpret_TYPE_OF (AZOInterpreter *intr, const unsigned char *ip)
 		type = azo_stack_type_bw (&intr->stack, pos);
 		azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE(AZ_TYPE_UINT32), &type);
 	} else {
-		if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_type_exact (intr, ip, 0, AZ_TYPE_CLASS)) return NULL;
+		CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_CLASS);
 		AZClass *klass = (AZClass *) azo_stack_instance_bw (&intr->stack, 0);
 		azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE(AZ_TYPE_UINT32), &AZ_CLASS_TYPE(klass));
 	}
@@ -612,53 +613,28 @@ interpret_JMP_32_COND (AZOInterpreter *intr, const unsigned char *ip)
 	dst = ip + 5;
 	switch (ip[0] & 0x7f) {
 	case JMP_32_IF:
-		if ((*ip & AZO_TC_CHECK_ARGS) && !test_stack_type_exact (intr, ip, 0, AZ_TYPE_BOOLEAN)) return NULL;
+		CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_BOOLEAN);
 		if (azo_stack_boolean_bw(&intr->stack, 0)) dst += raddr;
 		break;
 	case JMP_32_IF_NOT:
-		if ((*ip & AZO_TC_CHECK_ARGS) && !test_stack_type_exact (intr, ip, 0, AZ_TYPE_BOOLEAN)) return NULL;
+		CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_BOOLEAN);
 		if (!azo_stack_boolean_bw(&intr->stack, 0)) dst += raddr;
 		break;
 	case JMP_32_IF_ZERO:
-		if ((*ip & AZO_TC_CHECK_ARGS) && !test_stack_type_exact (intr, ip, 0, AZ_TYPE_INT32)) return NULL;
+		CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_INT32);
 		if (azo_stack_int32_bw(&intr->stack, 0) == 0) dst += raddr;
 		break;
 	case JMP_32_IF_POSITIVE:
-		if ((*ip & AZO_TC_CHECK_ARGS) && !test_stack_type_exact (intr, ip, 0, AZ_TYPE_INT32)) return NULL;
+		CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_INT32);
 		if (azo_stack_int32_bw(&intr->stack, 0) > 0) dst += raddr;
 		break;
 	case JMP_32_IF_NEGATIVE:
-		if ((*ip & AZO_TC_CHECK_ARGS) && !test_stack_type_exact (intr, ip, 0, AZ_TYPE_INT32)) return NULL;
+		CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_INT32);
 		if (azo_stack_int32_bw(&intr->stack, 0) < 0) dst += raddr;
 		break;
 	}
 	azo_stack_pop (&intr->stack, 1);
 	return dst;
-}
-
-static const unsigned char *
-interpret_POINTER_TO_U64 (AZOInterpreter *intr, const unsigned char *ip)
-{
-	if (*ip & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_type_exact (intr, ip, 0, AZ_TYPE_POINTER)) return NULL;
-	}
-	// fixme: Reinterpret
-	uint64_t val = (uint64_t) azo_stack_pointer_bw(&intr->stack, 0);
-	azo_stack_pop (&intr->stack, 1);
-	azo_stack_push_value (&intr->stack, &az_type_get_class (AZ_TYPE_UINT64)->impl, &val);
-	return ip + 1;
-}
-
-static const unsigned char *
-interpret_U64_TO_POINTER (AZOInterpreter *intr, const unsigned char *ip)
-{
-	if (*ip & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_type_exact (intr, ip, 0, AZ_TYPE_UINT64)) return NULL;
-	}
-	uint64_t val = (uint64_t) azo_stack_pointer_bw(&intr->stack, 0);
-	azo_stack_pop (&intr->stack, 1);
-	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_POINTER), &val);
-	return ip + 1;
 }
 
 static const unsigned char *
@@ -895,9 +871,7 @@ static const unsigned char *
 interpret_LOGICAL_NOT (AZOInterpreter *intr, const unsigned char *ip)
 {
 	AZValue *val;
-	if (*ip & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_type_exact (intr, ip, 0, AZ_TYPE_BOOLEAN)) return NULL;
-	}
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_BOOLEAN);
 	val = azo_stack_value_bw (&intr->stack, 0);
 	val->boolean_v = !val->boolean_v;
 	return ip + 1;
@@ -989,10 +963,8 @@ static const unsigned char *
 interpret_LOGICAL_BINARY (AZOInterpreter *intr, const unsigned char *ip)
 {
 	AZValue *lhs, *rhs;
-	if (*ip & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_type_exact (intr, ip, 0, AZ_TYPE_BOOLEAN)) return NULL;
-		if (!test_stack_type_exact (intr, ip, 1, AZ_TYPE_BOOLEAN)) return NULL;
-	}
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_BOOLEAN);
+	CHECK_STACK_TYPE_EXACT(intr, ip, 1, AZ_TYPE_BOOLEAN);
 	lhs = azo_stack_value_bw (&intr->stack, 1);
 	rhs = azo_stack_value_bw (&intr->stack, 0);
 	if ((*ip & 127) == AZO_TC_LOGICAL_AND) {
@@ -1010,7 +982,8 @@ interpret_ADD_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int type;
 	const void *lhs, *rhs;
 	type = ip[1];
-	if (!test_stack_type_exact_2 (intr, ip, type)) return NULL;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, type);
+	CHECK_STACK_TYPE_EXACT(intr, ip, 1, type);
 	lhs = azo_stack_value_bw (&intr->stack, 1);
 	rhs = azo_stack_value_bw (&intr->stack, 0);
 	if (type == AZ_TYPE_INT32) {
@@ -1045,7 +1018,8 @@ interpret_SUBTRACT_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int type;
 	const void *lhs, *rhs;
 	type = ip[1];
-	if (!test_stack_type_exact_2 (intr, ip, type)) return NULL;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, type);
+	CHECK_STACK_TYPE_EXACT(intr, ip, 1, type);
 	lhs = azo_stack_value_bw (&intr->stack, 1);
 	rhs = azo_stack_value_bw (&intr->stack, 0);
 	if (type == AZ_TYPE_INT32) {
@@ -1080,7 +1054,8 @@ interpret_MULTIPLY_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int type;
 	const void *lhs, *rhs;
 	type = ip[1];
-	if (!test_stack_type_exact_2 (intr, ip, type)) return NULL;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, type);
+	CHECK_STACK_TYPE_EXACT(intr, ip, 1, type);
 	lhs = azo_stack_value_bw (&intr->stack, 1);
 	rhs = azo_stack_value_bw (&intr->stack, 0);
 	if (type == AZ_TYPE_INT32) {
@@ -1119,7 +1094,8 @@ interpret_DIVIDE_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int type;
 	const void *lhs, *rhs;
 	type = ip[1];
-	if (!test_stack_type_exact_2 (intr, ip, type)) return NULL;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, type);
+	CHECK_STACK_TYPE_EXACT(intr, ip, 1, type);
 	lhs = azo_stack_value_bw (&intr->stack, 1);
 	rhs = azo_stack_value_bw (&intr->stack, 0);
 	if (type == AZ_TYPE_INT32) {
@@ -1162,7 +1138,8 @@ interpret_MODULO_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int type;
 	const void *lhs, *rhs;
 	type = ip[1];
-	if (!test_stack_type_exact_2 (intr, ip, type)) return NULL;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, type);
+	CHECK_STACK_TYPE_EXACT(intr, ip, 1, type);
 	lhs = azo_stack_value_bw (&intr->stack, 1);
 	rhs = azo_stack_value_bw (&intr->stack, 0);
 	if (type == AZ_TYPE_INT32) {
@@ -1466,14 +1443,18 @@ interpret_INVOKE (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_RETURN (AZOInterpreter *intr, const unsigned char *ip, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
+interpret_RETURN (AZOInterpreter *intr, const unsigned char *ip)
 {
-	if (ret_impl) {
-		if (ip[0] & AZO_TC_CHECK_ARGS) {
-			if (!test_stack_underflow (intr, ip, 0)) return NULL;
-		}
-		*ret_impl = az_value_copy_autobox(azo_stack_impl_bw(&intr->stack, 0), ret_val, azo_stack_value_bw(&intr->stack, 0), ret_size);
+	return NULL;
+}
+
+static const unsigned char *
+interpret_RETURN_VALUE (AZOInterpreter *intr, const unsigned char *ip)
+{
+	if (ip[0] & AZO_TC_CHECK_ARGS) {
+		if (!test_stack_underflow (intr, ip, 0)) return NULL;
 	}
+	intr->vals[0].impl = az_value_copy_autobox(azo_stack_impl_bw(&intr->stack, 0), &intr->vals[0].v.value, azo_stack_value_bw(&intr->stack, 0), 64);
 	return NULL;
 }
 
@@ -1483,9 +1464,7 @@ interpret_BIND (AZOInterpreter *intr, const unsigned char *ip)
 	AZOCompiledFunction *cfunc;
 	uint32_t pos, i;
 	memcpy (&pos, ip + 1, 4);
-	if (ip[0] & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_type_exact (intr, ip, pos, AZO_TYPE_COMPILED_FUNCTION)) return NULL;
-	}
+	CHECK_STACK_TYPE_EXACT(intr, ip, pos, AZO_TYPE_COMPILED_FUNCTION);
 	cfunc = (AZOCompiledFunction *) azo_stack_instance_bw (&intr->stack, pos);
 	for (i = 0; i < pos; i++) {
 		azo_compiled_function_bind (cfunc, i, azo_stack_impl_bw (&intr->stack, pos - 1 - i), azo_stack_instance_bw (&intr->stack, pos - 1 - i));
@@ -1599,9 +1578,7 @@ static const unsigned char *
 interpret_GET_GLOBAL (AZOInterpreter *intr, const unsigned char *ip)
 {
 	AZString *key;
-	if (ip[0] & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_type_exact (intr, ip, 0, AZ_TYPE_STRING)) return NULL;
-	}
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_STRING);
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
 	intr->vals[0].impl = NULL;
 	if (azo_context_lookup (intr->ctx, key, &intr->vals[0].packed_val)) {
@@ -1622,9 +1599,9 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const unsigned char *ip)
 	const AZImplementation *impl;
 	void *inst;
 	AZString *key;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_STRING);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
 		if (!test_stack_underflow (intr, ip, 2)) return NULL;
-		if (!test_stack_type_exact (intr, ip, 0, AZ_TYPE_STRING)) return NULL;
 	}
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
 	/* fixme: Implement automatic unboxing (in stack?) or not? */
@@ -1688,9 +1665,9 @@ static const unsigned char *
 interpret_GET_FUNCTION (AZOInterpreter *intr, AZOProgram *prog, const unsigned char *ip)
 {
 	unsigned int n_args = ip[1];
+	CHECK_STACK_TYPE_EXACT(intr, ip, n_args, AZ_TYPE_STRING);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
 		if (!test_stack_underflow (intr, ip, n_args + 2)) return NULL;
-		if (!test_stack_type_exact (intr, ip, n_args, AZ_TYPE_STRING)) return NULL;
 	}
 	AZFunctionSignature32 sig;
 	sig.n_args = n_args;
@@ -1731,9 +1708,9 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const unsigned char *ip)
 	int idx;
 	unsigned int result = 0;
 	// INSTANCE STRING VALUE
+	CHECK_STACK_TYPE_EXACT(intr, ip, 1, AZ_TYPE_STRING);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
 		if (!test_stack_underflow (intr, ip, 3)) return NULL;
-		if (!test_stack_type_exact (intr, ip, 1, AZ_TYPE_STRING)) return NULL;
 	}
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
 	impl = azo_stack_impl_bw (&intr->stack, 2);
@@ -1780,10 +1757,10 @@ interpret_GET_STATIC_PROPERTY (AZOInterpreter *intr, const unsigned char *ip)
 	int idx;
 	const AZClass *sub_class;
 	const AZImplementation *prop_impl;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 1, AZ_TYPE_CLASS);
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_STRING);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
 		if (!test_stack_underflow (intr, ip, 2)) return NULL;
-		if (!test_stack_type_exact (intr, ip, 1, AZ_TYPE_CLASS)) return NULL;
-		if (!test_stack_type_exact (intr, ip, 0, AZ_TYPE_STRING)) return NULL;
 	}
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
 	klass = (AZClass *) azo_stack_instance_bw (&intr->stack, 1);
@@ -1817,10 +1794,10 @@ interpret_GET_STATIC_FUNCTION (AZOInterpreter *intr, const unsigned char *ip)
 	AZClass *klass;
 	AZFunctionSignature32 sig;
 	unsigned int n_args = ip[1];
+	CHECK_STACK_TYPE_EXACT(intr, ip, n_args + 1, AZ_TYPE_CLASS);
+	CHECK_STACK_TYPE_EXACT(intr, ip, n_args, AZ_TYPE_STRING);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
 		if (!test_stack_underflow (intr, ip, n_args + 2)) return NULL;
-		if (!test_stack_type_exact (intr, ip, n_args + 1, AZ_TYPE_CLASS)) return NULL;
-		if (!test_stack_type_exact (intr, ip, n_args, AZ_TYPE_STRING)) return NULL;
 	}
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, n_args);
 	klass = (AZClass *) azo_stack_instance_bw (&intr->stack, n_args + 1);
@@ -1852,9 +1829,9 @@ interpret_LOOKUP_PROPERTY (AZOInterpreter *intr, const unsigned char *ip)
 	void *prop_inst;
 	AZString *key;
 	int idx;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_STRING);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
 		if (!test_stack_underflow (intr, ip, 2)) return NULL;
-		if (!test_stack_type_exact (intr, ip, 0, AZ_TYPE_STRING)) return NULL;
 	}
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
 	impl = azo_stack_impl_bw (&intr->stack, 1);
@@ -1882,10 +1859,10 @@ interpret_GET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 	void *attrd_inst;
 	const AZAttribDictImplementation *attrd_impl;
 	unsigned int flags;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 0, AZ_TYPE_STRING);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
 		if (!test_stack_underflow (intr, ip, 2)) return NULL;
 		if (!test_stack_type_implements (intr, ip, 1, AZ_TYPE_ATTRIBUTE_DICT)) return NULL;
-		if (!test_stack_type_exact (intr, ip, 0, AZ_TYPE_STRING)) return NULL;
 	}
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
 	attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 1), azo_stack_instance_bw (&intr->stack, 1), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
@@ -1910,10 +1887,10 @@ interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 {
 	void *attrd_inst;
 	const AZAttribDictImplementation *attrd_impl;
+	CHECK_STACK_TYPE_EXACT(intr, ip, 1, AZ_TYPE_STRING);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
 		if (!test_stack_underflow (intr, ip, 3)) return NULL;
 		if (!test_stack_type_implements (intr, ip, 2, AZ_TYPE_ATTRIBUTE_DICT)) return NULL;
-		if (!test_stack_type_exact (intr, ip, 1, AZ_TYPE_STRING)) return NULL;
 	}
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
 	attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 2), azo_stack_instance_bw (&intr->stack, 2), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
@@ -1932,22 +1909,45 @@ interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 /* End new stack methods */
 
 void
-interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
+azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog)
 {
 	AZOProgram *last_prog;
 
 	last_prog = intr->prog;
 	intr->prog = prog;
 
-	//fprintf (stderr, "Starting interpreter\n");
-	//azo_stack_print_contents (&intr->stack, stderr);
-
 	const uint8_t *ipc = prog->tcode;
-	const uint8_t *end = ipc + prog->tcode_length;
-	while (ipc < end) {
-		// double start = arikkei_get_time ();
-		switch (*ipc & 127) {
+	const uint8_t *end = prog->tcode + prog->tcode_length;
 
+	fprintf(stdout, "\nStarting program\n");
+	for (const uint8_t *p = ipc; *p; p = azo_bc_next_instruction(p, end - p)) {
+		uint8_t c[1024];
+		azo_bc_print_instruction(c, 1024, p, end - p);
+		fprintf(stdout, "%04d %s\n", (int) (p - ipc), c);
+	}
+	//getchar();
+
+	while (ipc && (ipc < end)) {
+		ipc = azo_interpreter_interpret_tc(intr, prog, ipc);
+	}
+	if (intr->exc.type != AZO_EXCEPTION_NONE) {
+		unsigned char b[1024];
+		/* Exception */
+		az_instance_to_string (&azo_exception_class->klass.impl, &intr->exc, b, 1024);
+		fprintf (stderr, "Fatal exception: %s\n", b);
+		azo_intepreter_print_stack (intr, stderr);
+		fprintf (stderr, "\n");
+
+		/* fixme: Clear for now (otherwise return will invoke exceptions) */
+		intr->exc.type = AZO_EXCEPTION_NONE;
+	}
+	intr->prog = last_prog;
+}
+
+const uint8_t *
+azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *ipc)
+{
+	switch (*ipc & 127) {
 		case AZO_TC_EXCEPTION:
 		case AZO_TC_EXCEPTION_IF:
 		case AZO_TC_EXCEPTION_IF_NOT:
@@ -1958,6 +1958,7 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 			break;
 
 		case AZO_TC_DEBUG:
+		case AZO_TC_DEBUG_STR:
 			ipc = interpret_DEBUG (intr, prog, ipc);
 			break;
 
@@ -2010,7 +2011,7 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 			ipc = interpret_TYPE_IMMEDIATE (intr, ipc);
 			break;
 		case TYPE_OF:
-		case TYPE_OF_CLASS:
+		case AZO_TC_TYPE_OF_CLASS:
 			ipc = interpret_TYPE_OF (intr, ipc);
 			break;
 
@@ -2027,12 +2028,6 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 			break;
 
 		/* Conversions */
-		case POINTER_TO_U64:
-			ipc = interpret_POINTER_TO_U64 (intr, ipc);
-			break;
-		case U64_TO_POINTER:
-			ipc = interpret_POINTER_TO_U64 (intr, ipc);
-			break;
 		case PROMOTE:
 			ipc = interpret_PROMOTE (intr, ipc);
 			break;
@@ -2111,7 +2106,10 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 			ipc = interpret_INVOKE (intr, ipc);
 			break;
 		case AZO_TC_RETURN:
-			ipc = interpret_RETURN (intr, ipc, ret_impl, ret_val, ret_size);
+			ipc = interpret_RETURN (intr, ipc);
+			break;
+		case AZO_TC_RETURN_VALUE:
+			ipc = interpret_RETURN_VALUE (intr, ipc);
 			break;
 		case AZO_TC_BIND:
 			ipc = interpret_BIND (intr, ipc);
@@ -2160,29 +2158,285 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 			break;
 
 		default:
-			intr->prog = last_prog;
-			return;
-		}
-		//if ((arikkei_get_time () - start) > 0.01) {
-		//	fprintf (stderr, "TC %u got %.3f\n", tc, arikkei_get_time () - start);
-		//}
-		if (!ipc) {
-			if (intr->exc.type != AZO_EXCEPTION_NONE) {
-				unsigned char b[1024];
-				/* Exception */
-				az_instance_to_string (&azo_exception_class->klass.impl, &intr->exc, b, 1024);
-				fprintf (stderr, "Fatal exception: %s\n", b);
-				azo_intepreter_print_stack (intr, stderr);
-				fprintf (stderr, "\n");
-
-				/* fixme: Clear for now (otherwise return will invoke exceptions) */
-				intr->exc.type = AZO_EXCEPTION_NONE;
-			}
-			break;
-		}
-		if ((ipc - prog->tcode) >= prog->tcode_length) break;
+			return NULL;
 	}
-	intr->prog = last_prog;
+	return ipc;
+}
+
+static const uint8_t *
+print_stack_element_bw(AZOInterpreter *intr, unsigned int pos, uint8_t *buf, unsigned int buf_len)
+{
+	if ((pos + 1) > intr->stack.length) {
+		arikkei_strncpy(buf, buf_len, (const uint8_t *) "UNDERFLOW");
+	} else {
+		const AZImplementation *impl = azo_stack_impl_bw(&intr->stack, pos);
+		if (!impl) {
+			arikkei_strncpy(buf, buf_len, (const uint8_t *) "VOID");
+		} else {
+			void *inst = azo_stack_instance_bw(&intr->stack, pos);
+			unsigned int p = az_instance_to_string(impl, inst, buf, buf_len);
+			p += arikkei_strncpy(buf, buf_len - p, (const uint8_t *) " ()");
+			p += arikkei_strncpy(buf, buf_len - p, AZ_CLASS_FROM_IMPL(impl)->name);
+			p += arikkei_strncpy(buf, buf_len - p, (const uint8_t *) ")");
+		}
+	}
+	return buf;
+}
+
+const uint8_t *
+azo_interpreter_print_tc (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *ipc, FILE *ofs)
+{
+	uint8_t b0[256];
+	switch (*ipc & 127) {
+	case NOP:
+		fprintf(ofs, "NOP\n");
+		return ipc + 1;
+	case AZO_TC_EXCEPTION:
+		fprintf(ofs, "EXCEPTION type(u32)\n");
+		return ipc + 5;
+	case AZO_TC_EXCEPTION_IF:
+		fprintf(ofs, "EXCEPTION_IF type(u32)        [%s]\n", print_stack_element_bw(intr, 0, b0, 256));
+		return ipc + 5;
+	case AZO_TC_EXCEPTION_IF_NOT:
+		fprintf(ofs, "EXCEPTION_IF_NOT type(u32).   [%s]\n", print_stack_element_bw(intr, 0, b0, 256));
+		return ipc + 5;
+#if 0
+	/*
+	 * AZO_TC_EXCEPTION_IF_TYPE_IS_NOT pos type
+	 * Throw INVALID_TYPE if element at pos is not type
+	 */
+	AZO_TC_EXCEPTION_IF_TYPE_IS_NOT,
+
+	/* DEBUG OP(U32) [STRING] */
+	AZO_TC_DEBUG,
+
+	/* Stack management */
+
+	/* PUSH_FRAME POS(U32) */
+	/* Push [stack_end - pos] as new frame pointer */
+	AZO_TC_PUSH_FRAME,
+	/* Restores previous frame pointer */
+	AZO_TC_POP_FRAME,
+
+	/* POP N(U32) */
+	/* Pop and discard last N values from stack */
+	AZO_TC_POP,
+	/* REMOVE FIRST(U32) N(U32) */
+	/* Remove and discard N elements downwards, starting from FIRST from the top of stack */
+	AZO_TC_REMOVE,
+	/* PUSH_EMPTY TYPE(U32) */
+	/* Push default value into stack */
+	/* Type has to be >= Boolean */
+	AZO_TC_PUSH_EMPTY,
+	/* PUSH TYPE(U8) VALUE */
+	/* Push immediate primitive value into stack */
+	/* Size of value is determined by klass->value_size */
+	PUSH_IMMEDIATE,
+	/* PUSH_VALUE LOCATION(U32) */
+	AZO_TC_PUSH_VALUE,
+	/* DUPLICATE POS(U32) */
+	/* Pushes a duplicate of an element into stack */
+	DUPLICATE,
+	/* DUPLICATE_FRAME POS(U32) */
+	/* Pushes a duplicate of a frame-relative element into stack */
+	DUPLICATE_FRAME,
+	/* Exchange POS(U32) */
+	/* Exchanges element with topmost */
+	EXCHANGE,
+	/**
+	 * @brief Exchanges frame-relative element with top of stack
+	 * 
+	 * EXCHANGE_FRAME U32:POS
+	 * [..., val1, ..., val2]
+	 * [..., val2, ..., val1]
+	 */
+	AZO_TC_EXCHANGE_FRAME,
+
+	/* Type tests */
+	/* TEST POS(U8) */
+	/* Test whether the element is exactly of certain type */
+	AZO_TC_TYPE_EQUALS,
+	/* Test whether the element is of certain type */
+	AZO_TC_TYPE_IS,
+	/* Test whether the element is supertype of certain type */
+	AZO_TC_TYPE_IS_SUPER,
+	/* Test whether the element implements certain type */
+	AZO_TC_TYPE_IMPLEMENTS,
+	/* TEST_IMMEDIATE POS(U8) TYPE(U32) */
+	/* Test whether the element is exactly of certain type */
+	AZO_TC_TYPE_EQUALS_IMMEDIATE,
+	/* Test whether the element is of certain type */
+	AZO_TC_TYPE_IS_IMMEDIATE,
+	/* Test whether the element is supertype of certain type */
+	AZO_TC_TYPE_IS_SUPER_IMMEDIATE,
+	/* Test whether the element implements certain type */
+	AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE,
+	/* TYPE_OF POS(U8) */
+	/* Get type of stack element as UINT32 */
+	TYPE_OF,
+	TYPE_OF_CLASS,
+
+	/* Jumps */
+
+	/* JMP_32... RADDR(I32) */
+	/* Jump IP + 5 + RADDR */
+	JMP_32,
+	JMP_32_IF,
+	JMP_32_IF_NOT,
+	/* JMP depending on U32 value */
+	JMP_32_IF_ZERO,
+	JMP_32_IF_POSITIVE,
+	JMP_32_IF_NEGATIVE,
+
+	/* Conversions */
+	/* POINTER_TO_U64 */
+	/* Replaces topmost stack pointer with equivalent U64 */
+	POINTER_TO_U64,
+	U64_TO_POINTER,
+	/* PROMOTE POS(U8) */
+	/* Promote given element in-place ty tupe specified by stack(0) */
+	/* Only arithmetic types are allowed */
+	PROMOTE,
+
+	/* Comparisons */
+	/* EQUAL TYPE(U8) */
+	/* Allowed types - primitives and block (block subtypes are tested as block) */
+	/* Do not remove compared elements */
+	EQUAL_TYPED,
+	/* EQUAL */
+	/* Allowed types - primitives and block (block subtypes are tested as block) */
+	/* Do not remove compared elements */
+	EQUAL,
+	/* COMPARE TYPE(U8) */
+	/* Allowed types - integers and reals */
+	/* Result is negative if stack(1) < stack(0) */
+	COMPARE_TYPED,
+	/* COMPARE */
+	/* Allowed types - integers and reals, type is determined from stack(0) */
+	/* Result is negative if stack(1) < stack(0) */
+	COMPARE,
+
+	/* Arithmetic and logic */
+
+	/* Unary */
+	/* boolean -> boolean */
+	AZO_TC_LOGICAL_NOT,
+	AZO_TC_NEGATE,
+	AZO_TC_CONJUGATE,
+	AZO_TC_BITWISE_NOT,
+
+	/* Binary */
+	/* boolean, boolean -> boolean */
+	AZO_TC_LOGICAL_AND,
+	AZO_TC_LOGICAL_OR,
+
+	/* Allowed types Int32 ... Complex Double */
+	/* OPERATION TYPE(U8) */
+	AZO_TC_ADD_TYPED,
+	AZO_TC_SUBTRACT_TYPED,
+	AZO_TC_MULTIPLY_TYPED,
+	AZO_TC_DIVIDE_TYPED,
+	/* Allowed types Int32 ... Double */
+	AZO_TC_MODULO_TYPED,
+	/* OPERATION */
+	AZO_TC_ADD,
+	AZO_TC_SUBTRACT,
+	AZO_TC_MULTIPLY,
+	AZO_TC_DIVIDE,
+	AZO_TC_MODULO,
+
+	/* MIN TYPE(U8) */
+	/* Allowed types integers and reals */
+	MIN_TYPED,
+	MAX_TYPED,
+
+	/* Interface */
+	/* GET_INTERFACE_IMMEDIATE TYPE(U32) */
+	/* Get interface of topmost element */
+	/* Do not pop element to guarantee that interface is alive */
+	AZO_TC_GET_INTERFACE_IMMEDIATE,
+
+	/* Invoke function */
+	AZO_TC_INVOKE,
+	/**
+	 * @brief Return from frame
+	 * 
+	 * RETURN
+	 * []
+	 */
+	AZO_TC_RETURN,
+	/**
+	 * @brief Return with value
+	 * 
+	 * RETURN_VALUE
+	 * [value]
+	 */
+	AZO_TC_RETURN_VALUE,
+	/* Bind function */
+	/* FUNCTION -> FUNCTION */
+	AZO_TC_BIND,
+
+	/* Arrays */
+
+	/* NEW_ARRAY */
+	/* Create new array */
+	/* Size of array is the topmost element of stack, replaced by array on completion */
+	NEW_ARRAY,
+	/* LOAD_ARRAY_ELEMENT */
+	/* Array, index - index is popped from stack */
+	LOAD_ARRAY_ELEMENT, /* LOAD_ARRAY_ELEMENT, RA, RB, RD */
+	/* WRITE_ARRAY_ELEMENT */
+	/* Array, index, value - the last two are popped from stack */
+	WRITE_ARRAY_ELEMENT,
+
+	/* Key */
+	AZO_TC_GET_GLOBAL,
+	/* Instance, key -> value|null */
+	AZO_TC_GET_PROPERTY,
+	/**
+	 * @brief Get function by name and argument types
+	 * 
+	 * GET_FUNCTION U8:N_ARGS
+	 * [inst, name, arg1...]
+	 * [inst, name, arg1..., func | null]
+	 */
+	AZO_TC_GET_FUNCTION,
+	/* Instance, key, value -> boolean */
+	AZO_TC_SET_PROPERTY,
+	/* Class, key */
+	AZO_TC_GET_STATIC_PROPERTY,
+	/**
+	 * @brief Get static function by name and argument types
+	 * 
+	 * GET_STATIC_FUNCTION U8:N_ARGS
+	 * [class, name, arg1...]
+	 * [class, name, arg1..., func | null]
+	 */
+	/* Class, String, Arguments -> Class, String, Arguments, Function | null */
+	AZO_TC_GET_STATIC_FUNCTION,
+	/* Instance, key */
+	/* Success: original instance, property instance, index, field */
+	/* Failure: original instance, null */
+	AZO_TC_LOOKUP_PROPERTY,
+	/* fixme: remove this */
+	GET_ATTRIBUTE,
+	/**
+	 * @brief Set value in dictionary
+	 * 
+	 * SET_ATTRIBUTE
+	 * [instance, key, value]
+	 * []
+	 * 
+	 * Throws INVALID_TYPE if instance is not dictionary
+	 * Throws INVALID_VALUE if attribute cannot be set
+	 */
+	AZO_TC_SET_ATTRIBUTE,
+#endif
+	default:
+		fprintf(ofs, "UNKNOWN (%02x)\n", *ipc);
+		break;
+	}
+	return NULL;
 }
 
 void

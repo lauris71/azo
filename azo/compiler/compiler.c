@@ -139,7 +139,7 @@ write_tc_u8_u32 (AZOCompiler *comp, unsigned int ic, uint8_t val1, uint32_t val2
 void
 azo_compiler_write_DEBUG_STACK (AZOCompiler *comp)
 {
-	write_tc_u32 (comp, AZO_TC_DEBUG, 1, NULL);
+	write_tc_u32 (comp, AZO_TC_DEBUG, 0, NULL);
 }
 
 void
@@ -147,7 +147,7 @@ azo_compiler_write_DEBUG_STRING (AZOCompiler *comp, const char *text, const AZOE
 {
 	AZString *str = az_string_new((const uint8_t *) text);
 	unsigned int pos = azo_frame_append_string(comp->current, str);
-	azo_code_write_ic_u32_u32(&comp->current->code, AZO_TC_DEBUG, 2, pos, expr);
+	write_tc_u32 (comp, AZO_TC_DEBUG_STR, pos, expr);
 	az_string_unref (str);
 }
 
@@ -156,7 +156,7 @@ azo_compiler_write_DEBUG_STRING_len (AZOCompiler *comp, const uint8_t *text, uns
 {
 	AZString *str = az_string_new_length(text, len);
 	unsigned int pos = azo_frame_append_string(comp->current, str);
-	azo_code_write_ic_u32_u32(&comp->current->code, AZO_TC_DEBUG, 2, pos, expr);
+	write_tc_u32 (comp, AZO_TC_DEBUG_STR, pos, expr);
 	az_string_unref (str);
 }
 
@@ -1051,7 +1051,7 @@ compile_test (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 	write_DEBUG_STRING (comp, "Test 2\n");
 	write_DEBUG_STACK (comp);
 #endif
-	write_tc_u8 (comp, TYPE_OF_CLASS, 0, expr);
+	write_tc_u8 (comp, AZO_TC_TYPE_OF_CLASS, 0, expr);
 #ifdef DEBUG_TEST
 	write_DEBUG_STRING (comp, "Test 3\n");
 	write_DEBUG_STACK (comp);
@@ -1307,8 +1307,10 @@ compile_statement (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 	if (AZO_EXPRESSION_IS(expr, EXPRESSION_KEYWORD, AZO_KEYWORD_RETURN)) {
 		if (expr->children) {
 			if (!compile_expression_rvalue (comp, expr->children, src)) return 0;
+			azo_compiler_write_ic (comp, AZO_TC_RETURN_VALUE, expr);
+		} else {
+			azo_compiler_write_ic (comp, AZO_TC_RETURN, expr);
 		}
-		azo_compiler_write_ic (comp, AZO_TC_RETURN, expr);
 		return 1;
 	} else if (AZO_EXPRESSION_IS(expr, EXPRESSION_KEYWORD, AZO_KEYWORD_DEBUG)) {
 		comp->debug = 1;
