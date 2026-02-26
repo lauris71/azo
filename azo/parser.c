@@ -114,17 +114,17 @@ parser_report_error (AZOParser *parser, const AZOToken *token, unsigned int errv
 	fprintf (stderr, "%s at line ", parser_errors[errval]);
 	if (!azo_tokenizer_is_eof (&parser->tokenizer, token)) {
 		unsigned int first, last;
-		if (azo_source_find_line_range (parser->tokenizer.src, token->start, token->end, &first, &last)) {
+		if (azo_source_find_line_range (parser->src, token->start, token->end, &first, &last)) {
 			fprintf (stderr, "%d near ", first);
 			azo_tokenizer_print_token (&parser->tokenizer, token, stderr);
 			fprintf (stderr, "\n");
 			/* fixme: Keep track of the last processed token */
-			azo_source_print_lines (parser->tokenizer.src, first, last + 1);
+			azo_source_print_lines (parser->src, first, last + 1);
 		}
 	} else {
 		fprintf (stderr, "near EOF\n");
-		azo_source_ensure_lines(parser->tokenizer.src);
-		azo_source_print_lines (parser->tokenizer.src, parser->tokenizer.src->n_lines - 1, parser->tokenizer.src->n_lines);
+		azo_source_ensure_lines(parser->src);
+		azo_source_print_lines (parser->src, parser->src->n_lines - 1, parser->src->n_lines);
 	}
 }
 

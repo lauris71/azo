@@ -275,9 +275,9 @@ enum {
  * @param len the size of bytecode buffer
  * @return 
  */
-unsigned int azo_bc_print_instruction(uint8_t *d, unsigned int d_len, const uint8_t *ipc, unsigned int len);
+unsigned int azo_bc_print_instruction(uint8_t *d, unsigned int d_len, const uint8_t *bc, unsigned int pos, unsigned int len);
 
-const uint8_t *azo_bc_next_instruction(const uint8_t *ipc, unsigned int len);
+unsigned int azo_bc_next_instruction(const uint8_t *bc, unsigned int pos, unsigned int len);
 
 /* Debug */
 typedef struct _AZOProgram AZOProgram;

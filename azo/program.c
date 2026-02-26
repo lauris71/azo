@@ -56,7 +56,7 @@ azo_program_print_bytecode (AZOProgram *program)
 }
 
 AZOProgram *
-azo_program_compile_from_text(AZOContext *ctx,
+azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[],
 	const uint8_t *code, unsigned int code_len)
 {
@@ -66,7 +66,7 @@ azo_program_compile_from_text(AZOContext *ctx,
 	for (unsigned int i = 0; i < n_args; i++) {
 		azo_compiler_declare_variable (&comp, arg_names[i], arg_types[i]);
 	}
-	AZOSource *src = azo_source_new_static(code, code_len);
+	AZOSource *src = azo_source_new_static(name, code, code_len);
 	AZOParser parser;
 	azo_parser_setup (&parser, src);
 	AZOExpression *expr = azo_parser_parse (&parser);

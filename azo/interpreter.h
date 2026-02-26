@@ -54,6 +54,8 @@ void azo_interpreter_pop_frame (AZOInterpreter *intr);
 void azo_interpreter_clear_frame (AZOInterpreter *intr);
 void azo_interpreter_restore_frame (AZOInterpreter *intr, unsigned int frame);
 
+void azo_interpreter_exception(AZOInterpreter *intr, const uint8_t *ip, unsigned int type);
+
 // fixme: Make return val part of program/interpreter
 void azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog);
 const uint8_t *azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *ipc);
