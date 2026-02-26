@@ -59,7 +59,6 @@ void azo_interpreter_exception(AZOInterpreter *intr, const uint8_t *ip, unsigned
 // fixme: Make return val part of program/interpreter
 void azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog);
 const uint8_t *azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *ipc);
-const uint8_t *azo_interpreter_print_tc (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *ipc, FILE *ofs);
 
 void azo_intepreter_print_stack (AZOInterpreter *intr, FILE *ofs);
 
