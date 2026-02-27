@@ -83,23 +83,6 @@ azo_intepreter_push_values (AZOInterpreter *intr, const AZImplementation **impls
 	}
 }
 
-#define CURRENT_FRAME(intr) intr->frames[intr->n_frames - 1]
-
-static unsigned int
-intr_get_frame_bw(AZOInterpreter *intr, unsigned int idx)
-{
-	return intr->frames[intr->n_frames - 1 - idx];
-}
-
-static unsigned int
-intr_get_frames_bw(AZOInterpreter *intr, unsigned int frames[], unsigned int size)
-{
-	for (unsigned int i = 0; (i < intr->n_frames) && (i < size); i++) {
-		frames[i] = intr->frames[intr->n_frames - 1 - i];
-	}
-	return intr->n_frames;
-}
-
 void
 azo_interpreter_push_frame (AZOInterpreter *intr, unsigned int n_elements)
 {
@@ -107,33 +90,26 @@ azo_interpreter_push_frame (AZOInterpreter *intr, unsigned int n_elements)
 		intr->size_frames = intr->size_frames << 1;
 		intr->frames = ( unsigned int *) realloc (intr->frames, intr->size_frames * 4);
 	}
-	fprintf(stderr, "Pushing frame: %d\n", CURRENT_FRAME(intr));
-	azo_intepreter_print_stack(intr, stderr);
-	azo_stack_push_u32(&intr->stack, CURRENT_FRAME(intr));
 	intr->frames[intr->n_frames++] = intr->stack.length - n_elements;
 }
 
 void
 azo_interpreter_pop_frame (AZOInterpreter *intr)
 {
-	const AZValue *val = azo_stack_value_bw(&intr->stack, 0);
-	fprintf(stderr, "Popping frame: %d\n", val->uint32_v);
-	azo_intepreter_print_stack(intr, stderr);
-	azo_stack_pop(&intr->stack, 1);
 	intr->n_frames -= 1;
 }
 
 void
 azo_interpreter_clear_frame (AZOInterpreter *intr)
 {
-	azo_stack_pop (&intr->stack, intr->stack.length - CURRENT_FRAME(intr));
+	azo_stack_pop (&intr->stack, intr->stack.length - intr->frames[intr->n_frames - 1]);
 }
 
 void
 azo_interpreter_restore_frame (AZOInterpreter *intr, unsigned int frame)
 {
 	while (intr->n_frames > frame) {
-		assert (intr->stack.length >= CURRENT_FRAME(intr));
+		assert (intr->stack.length >= intr->frames[intr->n_frames - 1]);
 		azo_interpreter_clear_frame (intr);
 		azo_interpreter_pop_frame (intr);
 	}
@@ -396,7 +372,7 @@ interpret_POP_FRAME (AZOInterpreter *intr, const unsigned char *ip)
 			azo_exception_set (&intr->exc, AZO_EXCEPTION_STACK_UNDERFLOW, 1UL << AZO_EXCEPTION_STACK_UNDERFLOW, (unsigned int) (ip - intr->prog->tcode));
 			return NULL;
 		}
-		if (CURRENT_FRAME(intr) > intr->stack.length) {
+		if (intr->frames[intr->n_frames - 1] > intr->stack.length) {
 			azo_exception_set (&intr->exc, AZO_EXCEPTION_STACK_UNDERFLOW, 1UL << AZO_EXCEPTION_STACK_UNDERFLOW, (unsigned int) (ip - intr->prog->tcode));
 			return NULL;
 		}
@@ -496,13 +472,13 @@ interpret_DUPLICATE_FRAME (AZOInterpreter *intr, const unsigned char *ip)
 	uint32_t pos;
 	memcpy (&pos, ip + 1, 4);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
-		if ((CURRENT_FRAME(intr) + pos) >= intr->stack.length) {
+		if ((intr->frames[intr->n_frames - 1] + pos) >= intr->stack.length) {
 			azo_exception_set (&intr->exc, AZO_EXCEPTION_STACK_UNDERFLOW, 1UL << AZO_EXCEPTION_STACK_UNDERFLOW, (unsigned int) (ip - intr->prog->tcode));
 			return NULL;
 		}
 	}
 	if (!test_stack_overflow (intr, ip, 1)) return NULL;
-	azo_stack_duplicate (&intr->stack, CURRENT_FRAME(intr) + pos);
+	azo_stack_duplicate (&intr->stack, intr->frames[intr->n_frames - 1] + pos);
 	return ip + 5;
 }
 
@@ -522,12 +498,12 @@ interpret_EXCHANGE_FRAME (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int pos;
 	memcpy (&pos, ip + 1, 4);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
-		if ((CURRENT_FRAME(intr) + pos) >= intr->stack.length) {
+		if ((intr->frames[intr->n_frames - 1] + pos) >= intr->stack.length) {
 			azo_exception_set (&intr->exc, AZO_EXCEPTION_STACK_UNDERFLOW, 1UL << AZO_EXCEPTION_STACK_UNDERFLOW, (unsigned int) (ip - intr->prog->tcode));
 			return NULL;
 		}
 	}
-	azo_stack_exchange (&intr->stack, CURRENT_FRAME(intr) + pos);
+	azo_stack_exchange (&intr->stack, intr->frames[intr->n_frames - 1] + pos);
 	return ip + 5;
 }
 
@@ -1459,13 +1435,13 @@ interpret_INVOKE (AZOInterpreter *intr, const unsigned char *ip)
 	}
 	const AZFunctionSignature *sig = az_function_get_signature (func_impl, func_inst);
 	for (unsigned int i = 0; i < sig->n_args; i++) {
-		if (!azo_stack_convert_bw (&intr->stack, pos - 1 - i, sig->arg_types[i])) {
+		if (!azo_stack_convert_bw (&intr->stack, sig->n_args - 1 - i, sig->arg_types[i])) {
 			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
 			return NULL;
 		}
 	}
 	intr->vals[0].impl = NULL;
-	az_function_invoke (func_impl, func_inst, azo_stack_impls_bw (&intr->stack, pos - 1), (const AZValue **) azo_stack_values_bw (&intr->stack, pos - 1), &intr->vals[0].impl, &intr->vals[0].v, NULL);
+	az_function_invoke (func_impl, func_inst, azo_stack_impls_bw (&intr->stack, sig->n_args - 1), (const AZValue **) azo_stack_values_bw (&intr->stack, sig->n_args - 1), &intr->vals[0].impl, &intr->vals[0].v, NULL);
 	azo_stack_push_value_transfer (&intr->stack, intr->vals[0].impl, &intr->vals[0].v);
 	intr->vals[0].impl = NULL;
 	return ip + 2;
@@ -2158,8 +2134,7 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 				unsigned char b[1024];
 				/* Exception */
 				az_instance_to_string (&azo_exception_class->klass.impl, &intr->exc, b, 1024);
-				fprintf(stderr, "Fatal exception: %s\n", b);
-				fprintf(stderr, "Position: %d %d\n", intr->exc.ipc, prog->tcode[intr->exc.ipc] & 0x7f);
+				fprintf (stderr, "Fatal exception: %s\n", b);
 				azo_intepreter_print_stack (intr, stderr);
 				fprintf (stderr, "\n");
 
@@ -2176,17 +2151,15 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 void
 azo_intepreter_print_stack (AZOInterpreter *intr, FILE *ofs)
 {
-	unsigned int frames[256];
-	unsigned int n_frames = intr_get_frames_bw(intr, frames, 256);
-	for (unsigned int i = 0; i < n_frames; i++) {
-		if (i >= 256) break;
-		unsigned int frame = frames[i];
-		unsigned int end = (i == 0) ? intr->stack.length : frames[i - 1];
-		if (end > frame) {
-			fprintf (stderr, "Frame %u (%u - %u)\n", n_frames - 1 - i, frame, end);
+	unsigned int i;
+	for (i = 0; i < intr->n_frames; i++) {
+		unsigned int frame = intr->n_frames - 1 - i;
+		unsigned int end = (frame == (intr->n_frames - 1)) ? intr->stack.length : intr->frames[frame + 1];
+		if (end > intr->frames[frame]) {
+			fprintf (stderr, "Frame %u (%u - %u)\n", frame, intr->frames[frame], end - 1);
 		} else {
 			fprintf (stderr, "Frame %u EMPTY\n", frame);
 		}
-		azo_stack_print_contents (&intr->stack, frame, end, stderr);
+		azo_stack_print_contents (&intr->stack, intr->frames[frame], end, stderr);
 	}
 }

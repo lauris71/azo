@@ -14,7 +14,6 @@ typedef struct _AZOStackClass AZOStackClass;
 
 #include <stdio.h>
 
-#include <az/base.h>
 #include <az/class.h>
 #include <az/value.h>
 
@@ -61,13 +60,6 @@ void azo_stack_push_value_default (AZOStack *stack, const AZImplementation *impl
 void azo_stack_push_value (AZOStack *stack, const AZImplementation *impl, const void *value);
 void azo_stack_push_value_transfer (AZOStack *stack, const AZImplementation *impl, void *value);
 void azo_stack_push_instance (AZOStack *stack, const AZImplementation *impl, void *inst);
-
-static inline void
-azo_stack_push_u32(AZOStack *stack, uint32_t val)
-{
-	azo_stack_push_instance(stack, &AZUint32Klass.impl, &val);
-}
-
 /* Duplicate element to the top of stack */
 void azo_stack_duplicate (AZOStack *stack, unsigned int pos);
 
