@@ -501,7 +501,10 @@ compile_call (AZOCompiler *comp, const AZOExpression *list, const AZOSource *src
 	/* [func, this, arg1...] */
 	azo_compiler_write_PUSH_FRAME (comp, n_args);
 	/* [func : this, arg1...] */
-	write_tc_u8 (comp, AZO_TC_INVOKE, n_args);
+	write_tc_u8 (comp, AZO_TC_INVOKE, n_args + 1);
+
+	azo_compiler_write_EXCHANGE (comp, 1);
+
 	/* [func : this, arg1..., result] */
 	azo_compiler_write_instruction_1 (comp, AZO_TC_POP_FRAME);
 	/* [func, this, arg1..., result] */
@@ -516,7 +519,10 @@ compile_call_inst_func_args (AZOCompiler *comp, unsigned int n_args)
 	/* [inst, funcobj, arg1...] */
 	azo_compiler_write_PUSH_FRAME (comp, n_args);
 	/* [inst, funcobj : arg1...] */
-	write_tc_u8 (comp, AZO_TC_INVOKE, n_args);
+	write_tc_u8 (comp, AZO_TC_INVOKE, n_args + 1);
+
+	azo_compiler_write_EXCHANGE (comp, 1);
+
 	/* [inst, funcobj : arg1..., retval] */
 	azo_compiler_write_instruction_1 (comp, AZO_TC_POP_FRAME);
 	/* [inst, funcobj, arg1..., retval] */

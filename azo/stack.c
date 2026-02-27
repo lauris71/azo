@@ -24,7 +24,6 @@ static void stack_ensure_size (AZOStack *stack, unsigned int n_entries, unsigned
 
 #define STACK_MIN_SIZE 16
 #define STACK_MIN_MASK (STACK_MIN_SIZE - 1)
-#define STACK_IMPL_VALUE_SIZE(i) STACK_VALUE_SIZE(AZ_CLASS_FROM_IMPL(i))
 #define STACK_ELEMENT_SIZE(s,p) (unsigned int) (stack->values[(p) + 1].ptr - stack->values[p].ptr)
 
 static inline unsigned int
@@ -32,6 +31,14 @@ STACK_VALUE_SIZE(AZClass *klass)
 {
 	return (klass && AZ_CLASS_VALUE_SIZE(klass)) ? (AZ_CLASS_ELEMENT_SIZE(klass) + STACK_MIN_MASK) & ~STACK_MIN_MASK : STACK_MIN_SIZE;
 
+}
+
+static inline unsigned int
+STACK_IMPL_VALUE_SIZE(const AZImplementation *impl)
+{
+	if (!impl) return STACK_MIN_SIZE;
+	const AZClass *klass = AZ_CLASS_FROM_IMPL(impl);
+	return (AZ_CLASS_VALUE_SIZE(klass)) ? (AZ_CLASS_ELEMENT_SIZE(klass) + STACK_MIN_MASK) & ~STACK_MIN_MASK : STACK_MIN_SIZE;
 }
 
 static unsigned int stack_type = 0;
