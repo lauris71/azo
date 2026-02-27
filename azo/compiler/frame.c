@@ -100,7 +100,7 @@ azo_scope_ensure_local_var (AZOScope *scope, AZOVariable *var)
 }
 
 AZOFrame *
-azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type)
+azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int debug)
 {
 	AZOFrame *frame = (AZOFrame *) malloc (sizeof (AZOFrame));
 	memset (frame, 0, sizeof (AZOFrame));
@@ -110,6 +110,7 @@ azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_i
 	frame->this_inst = this_inst;
 	/* fixme: Declare this like other variables? */
 	frame->scope = azo_scope_new (NULL, 1);
+	azo_code_init(&frame->code, debug);
 	return frame;
 }
 
@@ -119,12 +120,7 @@ azo_frame_delete (AZOFrame *frame)
 	while (frame->scope) {
 		azo_frame_pop_scope (frame);
 	}
-	if (frame->bc) free (frame->bc);
-	if (frame->data) {
-		unsigned int i;
-		for (i = 0; i < frame->data_len; i++) az_packed_value_clear (&frame->data[i]);
-		free (frame->data);
-	}
+	azo_code_clear(&frame->code);
 	while (frame->parent_vars) {
 		AZOVariable *var = frame->parent_vars;
 		frame->parent_vars = var->next;
@@ -181,110 +177,23 @@ azo_frame_lookup_chained (AZOFrame *frame, AZString *name)
 	return NULL;
 }
 
-void
-azo_frame_ensure_bc_size (AZOFrame *frame, unsigned int amount)
-{
-	if ((frame->bc_len + amount) > frame->bc_size) {
-		frame->bc_size <<= 1;
-		if (frame->bc_size < (frame->bc_len + amount)) frame->bc_size = frame->bc_len + amount;
-		if (frame->bc_size < 256) frame->bc_size = 256;
-		frame->bc = (unsigned char *) realloc (frame->bc, frame->bc_size);
-	}
-}
-
-void
-azo_frame_ensure_data_size (AZOFrame *frame, unsigned int amount)
-{
-	if ((frame->data_len + amount) > frame->data_size) {
-		unsigned int new_size;
-		new_size = frame->data_size << 1;
-		if (new_size < (frame->data_len + amount)) new_size = frame->data_len + amount;
-		if (new_size < 16) new_size = 16;
-		frame->data = (AZPackedValue *) realloc (frame->data, new_size * sizeof (AZPackedValue));
-		memset (&frame->data[frame->data_size], 0, (new_size - frame->data_size) * sizeof (AZPackedValue));
-		frame->data_size = new_size;
-	}
-}
-
-void
-azo_frame_write_ic (AZOFrame *frame, unsigned int ic)
-{
-	azo_frame_ensure_bc_size (frame, 1);
-	frame->bc[frame->bc_len++] = (unsigned char) ic;
-}
-
-void
-azo_frame_write_ic_u8 (AZOFrame *frame, unsigned int ic, unsigned int val)
-{
-	azo_frame_ensure_bc_size (frame, 2);
-	frame->bc[frame->bc_len++] = (unsigned char) ic;
-	frame->bc[frame->bc_len++] = (unsigned char) val;
-}
-
-void
-azo_frame_write_ic_u32 (AZOFrame *frame, unsigned int ic, unsigned int val)
-{
-	azo_frame_ensure_bc_size (frame, 5);
-	frame->bc[frame->bc_len] = (unsigned char) ic;
-	memcpy (&frame->bc[frame->bc_len + 1], &val, 4);
-	frame->bc_len += 5;
-}
-
-void
-azo_frame_write_ic_u8_u32 (AZOFrame *frame, unsigned int ic, unsigned int val1, unsigned int val2)
-{
-	azo_frame_ensure_bc_size (frame, 6);
-	frame->bc[frame->bc_len] = (unsigned char) ic;
-	frame->bc[frame->bc_len + 1] = (unsigned char) val1;
-	memcpy (&frame->bc[frame->bc_len + 2], &val2, 4);
-	frame->bc_len += 6;
-}
-
-void
-azo_frame_write_ic_u32_u32 (AZOFrame *frame, unsigned int ic, unsigned int val1, unsigned int val2)
-{
-	azo_frame_ensure_bc_size (frame, 9);
-	frame->bc[frame->bc_len] = (unsigned char) ic;
-	memcpy (&frame->bc[frame->bc_len + 1], &val1, 4);
-	memcpy (&frame->bc[frame->bc_len + 5], &val2, 4);
-	frame->bc_len += 9;
-}
-
-void
-azo_frame_write_ic_type_value (AZOFrame *frame, unsigned int ic, unsigned int type, const AZValue *val)
-{
-	azo_frame_ensure_bc_size (frame, 2);
-	frame->bc[frame->bc_len++] = (unsigned char) ic;
-	frame->bc[frame->bc_len++] = (unsigned char) type;
-	if (type) {
-		AZClass *klass = az_type_get_class (type);
-		if (az_class_value_size(klass)) {
-			azo_frame_ensure_bc_size (frame, az_class_value_size(klass));
-			memcpy (&frame->bc[frame->bc_len], val, az_class_value_size(klass));
-			frame->bc_len += az_class_value_size(klass);
-		}
-	}
-}
-
 unsigned int
 azo_frame_get_current_ip (AZOFrame *frame)
 {
-	return frame->bc_len;
+	return frame->code.bc_len;
 }
 
 void
 azo_frame_update_JMP_to (AZOFrame *frame, unsigned int loc)
 {
-	int32_t raddr = (int) frame->bc_len - (int) (loc + 5);
-	memcpy (frame->bc + loc + 1, &raddr, 4);
+	int32_t raddr = (int) frame->code.bc_len - (int) (loc + 5);
+	memcpy(frame->code.bc + loc + 1, &raddr, 4);
 }
 
 void
 azo_frame_reserve_data (AZOFrame *frame, unsigned int amount)
 {
-	assert (frame->data_len == 0);
-	azo_frame_ensure_data_size (frame, amount);
-	frame->data_len = amount;
+	azo_code_reserve_data(&frame->code, amount);
 }
 
 #define noDEBUG_APPEND
@@ -292,40 +201,25 @@ azo_frame_reserve_data (AZOFrame *frame, unsigned int amount)
 unsigned int
 azo_frame_append_value (AZOFrame *frame, unsigned int type, const AZValue *val)
 {
-	azo_frame_ensure_data_size (frame, 1);
-	unsigned int pos = frame->data_len;
-	az_packed_value_set_from_type_value (&frame->data[frame->data_len++], type, val);
+	unsigned int pos = frame->code.data_len;
+	azo_code_write_instance(&frame->code, AZ_IMPL_FROM_TYPE(type), az_value_get_inst(AZ_IMPL_FROM_TYPE(type), val));
 	return pos;
 }
 
 unsigned int
 azo_frame_append_string (AZOFrame *frame, AZString *str)
 {
-	unsigned int pos;
-	for (pos = 0; pos < frame->data_len; pos++) {
-		if (frame->data[pos].impl && (frame->data[pos].impl == (const AZImplementation *) az_type_get_class (AZ_TYPE_STRING)) && (frame->data[pos].v.string == str)) return pos;
-	}
-	azo_frame_ensure_data_size (frame, 1);
-	az_packed_value_set_string (&frame->data[frame->data_len++], str);
-#ifdef DEBUG_APPEND
-	fprintf (stderr, "azo_frame_append_string: Stored %s at %u\n", str->str, pos);
-#endif
-	return pos;
+	int pos = azo_code_find_block(&frame->code, (const AZImplementation *) &AZStringKlass, str);
+	if (pos >= 0) return pos;
+	return azo_code_write_instance(&frame->code, (const AZImplementation *) &AZStringKlass, str);
 }
 
 unsigned int
 azo_frame_append_object (AZOFrame *frame, AZObject *obj)
 {
-	unsigned int pos;
-	for (pos = 0; pos < frame->data_len; pos++) {
-		if (frame->data[pos].impl && (frame->data[pos].impl == (const AZImplementation *) obj->klass) && (frame->data[pos].v.reference == (AZReference *) obj)) return pos;
-	}
-	azo_frame_ensure_data_size (frame, 1);
-	az_packed_value_set_object (&frame->data[frame->data_len++], obj);
-#ifdef DEBUG_APPEND
-	fprintf (stderr, "azo_frame_append_object: Stored %s at %u\n", ((AZClass *) obj->klass)->name, pos);
-#endif
-	return pos;
+	int pos = azo_code_find_block(&frame->code, (const AZImplementation *) obj->klass, obj);
+	if (pos >= 0) return pos;
+	return azo_code_write_instance(&frame->code, (const AZImplementation *) obj->klass, obj);
 }
 
 AZOVariable *

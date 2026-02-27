@@ -52,6 +52,12 @@ resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass,
 	const AZClass *def_class;
 	const AZImplementation *def_impl;
 	void *def_inst;
+	/**
+	 * @brief Try to get property from parent
+	 * 
+	 * REFERENCE -> CONSTANT
+	 * 
+	 */
 	int idx = az_class_lookup_property (klass, impl, inst, str, &def_class, &def_impl, &def_inst);
 	if (idx >= 0) {
 		AZField *field = &def_class->props_self[idx];
@@ -73,6 +79,12 @@ resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass,
 			return 0;
 		}
 	} else if (inst && az_type_implements(AZ_IMPL_TYPE(impl), AZ_TYPE_ATTRIBUTE_DICT)) {
+		/**
+		 * @brief Try to get attribute from parent
+		 * 
+		 * REFERENCE -> CONSTANT
+		 * 
+		 */
 		void *attrd_inst;
 		const AZAttribDictImplementation *attrd_impl = (AZAttribDictImplementation *) az_instance_get_interface (impl, inst, AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
 		AZValue64 attr_val;
@@ -88,11 +100,7 @@ resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass,
 				// Final undefined value, not normal but we have to handle it
 				expr->term.subtype = 0;
 			}
-			while (expr->children) {
-				AZOExpression *child = expr->children;
-				expr->children = child->next;
-				azo_expression_free_tree (child);
-			}
+			azo_expression_clear_children(expr);
 #ifdef noDEBUG_MEMBER_INST
 			describe(stderr, "resolve_member: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
 #endif
@@ -118,11 +126,10 @@ resolve_member (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	member = azo_compiler_resolve_expression (comp, expr->children->next, flags, &result);
 	if (result) return result;
 	if (parent->term.type == EXPRESSION_CONSTANT) {
-		if ((member->term.type == EXPRESSION_REFERENCE) && (member->term.subtype == REFERENCE_PROPERTY)) {
-			const AZClass *klass = az_type_get_class (parent->term.subtype);
-			const AZImplementation *impl = parent->value.impl;
-			void *inst = az_value_get_inst(parent->value.impl, &parent->value.v);
-			return resolve_member_inst (comp->current, expr, klass, impl, inst, member->value.v.string, flags);
+		if (AZO_EXPRESSION_IS(member, EXPRESSION_REFERENCE, REFERENCE_PROPERTY)) {
+			void *inst;
+			const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
+			return resolve_member_inst (comp->current, expr, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
 		}
 	}
 	return 0;
@@ -144,7 +151,11 @@ resolve_this_reference (AZOCompiler *comp, AZOExpression *expr, unsigned int fla
 static unsigned int
 resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 {
-	/* Try global */
+	/*
+	 * Try global context
+	 *
+	 * REFERENCE -> CONSTANT
+	 */
 #ifdef DEBUG_RESOLVE_VARIABLE
 	AZString *str = expr->value.v.string;
 #endif
@@ -158,7 +169,12 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 #endif
 		return 0;
 	}
-	/* Try local */
+	/*
+	 * Try local
+	 *
+	 * REFERENCE -> CONSTANT
+	 * REFERENCE -> VARIABLE, local
+	 */
 	AZOVariable *var = azo_frame_lookup_var (comp->current, expr->value.v.string);
 	if (var) {
 		if (!(flags & AZO_COMPILER_VAR_IS_LVALUE) && var->const_expr) {
@@ -179,7 +195,12 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 		expr->var_pos = var->pos;
 		return 0;
 	}
-	/* Try if parent is already defined */
+	/*
+	 * Try defined parent variables in current frame
+	 *
+	 * REFERENCE -> CONSTANT
+	 * REFERENCE -> VARIABLE, parent
+	 */
 	var = azo_frame_lookup_parent_var (comp->current, expr->value.v.string);
 	if (var) {
 		if (!(flags & AZO_COMPILER_VAR_IS_LVALUE) && var->const_expr) {
@@ -200,7 +221,12 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 		expr->var_pos = var->pos;
 		return 0;
 	}
-	/* Try parent frame */
+	/*
+	 * Look up parent frames and define if needed
+	 *
+	 * REFERENCE -> CONSTANT
+	 * REFERENCE -> VARIABLE, parent
+	 */
 	if (comp->current->parent) {
 		var = azo_frame_lookup_chained (comp->current->parent, expr->value.v.string);
 		if (var) {

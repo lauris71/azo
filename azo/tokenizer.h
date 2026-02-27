@@ -67,7 +67,8 @@ typedef struct _AZOToken AZOToken;
 #define AZO_TOKEN_OPERATOR_CODE(t) ((t)->type & AZO_TOKEN_SUBTYPE_MASK)
 
 struct _AZOTokenizer {
-	AZOSource *src;
+	const uint8_t *cdata;
+	unsigned int csize;
 };
 
 struct _AZOTokenizerClass {
@@ -82,7 +83,7 @@ struct _AZOToken {
 	unsigned int type;
 };
 
-void azo_tokenizer_setup (AZOTokenizer *tokenizer, const unsigned char *cdata, unsigned int csize);
+void azo_tokenizer_setup (AZOTokenizer *tokenizer, const uint8_t *cdata, unsigned int csize);
 void azo_tokenizer_release (AZOTokenizer *tokenizer);
 
 unsigned int azo_tokenizer_is_eof (AZOTokenizer *tokenizer, const AZOToken *current);

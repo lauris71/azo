@@ -44,7 +44,7 @@ enum {
 	LVALUE_MEMBER,
 	/* Array element, stack(1) is array, stack(0) is index */
 	LVALUE_ELEMENT,
-	/* Contant */
+	/* Constant */
 	LVALUE_VALUE
 };
 
@@ -55,8 +55,6 @@ struct _LValue {
 	/* Number of elements pushed */
 	unsigned int n_elements;
 };
-
-static AZOProgram *azo_compiler_compile_noresolve (AZOCompiler *comp, AZOExpression *expr, const AZOSource *src);
 
 void
 azo_compiler_init(AZOCompiler *compiler, AZOContext *ctx)
@@ -75,7 +73,7 @@ azo_compiler_finalize(AZOCompiler *compiler)
 void
 azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type)
 {
-	AZOFrame *frame = azo_frame_new (comp->current, this_impl, this_inst, ret_type);
+	AZOFrame *frame = azo_frame_new (comp->current, this_impl, this_inst, ret_type, comp->debug);
 	frame->parent = comp->current;
 	comp->current = frame;
 }
@@ -99,33 +97,40 @@ azo_compiler_declare_variable (AZOCompiler *comp, AZString *name, unsigned int t
 }
 
 void
-azo_compiler_write_instruction_1 (AZOCompiler *comp, unsigned int ic)
+azo_compiler_write_ic(AZOCompiler *comp, unsigned int ic, const AZOExpression *expr)
 {
 	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
-	azo_frame_write_ic (comp->current, ic);
+	azo_code_write_ic(&comp->current->code, ic, expr);
 }
 
 /* New stack methods */
 
 static void
-write_tc_u8 (AZOCompiler *comp, unsigned int ic, uint8_t val)
+write_tc_u8 (AZOCompiler *comp, unsigned int ic, uint8_t val, const AZOExpression *expr)
 {
 	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
-	azo_frame_write_ic_u8 (comp->current, ic, val);
+	azo_code_write_ic_u8(&comp->current->code, ic, val, expr);
 }
 
 static void
-write_tc_u32 (AZOCompiler *comp, unsigned int ic, uint32_t val)
+write_tc_u32 (AZOCompiler *comp, unsigned int ic, uint32_t val, const AZOExpression *expr)
 {
 	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
-	azo_frame_write_ic_u32 (comp->current, ic, val);
+	azo_code_write_ic_u32 (&comp->current->code, ic, val, expr);
 }
 
 static void
-write_tc_u8_u32 (AZOCompiler *comp, unsigned int ic, uint8_t val1, uint32_t val2)
+write_tc_i32 (AZOCompiler *comp, uint8_t ic, int32_t val, const AZOExpression *expr)
 {
 	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
-	azo_frame_write_ic_u8_u32 (comp->current, ic, val1, val2);
+	azo_code_write_ic_i32 (&comp->current->code, ic, val, expr);
+}
+
+static void
+write_tc_u8_u32 (AZOCompiler *comp, unsigned int ic, uint8_t val1, uint32_t val2, const AZOExpression *expr)
+{
+	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
+	azo_code_write_ic_u8_u32(&comp->current->code, ic, val1, val2, expr);
 }
 
 #define write_DEBUG_STACK azo_compiler_write_DEBUG_STACK
@@ -134,115 +139,123 @@ write_tc_u8_u32 (AZOCompiler *comp, unsigned int ic, uint8_t val1, uint32_t val2
 void
 azo_compiler_write_DEBUG_STACK (AZOCompiler *comp)
 {
-	write_tc_u32 (comp, AZO_TC_DEBUG, 1);
+	write_tc_u32 (comp, AZO_TC_DEBUG, 0, NULL);
 }
 
 void
-azo_compiler_write_DEBUG_STRING (AZOCompiler *comp, const char *text)
+azo_compiler_write_DEBUG_STRING (AZOCompiler *comp, const char *text, const AZOExpression *expr)
 {
-	AZString *str = az_string_new ((const unsigned char *) text);
-	unsigned int pos = azo_frame_append_string (comp->current, str);
-	azo_frame_write_ic_u32_u32 (comp->current, AZO_TC_DEBUG, 2, pos);
+	AZString *str = az_string_new((const uint8_t *) text);
+	unsigned int pos = azo_frame_append_string(comp->current, str);
+	write_tc_u32 (comp, AZO_TC_DEBUG_STR, pos, expr);
 	az_string_unref (str);
 }
 
 void
-azo_compiler_write_DEBUG_STRING_len (AZOCompiler *comp, const unsigned char *text, unsigned int len)
+azo_compiler_write_DEBUG_STRING_len (AZOCompiler *comp, const uint8_t *text, unsigned int len, const AZOExpression *expr)
 {
-	AZString *str = az_string_new_length (text, len);
-	unsigned int pos = azo_frame_append_string (comp->current, str);
-	azo_frame_write_ic_u32_u32 (comp->current, AZO_TC_DEBUG, 2, pos);
+	AZString *str = az_string_new_length(text, len);
+	unsigned int pos = azo_frame_append_string(comp->current, str);
+	write_tc_u32 (comp, AZO_TC_DEBUG_STR, pos, expr);
 	az_string_unref (str);
 }
 
 void
-azo_compiler_write_EXCEPTION (AZOCompiler *comp, uint32_t type)
+azo_compiler_write_EXCEPTION (AZOCompiler *comp, uint32_t type, const AZOExpression *expr)
 {
-	azo_frame_write_ic_u32 (comp->current, AZO_TC_EXCEPTION, type);
+	azo_code_write_ic_u32(&comp->current->code, AZO_TC_EXCEPTION, type, expr);
 }
 
 void
-azo_compiler_write_EXCEPTION_COND (AZOCompiler *comp, unsigned int tc, uint32_t type)
+azo_compiler_write_EXCEPTION_COND (AZOCompiler *comp, unsigned int tc, uint32_t type, const AZOExpression *expr)
 {
-	azo_frame_write_ic_u32 (comp->current, AZO_TC_EXCEPTION, type);
+	azo_code_write_ic_u32 (&comp->current->code, tc, type, expr);
 }
 
 void
 azo_compiler_write_PUSH_FRAME (AZOCompiler *comp, unsigned int pos)
 {
-	write_tc_u32 (comp, AZO_TC_PUSH_FRAME, pos);
+	write_tc_u32 (comp, AZO_TC_PUSH_FRAME, pos, NULL);
 }
 
 void
-azo_compiler_write_POP (AZOCompiler *comp, uint32_t n_values)
+azo_compiler_write_POP (AZOCompiler *comp, uint32_t n_values, const AZOExpression *expr)
 {
-	write_tc_u32 (comp, AZO_TC_POP, n_values);
+	write_tc_u32 (comp, AZO_TC_POP, n_values, expr);
 }
 
 void
-azo_compiler_write_REMOVE (AZOCompiler *comp, unsigned int first, unsigned int n_values)
+azo_compiler_write_REMOVE (AZOCompiler *comp, unsigned int first, unsigned int n_values, const AZOExpression *expr)
 {
 	unsigned int ic = AZO_TC_REMOVE;
 	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
-	azo_frame_write_ic_u32_u32 (comp->current, ic, first, n_values);
+	azo_code_write_ic_u32_u32(&comp->current->code, ic, first, n_values, expr);
 }
 
 void
-azo_compiler_write_PUSH_EMPTY (AZOCompiler *comp, uint32_t type)
+azo_compiler_write_PUSH_EMPTY (AZOCompiler *comp, uint32_t type, const AZOExpression *expr)
 {
-	write_tc_u32 (comp, AZO_TC_PUSH_EMPTY, type);
+	write_tc_u32 (comp, AZO_TC_PUSH_EMPTY, type, expr);
 }
 
 void
-azo_compiler_write_PUSH_IMMEDIATE (AZOCompiler *comp, unsigned int type, const AZValue *value)
+azo_compiler_write_PUSH_IMMEDIATE (AZOCompiler *comp, unsigned int type, const AZValue *val, const AZOExpression *expr)
 {
-	unsigned int ic = PUSH_IMMEDIATE;
-	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
-	azo_frame_write_ic_type_value (comp->current, ic, type, value);
+	uint8_t ic8 = PUSH_IMMEDIATE;
+	if (comp->check_args) ic8 |= AZO_TC_CHECK_ARGS;
+	azo_code_write_bc(&comp->current->code, &ic8, 1, expr);
+	uint8_t t8 = type;
+	azo_code_write_bc(&comp->current->code, &t8, 1, expr);
+	if (type) {
+		unsigned int val_size = az_class_value_size(AZ_CLASS_FROM_TYPE(type));
+		if (val_size) {
+			azo_code_write_bc(&comp->current->code, val, val_size, expr);
+		}
+	}
 }
 
 void
 azo_compiler_write_DUPLICATE (AZOCompiler *comp, unsigned int pos)
 {
-	write_tc_u32 (comp, DUPLICATE, pos);
+	write_tc_u32 (comp, DUPLICATE, pos, NULL);
 }
 
 void
 azo_compiler_write_DUPLICATE_FRAME (AZOCompiler *comp, unsigned int pos)
 {
-	write_tc_u32 (comp, DUPLICATE_FRAME, pos);
+	write_tc_u32 (comp, DUPLICATE_FRAME, pos, NULL);
 }
 
 void
 azo_compiler_write_EXCHANGE (AZOCompiler *comp, unsigned int pos)
 {
-	write_tc_u32 (comp, EXCHANGE, pos);
+	write_tc_u32 (comp, EXCHANGE, pos, NULL);
 }
 
 void
 azo_compiler_write_TEST_TYPE (AZOCompiler *comp, unsigned int typecode, unsigned int pos)
 {
-	write_tc_u8 (comp, typecode, (uint8_t) pos);
+	write_tc_u8 (comp, typecode, (uint8_t) pos, NULL);
 }
 
 void
 azo_compiler_write_TEST_TYPE_IMMEDIATE (AZOCompiler *comp, unsigned int typecode, unsigned int pos, unsigned int type)
 {
-	write_tc_u8_u32 (comp, typecode, (uint8_t) pos, type);
+	write_tc_u8_u32 (comp, typecode, (uint8_t) pos, type, NULL);
 }
 
 void
 azo_compiler_write_TYPE_OF (AZOCompiler *comp, unsigned int pos)
 {
-	write_tc_u8 (comp, TYPE_OF, (uint8_t) pos);
+	write_tc_u8 (comp, TYPE_OF, (uint8_t) pos, NULL);
 }
 
 unsigned int
-azo_compiler_write_JMP_32 (AZOCompiler *comp, unsigned int ic, unsigned int to)
+azo_compiler_write_JMP_32 (AZOCompiler *comp, unsigned int ic, unsigned int to, const AZOExpression *expr)
 {
-	unsigned int pos = comp->current->bc_len;
+	unsigned int pos = comp->current->code.bc_len;
 	int32_t raddr = (int) to - (int) (pos + 5);
-	write_tc_u32 (comp, ic, raddr);
+	write_tc_i32 (comp, ic, raddr, expr);
 	return pos;
 }
 
@@ -255,31 +268,31 @@ azo_compiler_update_JMP_32 (AZOCompiler *comp, unsigned int from)
 void
 azo_compiler_write_PROMOTE (AZOCompiler *comp, uint8_t pos)
 {
-	write_tc_u8 (comp, PROMOTE, pos);
+	write_tc_u8 (comp, PROMOTE, pos, NULL);
 }
 
 void
 azo_compiler_write_EQUAL_TYPED (AZOCompiler *comp, uint8_t type)
 {
-	write_tc_u8 (comp, EQUAL_TYPED, type);
+	write_tc_u8 (comp, EQUAL_TYPED, type, NULL);
 }
 
 void
 azo_compiler_write_COMPARE_TYPED (AZOCompiler *comp, uint8_t type)
 {
-	write_tc_u8 (comp, COMPARE_TYPED, type);
+	write_tc_u8 (comp, COMPARE_TYPED, type, NULL);
 }
 
 void
 azo_compiler_write_ARITHMETIC_TYPED (AZOCompiler *comp, unsigned int typecode, uint8_t type)
 {
-	write_tc_u8 (comp, typecode, type);
+	write_tc_u8 (comp, typecode, type, NULL);
 }
 
 void
 azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint8_t type)
 {
-	write_tc_u8 (comp, typecode, type);
+	write_tc_u8 (comp, typecode, type, NULL);
 }
 
 /* End new stack methods */
@@ -287,61 +300,61 @@ azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint8
 static void
 azo_compiler_write_PUSH_VALUE (AZOCompiler *comp, unsigned int pos)
 {
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, NULL);
 }
 
 static void
 compile_PUSH_VALUE (AZOCompiler *comp, unsigned int type, const AZValue *val)
 {
 	unsigned int pos = azo_frame_append_value (comp->current, type, val);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, NULL);
 }
 
 static void
 compile_PUSH_VALUE_string (AZOCompiler *comp, AZString *str)
 {
 	unsigned int pos = azo_frame_append_string (comp->current, str);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, NULL);
 }
 
 static void
 compile_PUSH_VALUE_object (AZOCompiler *comp, AZObject *obj)
 {
 	unsigned int pos = azo_frame_append_object (comp->current, obj);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, NULL);
 }
 
 /* End temporary */
 
-static unsigned int compile_program (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
-static unsigned int compile_sentences (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
-static unsigned int compile_sentence (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
-static unsigned int compile_block (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
-static unsigned int compile_statement (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
-static unsigned int compile_step_statement (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
-static unsigned int compile_declaration (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
-static unsigned int compile_single_declaration (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src, unsigned int type);
-static unsigned int compile_silent_statement (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
-static unsigned int compile_assign (AZOCompiler *comp, const AZOExpression *left, const AZOExpression *right, const AZOExpression *expr, const AZOSource *src);
+static unsigned int compile_program (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
+static unsigned int compile_sentences (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
+static unsigned int compile_sentence (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
+static unsigned int compile_block (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
+static unsigned int compile_statement (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
+static unsigned int compile_step_statement (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
+static unsigned int compile_declaration (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
+static unsigned int compile_single_declaration (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src, unsigned int type);
+static unsigned int compile_silent_statement (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
+static unsigned int compile_assign (AZOCompiler *comp, const AZOExpression *left, const AZOExpression *right, AZOSource *src);
 /* Expressions */
-static unsigned int compile_variable_reference (AZOCompiler *comp, const AZOExpression *expr, unsigned int type, const AZOSource *src);
+static unsigned int compile_variable_reference (AZOCompiler *comp, const AZOExpression *expr, unsigned int type, AZOSource *src);
 static unsigned int compile_singular_reference (AZOCompiler *comp, const AZOExpression *expr);
-static unsigned int compile_member_reference (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
-static unsigned int compile_array_reference (AZOCompiler *comp, const AZOExpression *aref, const AZOExpression *index, const AZOSource *src);
-static unsigned int compile_array_literal (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
+static unsigned int compile_member_reference (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
+static unsigned int compile_array_reference (AZOCompiler *comp, const AZOExpression *aref, const AZOExpression *index, AZOSource *src);
+static unsigned int compile_array_literal (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
 
-static unsigned int compile_new (AZOCompiler *comp, const AZOExpression *klass, const AZOExpression *list, const AZOSource *src);
-static unsigned int compile_function_call (AZOCompiler *comp, const AZOExpression *function, const AZOExpression *list, const AZOSource *src, unsigned int silent);
-static unsigned int compile_expression_lvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
+static unsigned int compile_new (AZOCompiler *comp, const AZOExpression *klass, const AZOExpression *list, AZOSource *src);
+static unsigned int compile_function_call (AZOCompiler *comp, const AZOExpression *function, const AZOExpression *list, AZOSource *src, unsigned int silent);
+static unsigned int compile_expression_lvalue (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
 
 static unsigned int
-azo_compiler_compile_constant (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+azo_compiler_compile_constant (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	if (expr->term.subtype == AZ_TYPE_NONE) {
 		/* Constant none is NULL */
-		azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_NONE, NULL);
+		azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_NONE, NULL, expr);
 	} else if (AZ_TYPE_IS_PRIMITIVE (expr->term.subtype)) {
-		azo_compiler_write_PUSH_IMMEDIATE (comp, expr->term.subtype, &expr->value.v);
+		azo_compiler_write_PUSH_IMMEDIATE (comp, expr->term.subtype, &expr->value.v, expr);
 	} else if (expr->term.subtype == AZ_TYPE_STRING) {
 		compile_PUSH_VALUE_string (comp, expr->value.v.string);
 	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_OBJECT)) {
@@ -362,64 +375,74 @@ azo_compiler_compile_constant (AZOCompiler *comp, const AZOExpression *expr, con
 	return 1;
 }
 
-/* Assign stack(0) to already compiled lvalue */
+/**
+ * @brief Assign top of stack to already compiled lvalue
+ * 
+ * Only LVALUE_STACK, LVALUE_MEMBER and LVALUE_ELEMENT allowed
+ * 
+ */
 
-static void
-compile_assign_to_lvalue (AZOCompiler *comp, LValue *lval)
+static unsigned int
+compile_assign_to_lvalue (AZOCompiler *comp, LValue *lval, const AZOExpression *expr)
 {
 	if (lval->type == LVALUE_STACK) {
-		/* Value */
-		write_tc_u32 (comp, AZO_TC_EXCHANGE_FRAME, lval->pos);
-		azo_compiler_write_POP (comp, 1);
+		/* [..., prev, ..., value] */
+		write_tc_u32 (comp, AZO_TC_EXCHANGE_FRAME, lval->pos, expr);
+		/* [..., value, ..., prev] */
+		azo_compiler_write_POP (comp, 1, expr);
+		/* [..., value, ...] */
 	} else if (lval->type == LVALUE_MEMBER) {
-		unsigned int finished_1, finished_2, invalid_type;
-		/* Object, member, value */
-		azo_compiler_write_instruction_1 (comp, AZO_TC_SET_PROPERTY);
-		/* true | (object, member, value, false) */
-		finished_1 = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0);
-		/* Object, member, value */
-		azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 2, AZ_TYPE_ATTRIBUTE_DICT);
-		invalid_type = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0);
-		azo_compiler_write_instruction_1 (comp, SET_ATTRIBUTE);
-		finished_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
-
-		azo_compiler_update_JMP_32 (comp, invalid_type);
-		azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE);
-
-		azo_compiler_update_JMP_32 (comp, finished_1);
-		azo_compiler_update_JMP_32 (comp, finished_2);
+		/* [instance, key, value] */
+		azo_compiler_write_ic (comp, AZO_TC_SET_PROPERTY, expr);
+		/* [true] */
+		/* [instance, key, value, false] */
+		unsigned int finished = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, expr);
+		/* [instance, key, value] */
+		azo_compiler_write_ic (comp, AZO_TC_SET_ATTRIBUTE, expr);
+		/* [] */
+		azo_compiler_update_JMP_32 (comp, finished);
 	} else if (lval->type == LVALUE_ELEMENT) {
-		/* Array, index, value */
-		azo_compiler_write_instruction_1 (comp, WRITE_ARRAY_ELEMENT | AZO_TC_CHECK_ARGS);
-		azo_compiler_write_POP (comp, 1);
+		/* [array, index, value] */
+		azo_compiler_write_ic (comp, WRITE_ARRAY_ELEMENT, expr);
+		/* [array] */
+		azo_compiler_write_POP (comp, 1, expr);
+		/* [] */
 	} else {
 		fprintf (stderr, "Unassignable lvalue type\n");
+		return 0;
 	}
+	return 1;
 }
 
 /* Compile LValue expression into LValue structure */
-/* Only reference, function call and array element expressions are allowed here */
+/* Only variable, reference, function call and array element expressions are allowed here */
 
 static unsigned int
-compile_lvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src, LValue *lvalue, unsigned int read_only)
+compile_lvalue (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src, LValue *lvalue, unsigned int read_only)
 {
-	AZOExpression *left, *right;
 	if (expr->term.type == EXPRESSION_VARIABLE) {
 		if (expr->term.subtype == VARIABLE_LOCAL) {
-			/* Declared in current instance */
+			/*
+			 * Declared in current instance
+			 *
+			 * No code, bare LValue
+			 */
 			lvalue->type = LVALUE_STACK;
 			//lvalue->pos = comp->current->n_sig_vars + comp->current->n_parent_vars + expr->var_pos;
 			lvalue->pos = expr->var_pos;
 			lvalue->n_elements = 0;
 			return 1;
 		} else {
-			/* Declared in parent frame */
+			/*
+			 * Declared in parent frame
+			 *
+			 * No code, bare LValue
+			 */
 			if (!read_only) {
 				fprintf (stderr, "Parent variable in writable lvalue\n");
 				return 0;
 			}
 			lvalue->type = LVALUE_VALUE;
-			//lvalue->pos = comp->current->n_sig_vars + expr->var_pos;
 			lvalue->pos = expr->var_pos;
 			lvalue->n_elements = 0;
 			return 1;
@@ -435,8 +458,8 @@ compile_lvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *s
 			return 1;
 		} else if (expr->term.subtype == REFERENCE_MEMBER) {
 			lvalue->type = LVALUE_MEMBER;
-			left = expr->children;
-			right = left->next;
+			AZOExpression *left = expr->children;
+			AZOExpression *right = left->next;
 			if (!azo_compiler_compile_expression (comp, left, src)) return 0;
 			compile_PUSH_VALUE_string (comp, right->value.v.string);
 			lvalue->n_elements = 2;
@@ -446,8 +469,8 @@ compile_lvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *s
 		}
 	} else if (expr->term.type == EXPRESSION_ARRAY_ELEMENT) {
 		lvalue->type = LVALUE_ELEMENT;
-		left = expr->children;
-		right = left->next;
+		AZOExpression *left = expr->children;
+		AZOExpression *right = left->next;
 		if (!azo_compiler_compile_expression (comp, left, src)) return 0;
 		if (!azo_compiler_compile_expression (comp, right, src)) return 0;
 		lvalue->n_elements = 2;
@@ -458,15 +481,22 @@ compile_lvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *s
 	return 1;
 }
 
-static unsigned int
-compile_expression_boolean (AZOCompiler *comp, AZOExpression *expr, const AZOSource *src)
+static void
+compile_type_exception(AZOCompiler *comp, const AZOExpression *expr, unsigned int type, AZOSource *src)
 {
-	/* fixme: Convert result or not? */
-	return azo_compiler_compile_expression (comp, expr, src);
+	azo_code_write_ic_u32_u32 (&comp->current->code, AZO_TC_EXCEPTION_IF_TYPE_IS_NOT, 0, type, expr);
 }
 
 static unsigned int
-compile_call (AZOCompiler *comp, const AZOExpression *list, const AZOSource *src, unsigned int has_this, unsigned int test_implementation)
+compile_expression_boolean (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
+{
+	if (!azo_compiler_compile_expression (comp, expr, src)) return 0;
+	compile_type_exception(comp, expr, AZ_TYPE_BOOLEAN, src);
+	return 1;
+}
+
+static unsigned int
+compile_call (AZOCompiler *comp, const AZOExpression *list, AZOSource *src, unsigned int has_this, unsigned int test_implementation)
 {
 	unsigned int is_function;
 	unsigned int n_args;
@@ -479,8 +509,8 @@ compile_call (AZOCompiler *comp, const AZOExpression *list, const AZOSource *src
 	/* [func] */
 	if (test_implementation) {
 		azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION);
-		is_function = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0);
-		azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE);
+		is_function = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+		azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
 		azo_compiler_update_JMP_32 (comp, is_function);
 	}
 	if (has_this) {
@@ -501,11 +531,11 @@ compile_call (AZOCompiler *comp, const AZOExpression *list, const AZOSource *src
 	/* [func, this, arg1...] */
 	azo_compiler_write_PUSH_FRAME (comp, n_args);
 	/* [func : this, arg1...] */
-	write_tc_u8 (comp, AZO_TC_INVOKE, n_args);
+	write_tc_u8 (comp, AZO_TC_INVOKE, n_args, NULL);
 	/* [func : this, arg1..., result] */
-	azo_compiler_write_instruction_1 (comp, AZO_TC_POP_FRAME);
+	azo_compiler_write_ic (comp, AZO_TC_POP_FRAME, NULL);
 	/* [func, this, arg1..., result] */
-	azo_compiler_write_REMOVE (comp, 1, n_args + 1);
+	azo_compiler_write_REMOVE (comp, 1, n_args + 1, NULL);
 	/* [result] */
 	return 0;
 }
@@ -516,11 +546,11 @@ compile_call_inst_func_args (AZOCompiler *comp, unsigned int n_args)
 	/* [inst, funcobj, arg1...] */
 	azo_compiler_write_PUSH_FRAME (comp, n_args);
 	/* [inst, funcobj : arg1...] */
-	write_tc_u8 (comp, AZO_TC_INVOKE, n_args);
+	write_tc_u8 (comp, AZO_TC_INVOKE, n_args, NULL);
 	/* [inst, funcobj : arg1..., retval] */
-	azo_compiler_write_instruction_1 (comp, AZO_TC_POP_FRAME);
+	azo_compiler_write_ic (comp, AZO_TC_POP_FRAME, NULL);
 	/* [inst, funcobj, arg1..., retval] */
-	azo_compiler_write_REMOVE (comp, 1, n_args + 2);
+	azo_compiler_write_REMOVE (comp, 1, n_args + 2, NULL);
 	/* [retval] */
 }
 
@@ -529,12 +559,12 @@ compile_TEST_TYPE_IMMEDIATE (AZOCompiler *comp, unsigned int tc, unsigned int po
 {
 	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, tc, pos, type);
 	if (jmp_if) {
-		*jmp_if = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0);
+		*jmp_if = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
 		if (jmp_if_not) {
-			*jmp_if_not = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
+			*jmp_if_not = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 		}
 	} else if (jmp_if_not) {
-		*jmp_if_not = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0);
+		*jmp_if_not = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
 	}
 }
 
@@ -545,7 +575,7 @@ compile_IS_NONE (AZOCompiler *comp, unsigned int *jmp_if, unsigned int *jmp_if_n
 }
 
 static unsigned int
-compile_call_member (AZOCompiler *comp, const AZOSource *src, unsigned int n_args)
+compile_call_member (AZOCompiler *comp, AZOSource *src, unsigned int n_args)
 {
 	unsigned int is_member_function, is_class, not_active_obj, no_static_function, invalid_type, finished, finished_2, finished_3;
 
@@ -555,12 +585,12 @@ compile_call_member (AZOCompiler *comp, const AZOSource *src, unsigned int n_arg
 	azo_compiler_write_DEBUG_STRING (comp, "compile_call_member 1");
 	azo_compiler_write_DEBUG_STACK (comp);
 #endif
-	write_tc_u8 (comp, AZO_TC_GET_FUNCTION, n_args);
+	write_tc_u8 (comp, AZO_TC_GET_FUNCTION, n_args, NULL);
 	/* Instance, String, Arguments, Function|null */
 	compile_IS_NONE (comp, NULL, &is_member_function);
 
 	/* Instance, String, Arguments, null */
-	azo_compiler_write_POP (comp, 1);
+	azo_compiler_write_POP (comp, 1, NULL);
 	/* Instance, String, Arguments */
 	compile_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, n_args + 1, AZ_TYPE_CLASS, &is_class, NULL);
 
@@ -570,7 +600,7 @@ compile_call_member (AZOCompiler *comp, const AZOSource *src, unsigned int n_arg
 	/* ActiveObj, String, Arguments */
 	azo_compiler_write_DUPLICATE (comp, n_args + 1);
 	azo_compiler_write_DUPLICATE (comp, n_args + 1);
-	azo_compiler_write_instruction_1 (comp, GET_ATTRIBUTE);
+	azo_compiler_write_ic (comp, GET_ATTRIBUTE, NULL);
 	/* ActiveObj, String, Arguments, Value|null */
 	compile_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, NULL, &invalid_type);
 	/* ActiveObj, String, Arguments, Function */
@@ -580,38 +610,38 @@ compile_call_member (AZOCompiler *comp, const AZOSource *src, unsigned int n_arg
 	/* Instance, String, Arguments, Function */
 	azo_compiler_write_EXCHANGE (comp, n_args + 1);
 	/* Instance, Function, Arguments, String */
-	azo_compiler_write_POP (comp, 1);
+	azo_compiler_write_POP (comp, 1, NULL);
 	/* Instance, Function, Arguments */
 	compile_call_inst_func_args (comp, n_args);
 	/* Retval */
-	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
+	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 
 	/* Try GET_STATIC_FUNCTION */
 	azo_compiler_update_JMP_32 (comp, is_class);
 	n_args -= 1;
 	/* Class, String, Class, Arguments */
-	azo_compiler_write_REMOVE (comp, n_args, 1);
+	azo_compiler_write_REMOVE (comp, n_args, 1, NULL);
 	/* Class, String, Arguments */
-	write_tc_u8 (comp, AZO_TC_GET_STATIC_FUNCTION, n_args);
+	write_tc_u8 (comp, AZO_TC_GET_STATIC_FUNCTION, n_args, NULL);
 	/* Class, String, Arguments, Function | null */
 	compile_IS_NONE (comp, &no_static_function, NULL);
 
 	/* Class, String, Arguments, Function */
 	azo_compiler_write_EXCHANGE (comp, n_args + 1);
 	/* Class, Function, Arguments, String */
-	azo_compiler_write_POP (comp, 1);
+	azo_compiler_write_POP (comp, 1, NULL);
 	/* Class, Function, Arguments */
 	compile_call_inst_func_args (comp, n_args);
 	/* Retval */
-	finished_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
+	finished_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 
 	/* Value */
 	azo_compiler_update_JMP_32 (comp, no_static_function);
 	azo_compiler_update_JMP_32 (comp, not_active_obj);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_PROPERTY);
-	finished_3 = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
+	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_PROPERTY, NULL);
+	finished_3 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 	azo_compiler_update_JMP_32 (comp, invalid_type);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE);
+	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
 	azo_compiler_update_JMP_32 (comp, finished);
 	azo_compiler_update_JMP_32 (comp, finished_2);
 	azo_compiler_update_JMP_32 (comp, finished_3);
@@ -623,7 +653,7 @@ compile_call_member (AZOCompiler *comp, const AZOSource *src, unsigned int n_arg
 #define noDEBUG_NEW
 
 static unsigned int
-compile_new (AZOCompiler *comp, const AZOExpression *klass, const AZOExpression *list, const AZOSource *src)
+compile_new (AZOCompiler *comp, const AZOExpression *klass, const AZOExpression *list, AZOSource *src)
 {
 	AZOExpression *child;
 	unsigned int not_class, invalid_type_2, finished;
@@ -638,7 +668,7 @@ compile_new (AZOCompiler *comp, const AZOExpression *klass, const AZOExpression 
 	azo_compiler_compile_expression (comp, klass, src);
 	/* [Value] */
 	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_CLASS);
-	not_class = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0);
+	not_class = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
 	/* [Class] */
 	compile_PUSH_VALUE_string (comp, newstr);
 	/* [Class, "new"] */
@@ -651,20 +681,20 @@ compile_new (AZOCompiler *comp, const AZOExpression *klass, const AZOExpression 
 		return 0;
 	}
 	/* [Class, "new", arg1...] */
-	write_tc_u8 (comp, AZO_TC_GET_STATIC_FUNCTION, n_args);
+	write_tc_u8 (comp, AZO_TC_GET_STATIC_FUNCTION, n_args, NULL);
 	/* [Class, "new", arg1..., funcobj | null] */
 	compile_IS_NONE (comp, &invalid_type_2, NULL);
 	/* [Class, "new", arg1..., funcobj] */
 	azo_compiler_write_EXCHANGE (comp, n_args + 1);
 	/* [Class, funcobj, arg1..., "new"] */
-	azo_compiler_write_POP (comp, 1);
+	azo_compiler_write_POP (comp, 1, NULL);
 	/* [Class, funcobj, arg1...] */
 	compile_call_inst_func_args (comp, n_args);
-	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
+	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 	/* Invalid type */
 	azo_compiler_update_JMP_32 (comp, not_class);
 	azo_compiler_update_JMP_32 (comp, invalid_type_2);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE);
+	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
 	/* Finished */
 	azo_compiler_update_JMP_32 (comp, finished);
 
@@ -672,7 +702,7 @@ compile_new (AZOCompiler *comp, const AZOExpression *klass, const AZOExpression 
 }
 
 static unsigned int
-compile_prefix_arithmetic (AZOCompiler *comp, const AZOExpression *expr, const AZOExpression *left, const AZOSource *src, unsigned int silent)
+compile_prefix_arithmetic (AZOCompiler *comp, const AZOExpression *expr, const AZOExpression *left, AZOSource *src, unsigned int silent)
 {
 	LValue lval;
 	if (silent) {
@@ -687,9 +717,9 @@ compile_prefix_arithmetic (AZOCompiler *comp, const AZOExpression *expr, const A
 			return 0;
 		}
 		/* LValue, Value */
-		compile_assign_to_lvalue (comp, &lval);
+		compile_assign_to_lvalue (comp, &lval, NULL);
 	} else {
-		azo_compiler_write_PUSH_EMPTY (comp, AZ_TYPE_NONE);
+		azo_compiler_write_PUSH_EMPTY (comp, AZ_TYPE_NONE, expr);
 		/* null */
 		if (!compile_lvalue (comp, left, src, &lval, 0)) return 0;
 		/* null, [LValue] */
@@ -706,7 +736,7 @@ compile_prefix_arithmetic (AZOCompiler *comp, const AZOExpression *expr, const A
 		/* Value, [LValue], null */
 		azo_compiler_write_DUPLICATE (comp, lval.n_elements + 1);
 		/* Value, [LValue], Value */
-		compile_assign_to_lvalue (comp, &lval);
+		compile_assign_to_lvalue (comp, &lval, NULL);
 		/* Value */
 	}
 
@@ -714,17 +744,17 @@ compile_prefix_arithmetic (AZOCompiler *comp, const AZOExpression *expr, const A
 }
 
 static unsigned int
-compile_prefix (AZOCompiler *comp, const AZOExpression *expr, const AZOExpression *left, const AZOSource *src)
+compile_prefix (AZOCompiler *comp, const AZOExpression *expr, const AZOExpression *left, AZOSource *src)
 {
 	if (expr->term.subtype == PREFIX_PLUS) {
 		if (!azo_compiler_compile_expression (comp, left, src)) return 0;
 		/* NOP */
 	} else if (expr->term.subtype == PREFIX_MINUS) {
 		if (!azo_compiler_compile_expression (comp, left, src)) return 0;
-		azo_compiler_write_instruction_1 (comp, AZO_TC_NEGATE);
+		azo_compiler_write_ic (comp, AZO_TC_NEGATE, NULL);
 	} else if (expr->term.subtype == PREFIX_NOT) {
 		if (!azo_compiler_compile_expression (comp, left, src)) return 0;
-		azo_compiler_write_instruction_1 (comp, AZO_TC_LOGICAL_NOT);
+		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_NOT, NULL);
 	} else if (expr->term.subtype == PREFIX_TILDE) {
 		if (!azo_compiler_compile_tilde (comp, left, src)) return 0;
 	} else if (expr->term.subtype == PREFIX_INCREMENT) {
@@ -741,7 +771,7 @@ compile_prefix (AZOCompiler *comp, const AZOExpression *expr, const AZOExpressio
 #define noDEBUG_SUFFIX
 
 static unsigned int
-compile_suffix (AZOCompiler *comp, const AZOExpression *expr, const AZOExpression *left, const AZOSource *src, unsigned int silent)
+compile_suffix (AZOCompiler *comp, const AZOExpression *expr, const AZOExpression *left, AZOSource *src, unsigned int silent)
 {
 	LValue lval;
 	if (!silent) {
@@ -768,7 +798,7 @@ compile_suffix (AZOCompiler *comp, const AZOExpression *expr, const AZOExpressio
 		fprintf (stderr, "compile_suffix: Invalid expression subtype %u\n", expr->term.subtype);
 		return 0;
 	}
-	compile_assign_to_lvalue (comp, &lval);
+	compile_assign_to_lvalue (comp, &lval, NULL);
 #ifdef DEBUG_SUFFIX
 	write_DEBUG_STRING (comp, "compile_suffix: 3\n");
 	write_DEBUG_STACK (comp);
@@ -785,26 +815,26 @@ compile_reference_lookup (AZOCompiler *comp, const AZOExpression *expr, AZString
 	azo_compiler_write_DUPLICATE (comp, 0);
 	compile_PUSH_VALUE_string (comp, str);
 	/* InstanceA, InstanceA, String */
-	azo_compiler_write_instruction_1 (comp, AZO_TC_GET_PROPERTY);
+	azo_compiler_write_ic (comp, AZO_TC_GET_PROPERTY, NULL);
 	/* InstanceA, Value|null */
 	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE);
-	property_not_null = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0);
+	property_not_null = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
 
 	/* InstanceA, null */
 	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 1, AZ_TYPE_ATTRIBUTE_DICT);
-	not_active_obj = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0);
+	not_active_obj = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
 	/* ActiveObj, null */
-	azo_compiler_write_POP (comp, 1);
+	azo_compiler_write_POP (comp, 1, NULL);
 	compile_PUSH_VALUE_string (comp, str);
 	/* ActiveObj, String */
-	azo_compiler_write_instruction_1 (comp, GET_ATTRIBUTE);
+	azo_compiler_write_ic (comp, GET_ATTRIBUTE, NULL);
 	/* Value */
-	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
+	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 
 	azo_compiler_update_JMP_32 (comp, property_not_null);
 	azo_compiler_update_JMP_32 (comp, not_active_obj);
 	/* InstanceA, Value */
-	azo_compiler_write_REMOVE (comp, 1, 1);
+	azo_compiler_write_REMOVE (comp, 1, 1, NULL);
 	/* Value */
 	azo_compiler_update_JMP_32 (comp, finished);
 	return 1;
@@ -824,7 +854,7 @@ compile_this_reference (AZOCompiler *comp, const AZOExpression *expr, AZString *
 #define noDEBUG_PARENT_LVAL
 
 static unsigned int
-compile_function_call (AZOCompiler *comp, const AZOExpression *func, const AZOExpression *list, const AZOSource *src, unsigned int silent)
+compile_function_call (AZOCompiler *comp, const AZOExpression *func, const AZOExpression *list, AZOSource *src, unsigned int silent)
 {
 	AZOExpression *child;
 	unsigned int n_args, result;
@@ -839,14 +869,14 @@ compile_function_call (AZOCompiler *comp, const AZOExpression *func, const AZOEx
 			if (!azo_compiler_compile_constant (comp, func, src)) return 0;
 			result = compile_call (comp, list, src, 1, 0);
 			if (result) return 0;
-			azo_compiler_write_REMOVE (comp, 1, 1);
+			azo_compiler_write_REMOVE (comp, 1, 1, NULL);
 		} else {
 			if (!azo_compiler_compile_constant (comp, func, src)) return 0;
 			result = compile_call (comp, list, src, 0, 0);
 			if (result) return 0;
 		}
 		if (silent) {
-			azo_compiler_write_POP (comp, 1);
+			azo_compiler_write_POP (comp, 1, NULL);
 		}
 		return 1;
 	}
@@ -855,7 +885,7 @@ compile_function_call (AZOCompiler *comp, const AZOExpression *func, const AZOEx
 	switch (lval.type) {
 	case LVALUE_STACK:
 		/* - */
-		write_tc_u32 (comp, DUPLICATE_FRAME, lval.pos);
+		write_tc_u32 (comp, DUPLICATE_FRAME, lval.pos, NULL);
 		/* Value */
 		result = compile_call (comp, list, src, 0, 1);
 		if (result) return 0;
@@ -873,9 +903,9 @@ compile_function_call (AZOCompiler *comp, const AZOExpression *func, const AZOEx
 		break;
 	case LVALUE_ELEMENT:
 		/* Array, Index */
-		azo_compiler_write_instruction_1 (comp, LOAD_ARRAY_ELEMENT | AZO_TC_CHECK_ARGS);
+		azo_compiler_write_ic (comp, LOAD_ARRAY_ELEMENT, NULL);
 		/* Array, Value */
-		azo_compiler_write_REMOVE (comp, 1, 1);
+		azo_compiler_write_REMOVE (comp, 1, 1, NULL);
 		/* Value */
 		/* fixme: Handle object.array[index](args) this types */
 		result = compile_call (comp, list, src, 0, 1);
@@ -900,7 +930,7 @@ compile_function_call (AZOCompiler *comp, const AZOExpression *func, const AZOEx
 		break;
 	}
 	if (silent) {
-		azo_compiler_write_POP (comp, 1);
+		azo_compiler_write_POP (comp, 1, NULL);
 	}
 	return 1;
 }
@@ -908,7 +938,7 @@ compile_function_call (AZOCompiler *comp, const AZOExpression *func, const AZOEx
 #define noDEBUG_FUNCTION
 
 static unsigned int
-compile_function (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_function (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	AZOExpression *obj, *type, *args, *body;
 	AZOExpression *child;
@@ -942,7 +972,8 @@ compile_function (AZOCompiler *comp, const AZOExpression *expr, const AZOSource 
 
 	AZOFrame *prev = comp->current;
 	comp->current = expr->frame;
-	prog = azo_compiler_compile_noresolve (comp, body, src);
+
+	prog = azo_compiler_compile (comp, body, 0, src);
 	if (!prog) {
 		fprintf (stderr, "compile_function: error compiling function\n");
 		comp->current = prev;
@@ -957,9 +988,9 @@ compile_function (AZOCompiler *comp, const AZOExpression *expr, const AZOSource 
 	/* Function, Function */
 	compile_PUSH_VALUE_string (comp, bound_str);
 	/* Function, Function, "bound" */
-	azo_compiler_write_instruction_1 (comp, AZO_TC_GET_PROPERTY);
+	azo_compiler_write_ic (comp, AZO_TC_GET_PROPERTY, NULL);
 	/* Function, Boolean */
-	bound = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0);
+	bound = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
 	/* Function */
 	/* Bind function */
 
@@ -970,7 +1001,7 @@ compile_function (AZOCompiler *comp, const AZOExpression *expr, const AZOSource 
 			azo_compiler_write_DUPLICATE_FRAME (comp, var->parent_pos);
 		}
 	}
-	write_tc_u32 (comp, AZO_TC_BIND, expr->frame->n_parent_vars);
+	write_tc_u32 (comp, AZO_TC_BIND, expr->frame->n_parent_vars, NULL);
 	//write_tc_u32 (comp, AZO_TC_BIND, 0);
 
 	/* Function is already bound */
@@ -984,18 +1015,18 @@ compile_function (AZOCompiler *comp, const AZOExpression *expr, const AZOSource 
 }
 
 static unsigned int
-compile_array_literal (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_array_literal (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	const AZOExpression *child;
 	unsigned int size = 0, idx = 0;
 	for (child = expr->children; child; child = child->next) size += 1;
 	/* Create new array */
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_UINT32, (const AZValue *) &size);
-	azo_compiler_write_instruction_1 (comp, NEW_ARRAY);
+	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_UINT32, (const AZValue *) &size, NULL);
+	azo_compiler_write_ic (comp, NEW_ARRAY, NULL);
 	for (child = expr->children; child; child = child->next) {
-		azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_UINT32, (const AZValue *) &idx);
+		azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_UINT32, (const AZValue *) &idx, NULL);
 		azo_compiler_compile_expression (comp, child, src);
-		azo_compiler_write_instruction_1 (comp, WRITE_ARRAY_ELEMENT);
+		azo_compiler_write_ic (comp, WRITE_ARRAY_ELEMENT, NULL);
 		idx += 1;
 	}
 	return 1;
@@ -1004,7 +1035,7 @@ compile_array_literal (AZOCompiler *comp, const AZOExpression *expr, const AZOSo
 #define noDEBUG_TEST
 
 static unsigned int
-compile_test (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_test (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	AZOExpression *lhs, *rhs;
 	lhs = expr->children;
@@ -1020,7 +1051,7 @@ compile_test (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src
 	write_DEBUG_STRING (comp, "Test 2\n");
 	write_DEBUG_STACK (comp);
 #endif
-	write_tc_u8 (comp, TYPE_OF_CLASS, 0);
+	write_tc_u8 (comp, AZO_TC_TYPE_OF_CLASS, 0, expr);
 #ifdef DEBUG_TEST
 	write_DEBUG_STRING (comp, "Test 3\n");
 	write_DEBUG_STACK (comp);
@@ -1034,7 +1065,7 @@ compile_test (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src
 	write_DEBUG_STRING (comp, "Test 4\n");
 	write_DEBUG_STACK (comp);
 #endif
-	azo_compiler_write_REMOVE (comp, 1, 2);
+	azo_compiler_write_REMOVE (comp, 1, 2, expr);
 #ifdef DEBUG_TEST
 	write_DEBUG_STRING (comp, "Test 5\n");
 	write_DEBUG_STACK (comp);
@@ -1047,7 +1078,7 @@ compile_test (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src
 #define noDEBUG_PARENT_VAR
 
 static unsigned int
-compile_expression_rvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_expression_rvalue (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	if (expr->term.type == EXPRESSION_VARIABLE) {
 		if (expr->term.subtype == VARIABLE_LOCAL) {
@@ -1103,20 +1134,20 @@ compile_expression_rvalue (AZOCompiler *comp, const AZOExpression *expr, const A
 }
 
 static unsigned int
-compile_array_reference (AZOCompiler *comp, const AZOExpression *array_ref, const AZOExpression *idx, const AZOSource *src)
+compile_array_reference (AZOCompiler *comp, const AZOExpression *array_ref, const AZOExpression *idx, AZOSource *src)
 {
 	azo_compiler_compile_expression (comp, array_ref, src);
 	/* Array */
 	azo_compiler_compile_expression (comp, idx, src);
 	/* Array, Index */
-	azo_compiler_write_instruction_1 (comp, LOAD_ARRAY_ELEMENT | AZO_TC_CHECK_ARGS);
+	azo_compiler_write_ic (comp, LOAD_ARRAY_ELEMENT, NULL);
 	/* Array, Value */
-	azo_compiler_write_REMOVE (comp, 1, 1);
+	azo_compiler_write_REMOVE (comp, 1, 1, NULL);
 	return 1;
 }
 
 static unsigned int
-compile_member_reference (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_member_reference (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	AZOExpression *left, *right;
 	left = expr->children;
@@ -1131,6 +1162,7 @@ compile_singular_reference (AZOCompiler *comp, const AZOExpression *expr)
 {
 	AZOVariable *var = azo_frame_lookup_var (comp->current, expr->value.v.string);
 	if (var) {
+		/* We have variable reference that is not resolved */
 		fprintf (stderr, "compile_singular_reference: Internal error - variable %s is not resolved\n", expr->value.v.string->str);
 		return 0;
 	} else {
@@ -1140,7 +1172,7 @@ compile_singular_reference (AZOCompiler *comp, const AZOExpression *expr)
 }
 
 static unsigned int
-compile_variable_reference (AZOCompiler *comp, const AZOExpression *expr, unsigned int type, const AZOSource *src)
+compile_variable_reference (AZOCompiler *comp, const AZOExpression *expr, unsigned int type, AZOSource *src)
 {
 	if (type == REFERENCE_VARIABLE) {
 		if (!compile_singular_reference (comp, expr)) return 0;
@@ -1156,7 +1188,7 @@ compile_variable_reference (AZOCompiler *comp, const AZOExpression *expr, unsign
 /* Compile lvalue expression (i.e. reference) */
 
 static unsigned int
-compile_expression_lvalue (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_expression_lvalue (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	if (expr->term.type == EXPRESSION_REFERENCE) {
 		/* LValue types */
@@ -1171,7 +1203,7 @@ compile_expression_lvalue (AZOCompiler *comp, const AZOExpression *expr, const A
 }
 
 unsigned int
-azo_compiler_compile_expression (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+azo_compiler_compile_expression (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	if (expr->term.type == EXPRESSION_REFERENCE) {
 		/* LValue types */
@@ -1186,23 +1218,26 @@ azo_compiler_compile_expression (AZOCompiler *comp, const AZOExpression *expr, c
 }
 
 static unsigned int
-compile_assign (AZOCompiler *comp, const AZOExpression *left, const AZOExpression *right, const AZOExpression *expr, const AZOSource *src)
+compile_assign (AZOCompiler *comp, const AZOExpression *left, const AZOExpression *right, AZOSource *src)
 {
 	LValue lval;
+	/* Push necessary components (instance+key or array+index) */
 	if (!compile_lvalue (comp, left, src, &lval, 0)) return 0;
+	/* Push value */
 	if (!azo_compiler_compile_expression (comp, right, src)) return 0;
-	compile_assign_to_lvalue (comp, &lval);
+	/* Actual assignment */
+	if (!compile_assign_to_lvalue (comp, &lval, left)) return 0;
 	return 1;
 }
 
 static unsigned int
-compile_silent_statement (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_silent_statement (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	switch (expr->term.type) {
 	case AZO_TERM_EMPTY:
 		break;
 	case EXPRESSION_ASSIGN:
-		if (!compile_assign (comp, expr->children, expr->children->next, expr, src)) return 0;
+		if (!compile_assign (comp, expr->children, expr->children->next, src)) return 0;
 		break;
 	case EXPRESSION_FUNCTION_CALL:
 		if (!compile_function_call (comp, expr->children, expr->children->next, src, 1)) return 0;
@@ -1221,7 +1256,7 @@ compile_silent_statement (AZOCompiler *comp, const AZOExpression *expr, const AZ
 }
 
 static unsigned int
-compile_single_declaration (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src, unsigned int type)
+compile_single_declaration (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src, unsigned int type)
 {
 	AZOExpression *name, *value;
 	name = expr->children;
@@ -1230,14 +1265,14 @@ compile_single_declaration (AZOCompiler *comp, const AZOExpression *expr, const 
 		azo_compiler_compile_expression (comp, value, src);
 	} else {
 		/* fixme: Implement runtime (or at least compile-time) type */
-		azo_compiler_write_PUSH_EMPTY (comp, AZ_TYPE_NONE);
+		azo_compiler_write_PUSH_EMPTY (comp, AZ_TYPE_NONE, expr);
 		//azo_compiler_write_PUSH_EMPTY (comp, type);
 	}
 	return 1;
 }
 
 static unsigned int
-compile_declaration (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_declaration (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	AZOExpression *type, *child;
 	type = expr->children;
@@ -1254,7 +1289,7 @@ compile_declaration (AZOCompiler *comp, const AZOExpression *expr, const AZOSour
 }
 
 static unsigned int
-compile_step_statement (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_step_statement (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	if (expr->term.type == EXPRESSION_DECLARATION_LIST) {
 		if (!compile_declaration (comp, expr, src)) return 0;
@@ -1267,134 +1302,120 @@ compile_step_statement (AZOCompiler *comp, const AZOExpression *expr, const AZOS
 #define noDEBUG_STATEMENT
 
 static unsigned int
-compile_statement (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_statement (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
-	if ((expr->term.type == EXPRESSION_KEYWORD) && (expr->term.subtype == AZO_KEYWORD_RETURN)) {
+	if (AZO_EXPRESSION_IS(expr, EXPRESSION_KEYWORD, AZO_KEYWORD_RETURN)) {
 		if (expr->children) {
 			if (!compile_expression_rvalue (comp, expr->children, src)) return 0;
+			azo_compiler_write_ic (comp, AZO_TC_RETURN_VALUE, expr);
+		} else {
+			azo_compiler_write_ic (comp, AZO_TC_RETURN, expr);
 		}
-		azo_compiler_write_instruction_1 (comp, AZO_TC_RETURN | AZO_TC_CHECK_ARGS);
 		return 1;
-	} else if ((expr->term.type == EXPRESSION_KEYWORD) && (expr->term.subtype == AZO_KEYWORD_DEBUG)) {
-		//azo_compiler_write_DEBUG_STACK (comp);
+	} else if (AZO_EXPRESSION_IS(expr, EXPRESSION_KEYWORD, AZO_KEYWORD_DEBUG)) {
 		comp->debug = 1;
 		return 1;
 	} else {
-#ifdef DEBUG_STATEMENT
-		write_DEBUG_STRING (comp, "\nStart statement");
-		azo_compiler_write_DEBUG_STRING_len (comp, src->cdata + expr->start, expr->end - expr->start);
-		for (unsigned int i = 0; i < 64; i++) {
-			if ((expr->start + i) >= expr->end) break;
-			fprintf (stderr, "%c", src->cdata[expr->start + i]);
-		}
-		write_DEBUG_STACK (comp);
-#endif
 		if (!compile_step_statement (comp, expr, src)) return 0;
-#ifdef DEBUG_STATEMENT
-		write_DEBUG_STRING (comp, "End statement\n");
-		write_DEBUG_STACK (comp);
-#endif
 	}
 	return 1;
 }
 
 static unsigned int
-compile_block (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_block (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	unsigned int result;
 	result = compile_sentences (comp, expr->children, src);
-	azo_compiler_write_POP (comp, expr->scope_size);
+	azo_compiler_write_POP (comp, expr->scope_size, NULL);
 	return result;
 }
 
 #define noDEBUG_FOR
 
 static unsigned int
-compile_for (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_cycle (AZOCompiler *comp, const AZOExpression *expr,
+	const AZOExpression *init, const AZOExpression *test, const AZOExpression *step, const AZOExpression *content,
+	AZOSource *src)
+{
+	unsigned int test_condition, end_cycle;
+
+	/* Initialization */
+	if (init) compile_step_statement (comp, init, src);
+	/* Test condition */
+	test_condition = azo_frame_get_current_ip (comp->current);
+	if (test) {
+		compile_expression_boolean (comp, test, src);
+		/* Jump out of cycle if condition was FALSE */
+		end_cycle = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
+	}
+	/* Cycle content */
+	compile_sentence (comp, content, src);
+	/* Step */
+	if (step) compile_silent_statement (comp, step, src);
+	/* Go back to condition testing */
+	azo_compiler_write_JMP_32 (comp, JMP_32, test_condition, NULL);
+	azo_compiler_update_JMP_32 (comp, end_cycle);
+
+	azo_compiler_write_POP (comp, expr->scope_size, NULL);
+	return 1;
+}
+
+/*
+ * FOR
+ *   + init
+ *   + condition
+ *   + step
+ *   + content
+ */
+
+static unsigned int
+compile_for (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	AZOExpression *init, *test, *step, *content;
-	unsigned int test_condition, end_cycle;
 	init = expr->children;
 	test = init->next;
 	step = test->next;
 	content = step->next;
-
-#ifdef DEBUG_FOR
-	write_DEBUG_STRING (comp, "compile_for: start\n");
-	write_DEBUG_STACK (comp);
-#endif
-	/* Initialization */
-	compile_step_statement (comp, init, src);
-#ifdef DEBUG_FOR
-	write_DEBUG_STRING (comp, "compile_for: end initialization\n");
-	write_DEBUG_STACK (comp);
-#endif
-	/* Test condition */
-	test_condition = azo_frame_get_current_ip (comp->current);
-	compile_expression_boolean (comp, test, src);
-	/* Jump out of cycle if condition was FALSE */
-	end_cycle = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0);
-	/* Cycle content */
-#ifdef DEBUG_FOR
-	write_DEBUG_STRING (comp, "compile_for: start content\n");
-	write_DEBUG_STACK (comp);
-#endif
-	compile_sentence (comp, content, src);
-#ifdef DEBUG_FOR
-	write_DEBUG_STRING (comp, "compile_for: end content\n");
-	write_DEBUG_STACK (comp);
-#endif
-	/* Step */
-	compile_silent_statement (comp, step, src);
-	/* Go back to condition testing */
-	azo_compiler_write_JMP_32 (comp, JMP_32, test_condition);
-	azo_compiler_update_JMP_32 (comp, end_cycle);
-
-	azo_compiler_write_POP (comp, expr->scope_size);
-
-#ifdef DEBUG_FOR
-	write_DEBUG_STRING (comp, "compile_for: end\n");
-	write_DEBUG_STACK (comp);
-#endif
-	return 1;
+	return compile_cycle(comp, expr, init, test, step, content, src);
 }
 
+/*
+ * WHILE
+ *   + condition
+ *   + content
+ */
+
 static unsigned int
-compile_if (AZOCompiler *comp, AZOExpression *condition, AZOExpression *iftrue, AZOExpression *iffalse, const AZOSource *src)
+compile_while (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
-	unsigned int not_true, else_loc;
+	AZOExpression *test, *content;
+	test = expr->children;
+	content = test->next;
+	return compile_cycle(comp, expr, NULL, test, NULL, content, src);
+}
 
-	if (comp->debug) {
-		azo_compiler_write_DEBUG_STRING (comp, "compile_if start");
-		azo_compiler_write_DEBUG_STACK (comp);
-	}
+/*
+ * IF
+ *   + condition
+ *   + iftrue
+ *   + iffalse
+ */
 
-	compile_expression_boolean (comp, condition, src);
+ static unsigned int
+compile_if (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
+{
+	AZOExpression *cond = expr->children;
+	AZOExpression *iftrue = cond->next;
+	AZOExpression *iffalse = iftrue->next;
 
-	if (comp->debug) {
-		azo_compiler_write_DEBUG_STRING (comp, "compile_if 1");
-		azo_compiler_write_DEBUG_STACK (comp);
-	}
-
+	compile_expression_boolean (comp, cond, src);
 	/* Jump conditionally to NOT TRUE statement */
-	not_true = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0);
-
-	if (comp->debug) {
-		azo_compiler_write_DEBUG_STRING (comp, "compile_if true");
-		azo_compiler_write_DEBUG_STACK (comp);
-	}
-
+	unsigned int not_true = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, cond);
 	/* TRUE sentence */
 	compile_sentence (comp, iftrue, src);
 	if (iffalse) {
 		/* Jump to end if TRUE */
-		else_loc = azo_compiler_write_JMP_32 (comp, JMP_32, 0);
-
-		if (comp->debug) {
-			azo_compiler_write_DEBUG_STRING (comp, "compile_if false");
-			azo_compiler_write_DEBUG_STACK (comp);
-		}
-
+		unsigned int else_loc = azo_compiler_write_JMP_32 (comp, JMP_32, 0, iftrue);
 		/* Land here if FALSE */
 		azo_compiler_update_JMP_32 (comp, not_true);
 		compile_sentence (comp, iffalse, src);
@@ -1403,37 +1424,43 @@ compile_if (AZOCompiler *comp, AZOExpression *condition, AZOExpression *iftrue, 
 		/* Simply land here if FALSE */
 		azo_compiler_update_JMP_32 (comp, not_true);
 	}
-
-	if (comp->debug) {
-		azo_compiler_write_DEBUG_STRING (comp, "compile_if finished");
-		azo_compiler_write_DEBUG_STACK (comp);
-	}
-
 	return 1;
 }
 
+/*
+ * Sentence:
+ *   Block
+ *   Line
+ *   for
+ *   while
+ *   if
+ */
+
 static unsigned int
-compile_sentence (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_sentence (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
-	if (expr->term.type == AZO_EXPRESSION_BLOCK) {
+	if (AZO_EXPRESSION_IS(expr, AZO_EXPRESSION_BLOCK, 0)) {
 		if (!compile_block (comp, expr, src)) return 0;
-	} else if ((expr->term.type == EXPRESSION_KEYWORD) && (expr->term.subtype == AZO_KEYWORD_FOR)) {
+	} else if (AZO_EXPRESSION_IS(expr, EXPRESSION_KEYWORD, AZO_KEYWORD_FOR)) {
 		if (!compile_for (comp, expr, src)) return 0;
-	} else if (expr->term.subtype == AZO_KEYWORD_IF) {
-		AZOExpression *left, *middle, *right;
-		left = expr->children;
-		middle = left->next;
-		right = middle->next;
-		if (!compile_if (comp, left, middle, right, src)) return 0;
+	} else if (AZO_EXPRESSION_IS(expr, EXPRESSION_KEYWORD, AZO_KEYWORD_WHILE)) {
+		if (!compile_while (comp, expr, src)) return 0;
+	} else if (AZO_EXPRESSION_IS(expr, EXPRESSION_KEYWORD, AZO_KEYWORD_IF)) {
+		if (!compile_if (comp, expr, src)) return 0;
 	} else {
-		/* Line is the same as statement */
+		/* Line is the same as statement because semicolon is processed by parser */
 		if (!compile_statement (comp, expr, src)) return 0;
 	}
 	return 1;
 }
 
-static unsigned int
-compile_sentences (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+/* 
+ * Sentences:
+ *   [Sentence...]
+ */
+
+  static unsigned int
+compile_sentences (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	while (expr) {
 		if (!compile_sentence (comp, expr, src)) return 0;
@@ -1442,75 +1469,42 @@ compile_sentences (AZOCompiler *comp, const AZOExpression *expr, const AZOSource
 	return 1;
 }
 
+/*
+ * Program:
+ *   Sentences
+ */
+
 static unsigned int
-compile_program (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src)
+compile_program (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
-	if (expr->term.type == AZO_EXPRESSION_PROGRAM) {
-		compile_sentences (comp, expr->children, src);
-		azo_compiler_write_instruction_1 (comp, END);
-	} else {
-		fprintf (stderr, "compiler_compile_program: Invalid expression type %u\n", expr->term.type);
-		return 0;
-	}
+	compile_sentences (comp, expr->children, src);
 	return 1;
 }
 
-static AZOProgram *
-azo_compiler_compile_noresolve (AZOCompiler *comp, AZOExpression *expr, const AZOSource *src)
-{
-	AZOProgram *prog;
-
-	if (expr->term.type == AZO_EXPRESSION_PROGRAM) {
-		if (!compile_program (comp, expr, src)) return NULL;
-	} else if (expr->term.type == AZO_EXPRESSION_BLOCK) {
-		if (!compile_sentence (comp, expr, src)) return NULL;
-	} else {
-		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", expr->term.type);
-		return NULL;
-	}
-	prog = (AZOProgram *) malloc (sizeof (AZOProgram));
-	memset (prog, 0, sizeof (AZOProgram));
-	prog->ctx = comp->ctx;
-	prog->tcode = comp->current->bc;
-	prog->tcode_length = comp->current->bc_len;
-	comp->current->bc = NULL;
-	comp->current->bc_len = 0;
-	comp->current->bc_size = 0;
-	prog->values = comp->current->data;
-	prog->nvalues = comp->current->data_len;
-	comp->current->data = NULL;
-	comp->current->data_size = 0;
-	comp->current->data_len = 0;
-	return prog;
-}
-
 AZOProgram *
-azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, const AZOSource *src)
+azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, unsigned int need_resolve, AZOSource *src)
 {
 	AZOProgram *prog;
 
-	root = azo_compiler_resolve_frame (comp, root);
+	if (need_resolve) {
+		root = azo_compiler_resolve_frame (comp, root);
+	}
+
+	/* Have to reserve closure before compilation */
+	/* fixme: Here we probably do not have parent vars */
+	azo_frame_reserve_data (comp->current, comp->current->n_parent_vars);
 
 	if (root->term.type == AZO_EXPRESSION_PROGRAM) {
+		/* Programs are lists of sentences */
 		if (!compile_program (comp, root, src)) return NULL;
 	} else if (root->term.type == AZO_EXPRESSION_BLOCK) {
+		/* Function bodies are blocks */
 		if (!compile_sentence (comp, root, src)) return NULL;
 	} else {
 		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", root->term.type);
 		return NULL;
 	}
-	prog = (AZOProgram *) malloc (sizeof (AZOProgram));
-	memset (prog, 0, sizeof (AZOProgram));
-	prog->ctx = comp->ctx;
-	prog->tcode = comp->current->bc;
-	prog->tcode_length = comp->current->bc_len;
-	comp->current->bc = NULL;
-	comp->current->bc_len = 0;
-	comp->current->bc_size = 0;
-	prog->values = comp->current->data;
-	prog->nvalues = comp->current->data_len;
-	comp->current->data = NULL;
-	comp->current->data_size = 0;
-	comp->current->data_len = 0;
+	prog = azo_program_new(comp->ctx, &comp->current->code, root, src);
+
 	return prog;
 }

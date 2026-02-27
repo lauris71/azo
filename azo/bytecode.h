@@ -7,6 +7,8 @@
 * Copyright (C) Lauris Kaplinski 2016
 */
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,20 +17,34 @@ extern "C" {
 
 enum {
 	NOP = 0,
-	END,
 
-	/* EXCEPTION MASK(U32) */
+	/* EXCEPTION U32:TYPE */
 	AZO_TC_EXCEPTION,
 	AZO_TC_EXCEPTION_IF,
 	AZO_TC_EXCEPTION_IF_NOT,
+	/*
+	 * AZO_TC_EXCEPTION_IF_TYPE_IS_NOT pos type
+	 * Throw INVALID_TYPE if element at pos is not type
+	 */
+	AZO_TC_EXCEPTION_IF_TYPE_IS_NOT,
 
 	/* DEBUG OP(U32) [STRING] */
 	AZO_TC_DEBUG,
+	/* DEBUG u32:LOC */
+	AZO_TC_DEBUG_STR,
 
 	/* Stack management */
 
 	/* PUSH_FRAME POS(U32) */
 	/* Push [stack_end - pos] as new frame pointer */
+	/**
+	 * @brief Set the frame pointer to specified distance from the top of stack and push the old value
+	 * 
+	 * PUSH_FRAME U32:COUNT
+	 * [val1, val2, ...]
+	 * [val1; val2, ...]
+	 * 
+	 */
 	AZO_TC_PUSH_FRAME,
 	/* Restores previous frame pointer */
 	AZO_TC_POP_FRAME,
@@ -58,8 +74,13 @@ enum {
 	/* Exchange POS(U32) */
 	/* Exchanges element with topmost */
 	EXCHANGE,
-	/* EXCHANGE_FRAME POS(U32) */
-	/* Exchanges frame-relative element with topmost */
+	/**
+	 * @brief Exchanges frame-relative element with top of stack
+	 * 
+	 * EXCHANGE_FRAME U32:POS
+	 * [..., val1, ..., val2]
+	 * [..., val2, ..., val1]
+	 */
 	AZO_TC_EXCHANGE_FRAME,
 
 	/* Type tests */
@@ -81,10 +102,22 @@ enum {
 	AZO_TC_TYPE_IS_SUPER_IMMEDIATE,
 	/* Test whether the element implements certain type */
 	AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE,
-	/* TYPE_OF POS(U8) */
-	/* Get type of stack element as UINT32 */
+	/**
+	 * @brief Get type of value
+	 * 
+	 * TYPE_OF u8:POS
+	 * [val, ...]
+	 * [val, ..., type]
+	 */
 	TYPE_OF,
-	TYPE_OF_CLASS,
+	/**
+	 * @brief Get type from class
+	 * 
+	 * TYPE_OF_CLASS u8:POS
+	 * [class, ...]
+	 * [class, ..., type]
+	 */
+	AZO_TC_TYPE_OF_CLASS,
 
 	/* Jumps */
 
@@ -98,11 +131,6 @@ enum {
 	JMP_32_IF_POSITIVE,
 	JMP_32_IF_NEGATIVE,
 
-	/* Conversions */
-	/* POINTER_TO_U64 */
-	/* Replaces topmost stack pointer with equivalent U64 */
-	POINTER_TO_U64,
-	U64_TO_POINTER,
 	/* PROMOTE POS(U8) */
 	/* Promote given element in-place ty tupe specified by stack(0) */
 	/* Only arithmetic types are allowed */
@@ -168,9 +196,20 @@ enum {
 
 	/* Invoke function */
 	AZO_TC_INVOKE,
-	/* Return */
-	/* Topmost stack element is return value (if applicable) */
+	/**
+	 * @brief Return from frame
+	 * 
+	 * RETURN
+	 * []
+	 */
 	AZO_TC_RETURN,
+	/**
+	 * @brief Return with value
+	 * 
+	 * RETURN_VALUE
+	 * [value]
+	 */
+	AZO_TC_RETURN_VALUE,
 	/* Bind function */
 	/* FUNCTION -> FUNCTION */
 	AZO_TC_BIND,
@@ -219,8 +258,34 @@ enum {
 	AZO_TC_LOOKUP_PROPERTY,
 	/* fixme: remove this */
 	GET_ATTRIBUTE,
-	SET_ATTRIBUTE,
+	/**
+	 * @brief Set value in dictionary
+	 * 
+	 * SET_ATTRIBUTE
+	 * [instance, key, value]
+	 * []
+	 * 
+	 * Throws INVALID_TYPE if instance is not dictionary
+	 * Throws INVALID_VALUE if attribute cannot be set
+	 */
+	AZO_TC_SET_ATTRIBUTE,
+	AZO_TC_END
 };
+
+/**
+ * @brief Print one bytecode instruction
+ * 
+ * Unless d_len is 0, the terminating 0 is always written
+ * 
+ * @param d the destination buffer
+ * @param d_len the size of destination buffer
+ * @param ipc bytecode buffer
+ * @param len the size of bytecode buffer
+ * @return 
+ */
+unsigned int azo_bc_print_instruction(uint8_t *d, unsigned int d_len, const uint8_t *bc, unsigned int pos, unsigned int len);
+
+unsigned int azo_bc_next_instruction(const uint8_t *bc, unsigned int pos, unsigned int len);
 
 /* Debug */
 typedef struct _AZOProgram AZOProgram;

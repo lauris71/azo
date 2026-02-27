@@ -82,7 +82,10 @@ enum {
 	REFERENCE_VARIABLE,
 	/* Member object (dot operator) */
 	REFERENCE_MEMBER,
-	/* Second component of member */
+	/**
+	 * @brief Second component (after the dot) of member reference
+	 * 
+	 */
 	REFERENCE_PROPERTY
 };
 

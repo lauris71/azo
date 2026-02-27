@@ -9,7 +9,9 @@
 
 #include <az/value.h>
 
+#include <azo/code.h>
 #include <azo/context.h>
+#include <azo/debug.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,13 +27,25 @@ struct _AZOProgram {
 	/* Immediate values */
 	unsigned int nvalues;
 	AZPackedValue *values;
+	/* Debug info */
+	AZODebugInfo debug;
 };
+
+/**
+ * @brief Create new program
+ * 
+ * Creates a new program and transfers bytecode and debug data from code
+ * 
+ * @param code a compiled AZOCode object
+ * @return a new AZOProgram
+ */
+AZOProgram *azo_program_new(AZOContext *ctx, AZOCode *code, AZOExpression *tree, AZOSource *src);
 
 void azo_program_delete (AZOProgram *program);
 
 void azo_program_print_bytecode (AZOProgram *program);
 
-AZOProgram *azo_program_compile_from_text(AZOContext *ctx,
+AZOProgram *azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[],
 	const uint8_t *code, unsigned int code_len);
 

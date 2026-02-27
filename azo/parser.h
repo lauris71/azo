@@ -26,8 +26,11 @@ struct _AZOParser {
 
 	AZOTokenizer tokenizer;
 
-	/* Current parent expression, all statements are appended as it's children */
-	AZOExpression *parent;
+	/**
+	 * @brief Current expression, sub-expressions are added as it's children
+	 * 
+	 */
+	AZOExpression *current;
 };
 
 struct _AZOParserClass {

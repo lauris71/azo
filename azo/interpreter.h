@@ -24,6 +24,8 @@ extern "C" {
 
 #define _REGISTER_THIS 0
 
+#define AZO_INTR_FLAG_CHECK_ARGS 1
+
 struct _AZOInterpreter {
 	AZOContext *ctx;
 	AZOProgram *prog;
@@ -33,6 +35,7 @@ struct _AZOInterpreter {
 	unsigned int size_frames;
 	unsigned int *frames;
 	AZOStack stack;
+	uint32_t flags;
 	AZOException exc;
 	/* Register */
 	AZPackedValue64 vals[4];
@@ -51,7 +54,11 @@ void azo_interpreter_pop_frame (AZOInterpreter *intr);
 void azo_interpreter_clear_frame (AZOInterpreter *intr);
 void azo_interpreter_restore_frame (AZOInterpreter *intr, unsigned int frame);
 
-void interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size);
+void azo_interpreter_exception(AZOInterpreter *intr, const uint8_t *ip, unsigned int type);
+
+const uint8_t *azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *ipc);
+
+void azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog);
 
 void azo_intepreter_print_stack (AZOInterpreter *intr, FILE *ofs);
 

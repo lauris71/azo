@@ -6,7 +6,7 @@
 * Copyright (C) Lauris Kaplinski 2016
 */
 
-#define debug 0
+#define DEBUG_CFUNC 0
 
 #include <string.h>
 #include <stdlib.h>
@@ -137,7 +137,7 @@ azo_compiled_function_new (AZOContext *ctx, AZOProgram *program, unsigned int re
 	func->ctx = ctx;
 
 	func->prog = program;
-	if (debug) {
+	if (DEBUG_CFUNC) {
 		fprintf (stderr, "aosora_compiled_function_new\n");
 		azo_program_print_bytecode (program);
 	}

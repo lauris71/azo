@@ -44,6 +44,8 @@ extern AZOExceptionClass *azo_exception_class;
 #define AZO_EXCEPTION_OUT_OF_BOUNDS 8
 /* No property with this key */
 #define AZO_EXCEPTION_INVALID_PROPERTY 9
+/* Cannot write value */
+#define AZO_EXCEPTION_INVALID_VALUE 10
 
 struct _AZOException {
 	unsigned int type;

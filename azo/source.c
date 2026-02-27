@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include <az/extend.h>
+#include <az/string.h>
 
 #include "source.h"
 
@@ -22,7 +23,7 @@ unsigned int
 azo_source_get_type (void)
 {
 	if (!source_type) {
-		az_register_type (&source_type, (const unsigned char *) "AZOSource", AZ_TYPE_REFERENCE, sizeof (AZOSourceClass), sizeof (AZOSource), AZ_FLAG_FINAL | AZ_FLAG_ZERO_MEMORY,
+		az_register_type (&source_type, (const unsigned char *) "AZOSource", AZ_TYPE_OBJECT, sizeof (AZOSourceClass), sizeof (AZOSource), 0,
 			NULL, NULL,
 			(void (*) (const AZImplementation *, void *)) source_finalize);
 	}
@@ -32,23 +33,26 @@ azo_source_get_type (void)
 static void
 source_finalize (AZOSourceClass *klass, AZOSource *src)
 {
+	if (src->name) az_string_unref(src->name);
 	if (!src->is_static) free ((void *) src->cdata);
 	if (src->lines) free(src->lines);
 }
 
 AZOSource *
-azo_source_new_transfer (uint8_t *cdata, unsigned int csize)
+azo_source_new_transfer (const uint8_t *name, uint8_t *cdata, unsigned int csize)
 {
-	AZOSource *src = az_instance_new (AZO_TYPE_SOURCE);
+	AZOSource *src = (AZOSource *) az_object_new(AZO_TYPE_SOURCE);
+	src->name = az_string_new(name);
 	src->cdata = cdata;
 	src->csize = csize;
 	return src;
 }
 
 AZOSource *
-azo_source_new_duplicate (const uint8_t *cdata, unsigned int csize)
+azo_source_new_duplicate (const uint8_t *name, const uint8_t *cdata, unsigned int csize)
 {
-	AZOSource *src = az_instance_new (AZO_TYPE_SOURCE);
+	AZOSource *src = (AZOSource *) az_object_new(AZO_TYPE_SOURCE);
+	src->name = az_string_new(name);
 	src->cdata = (const unsigned char *) malloc (csize);
 	memcpy ((void *) src->cdata, cdata, csize);
 	src->csize = csize;
@@ -56,9 +60,10 @@ azo_source_new_duplicate (const uint8_t *cdata, unsigned int csize)
 }
 
 AZOSource *
-azo_source_new_static (const uint8_t *cdata, unsigned int csize)
+azo_source_new_static (const uint8_t *name, const uint8_t *cdata, unsigned int csize)
 {
-	AZOSource *src = az_instance_new (AZO_TYPE_SOURCE);
+	AZOSource *src = (AZOSource *) az_object_new(AZO_TYPE_SOURCE);
+	src->name = az_string_new(name);
 	src->cdata = cdata;
 	src->csize = csize;
 	src->is_static = 1;
@@ -94,8 +99,8 @@ azo_source_find_line_range (AZOSource *src, unsigned int start, unsigned int end
 		if ((line_start <= (end - 1)) && (line_end > (end - 1))) l = i;
 	}
 	if ((f < src->n_lines) && (l < src->n_lines)) {
-		*first = f;
-		*last = l;
+		if (first) *first = f;
+		if (last) *last = l;
 		return 1;
 	}
 	return 0;

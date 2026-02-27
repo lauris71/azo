@@ -13,13 +13,13 @@
 extern "C" {
 #endif
 
-unsigned int azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, const AZOSource *src);
+unsigned int azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, AZOSource *src);
 
 /* Either bitwise not or complex conjugate depending on type */
-unsigned int azo_compiler_compile_tilde (AZOCompiler *comp, const AZOExpression *expr, const AZOSource *src);
+unsigned int azo_compiler_compile_tilde (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
 
-unsigned int azo_compiler_compile_increment (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *expr, const AZOSource *src);
-unsigned int azo_compiler_compile_decrement (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *expr, const AZOSource *src);
+unsigned int azo_compiler_compile_increment (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *expr, AZOSource *src);
+unsigned int azo_compiler_compile_decrement (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *expr, AZOSource *src);
 
 #ifdef __cplusplus
 }
