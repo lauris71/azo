@@ -62,6 +62,7 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 {
 	AZOCompiler comp;
 	azo_compiler_init(&comp, ctx);
+	comp.debug = 1;
 	azo_compiler_push_frame(&comp, this_impl, this_inst, ret_type);
 	for (unsigned int i = 0; i < n_args; i++) {
 		azo_compiler_declare_variable (&comp, arg_names[i], arg_types[i]);

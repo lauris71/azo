@@ -18,7 +18,7 @@ extern "C" {
 enum {
 	NOP = 0,
 
-	/* EXCEPTION MASK(U32) */
+	/* EXCEPTION U32:TYPE */
 	AZO_TC_EXCEPTION,
 	AZO_TC_EXCEPTION_IF,
 	AZO_TC_EXCEPTION_IF_NOT,
@@ -37,6 +37,14 @@ enum {
 
 	/* PUSH_FRAME POS(U32) */
 	/* Push [stack_end - pos] as new frame pointer */
+	/**
+	 * @brief Set the frame pointer to specified distance from the top of stack and push the old value
+	 * 
+	 * PUSH_FRAME U32:COUNT
+	 * [val1, val2, ...]
+	 * [val1; val2, ...]
+	 * 
+	 */
 	AZO_TC_PUSH_FRAME,
 	/* Restores previous frame pointer */
 	AZO_TC_POP_FRAME,

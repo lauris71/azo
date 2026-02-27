@@ -943,406 +943,329 @@ interpret_LOGICAL_BINARY (AZOInterpreter *intr, const unsigned char *ip)
 	return ip + 1;
 }
 
-static const unsigned char *
+static const uint8_t *
+add (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
+{
+	AZValue *lhs = azo_stack_value_bw (&intr->stack, 1);
+	AZValue *rhs = azo_stack_value_bw (&intr->stack, 0);
+	switch(type) {
+	case AZ_TYPE_INT32:
+		lhs->int32_v += rhs->int32_v;
+		break;
+	case AZ_TYPE_UINT32:
+		lhs->uint32_v += rhs->uint32_v;
+		break;
+	case AZ_TYPE_INT64:
+		lhs->int64_v += rhs->int64_v;
+		break;
+	case AZ_TYPE_UINT64:
+		lhs->uint64_v += rhs->uint64_v;
+		break;
+	case AZ_TYPE_FLOAT:
+		lhs->float_v += rhs->float_v;
+		break;
+	case AZ_TYPE_DOUBLE:
+		lhs->double_v += rhs->double_v;
+		break;
+	case AZ_TYPE_COMPLEX_FLOAT:
+		lhs->cfloat_v.r += rhs->cfloat_v.r;
+		lhs->cfloat_v.i += rhs->cfloat_v.i;
+		break;
+	case AZ_TYPE_COMPLEX_DOUBLE:
+		lhs->cdouble_v.r += rhs->cdouble_v.r;
+		lhs->cdouble_v.i += rhs->cdouble_v.i;
+		break;
+	default:
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+	}
+	azo_stack_pop (&intr->stack, 1);
+	return ip + 1;
+}
+
+static const uint8_t *
 interpret_ADD_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 {
-	unsigned int type;
-	const void *lhs, *rhs;
-	type = ip[1];
+	unsigned int type = ip[1];
 	CHECK_TYPE_EXACT(0, type);
 	CHECK_TYPE_EXACT(1, type);
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
-	if (type == AZ_TYPE_INT32) {
-		*((int32_t *) lhs) = *((int32_t *) lhs) + *((int32_t *) rhs);
-	} else if (type == AZ_TYPE_UINT32) {
-		*((uint32_t *) lhs) = *((uint32_t *) lhs) + *((uint32_t *) rhs);
-	} else if (type == AZ_TYPE_INT64) {
-		*((int64_t *) lhs) = *((int64_t *) lhs) + *((int64_t *) rhs);
-	} else if (type == AZ_TYPE_UINT64) {
-		*((uint64_t *) lhs) = *((uint64_t *) lhs) + *((uint64_t *) rhs);
-	} else if (type == AZ_TYPE_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) + *((float *) rhs);
-	} else if (type == AZ_TYPE_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) + *((double *) rhs);
-	} else if (type == AZ_TYPE_COMPLEX_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) + *((float *) rhs);
-		*((float *) lhs + 1) = *((float *) lhs + 1) + *((float *) rhs + 1);
-	} else if (type == AZ_TYPE_COMPLEX_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) + *((double *) rhs);
-		*((double *) lhs + 1) = *((double *) lhs + 1) + *((double *) rhs + 1);
-	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
-	}
-	azo_stack_pop (&intr->stack, 1);
-	return ip + 2;
-}
-
-static const unsigned char *
-interpret_SUBTRACT_TYPED (AZOInterpreter *intr, const unsigned char *ip)
-{
-	unsigned int type;
-	const void *lhs, *rhs;
-	type = ip[1];
-	CHECK_TYPE_EXACT(0, type);
-	CHECK_TYPE_EXACT(1, type);
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
-	if (type == AZ_TYPE_INT32) {
-		*((int32_t *) lhs) = *((int32_t *) lhs) - *((int32_t *) rhs);
-	} else if (type == AZ_TYPE_UINT32) {
-		*((uint32_t *) lhs) = *((uint32_t *) lhs) - *((uint32_t *) rhs);
-	} else if (type == AZ_TYPE_INT64) {
-		*((int64_t *) lhs) = *((int64_t *) lhs) - *((int64_t *) rhs);
-	} else if (type == AZ_TYPE_UINT64) {
-		*((uint64_t *) lhs) = *((uint64_t *) lhs) - *((uint64_t *) rhs);
-	} else if (type == AZ_TYPE_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) - *((float *) rhs);
-	} else if (type == AZ_TYPE_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) - *((double *) rhs);
-	} else if (type == AZ_TYPE_COMPLEX_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) - *((float *) rhs);
-		*((float *) lhs + 1) = *((float *) lhs - 1) + *((float *) rhs + 1);
-	} else if (type == AZ_TYPE_COMPLEX_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) - *((double *) rhs);
-		*((double *) lhs + 1) = *((double *) lhs - 1) + *((double *) rhs + 1);
-	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
-	}
-	azo_stack_pop (&intr->stack, 1);
-	return ip + 2;
-}
-
-static const unsigned char *
-interpret_MULTIPLY_TYPED (AZOInterpreter *intr, const unsigned char *ip)
-{
-	unsigned int type;
-	const void *lhs, *rhs;
-	type = ip[1];
-	CHECK_TYPE_EXACT(0, type);
-	CHECK_TYPE_EXACT(1, type);
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
-	if (type == AZ_TYPE_INT32) {
-		*((int32_t *) lhs) = *((int32_t *) lhs) * *((int32_t *) rhs);
-	} else if (type == AZ_TYPE_UINT32) {
-		*((uint32_t *) lhs) = *((uint32_t *) lhs) * *((uint32_t *) rhs);
-	} else if (type == AZ_TYPE_INT64) {
-		*((int64_t *) lhs) = *((int64_t *) lhs) * *((int64_t *) rhs);
-	} else if (type == AZ_TYPE_UINT64) {
-		*((uint64_t *) lhs) = *((uint64_t *) lhs) * *((uint64_t *) rhs);
-	} else if (type == AZ_TYPE_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) * *((float *) rhs);
-	} else if (type == AZ_TYPE_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) * *((double *) rhs);
-	} else if (type == AZ_TYPE_COMPLEX_FLOAT) {
-		float r = *((float *) lhs) * *((float *) rhs) - *((float *) lhs + 1) * *((float *) rhs + 1);
-		float i = *((float *) lhs) * *((float *) rhs + 1) + *((float *) lhs + 1) * *((float *) rhs);
-		*((float *) lhs) = r;
-		*((float *) lhs + 1) = i;
-	} else if (type == AZ_TYPE_COMPLEX_DOUBLE) {
-		double r = *((double *) lhs) * *((double *) rhs) - *((double *) lhs + 1) * *((double *) rhs + 1);
-		double i = *((double *) lhs) * *((double *) rhs + 1) + *((double *) lhs + 1) * *((double *) rhs);
-		*((double *) lhs) = r;
-		*((double *) lhs + 1) = i;
-	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
-	}
-	azo_stack_pop (&intr->stack, 1);
-	return ip + 2;
-}
-
-static const unsigned char *
-interpret_DIVIDE_TYPED (AZOInterpreter *intr, const unsigned char *ip)
-{
-	unsigned int type;
-	const void *lhs, *rhs;
-	type = ip[1];
-	CHECK_TYPE_EXACT(0, type);
-	CHECK_TYPE_EXACT(1, type);
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
-	if (type == AZ_TYPE_INT32) {
-		*((int32_t *) lhs) = *((int32_t *) lhs) / *((int32_t *) rhs);
-	} else if (type == AZ_TYPE_UINT32) {
-		*((uint32_t *) lhs) = *((uint32_t *) lhs) / *((uint32_t *) rhs);
-	} else if (type == AZ_TYPE_INT64) {
-		*((int64_t *) lhs) = *((int64_t *) lhs) / *((int64_t *) rhs);
-	} else if (type == AZ_TYPE_UINT64) {
-		*((uint64_t *) lhs) = *((uint64_t *) lhs) / *((uint64_t *) rhs);
-	} else if (type == AZ_TYPE_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) / *((float *) rhs);
-	} else if (type == AZ_TYPE_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) / *((double *) rhs);
-	} else if (type == AZ_TYPE_COMPLEX_FLOAT) {
-		float a = *((float *) lhs);
-		float b = *((float *) lhs + 1);
-		float c = *((float *) rhs);
-		float d = *((float *) rhs + 1);
-		*((float *) lhs) = (a * c + b * d) / (c * c + d * d);
-		*((float *) lhs + 1) = (b * c - a * d) / (c * c + d * d);
-	} else if (type == AZ_TYPE_COMPLEX_DOUBLE) {
-		double a = *((double *) lhs);
-		double b = *((double *) lhs + 1);
-		double c = *((double *) rhs);
-		double d = *((double *) rhs + 1);
-		*((double *) lhs) = (a * c + b * d) / (c * c + d * d);
-		*((double *) lhs + 1) = (b * c - a * d) / (c * c + d * d);
-	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
-	}
-	azo_stack_pop (&intr->stack, 1);
-	return ip + 2;
-}
-
-static const unsigned char *
-interpret_MODULO_TYPED (AZOInterpreter *intr, const unsigned char *ip)
-{
-	unsigned int type;
-	const void *lhs, *rhs;
-	type = ip[1];
-	CHECK_TYPE_EXACT(0, type);
-	CHECK_TYPE_EXACT(1, type);
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
-	if (type == AZ_TYPE_INT32) {
-		*((int32_t *) lhs) = *((int32_t *) lhs) % *((int32_t *) rhs);
-	} else if (type == AZ_TYPE_UINT32) {
-		*((uint32_t *) lhs) = *((uint32_t *) lhs) % *((uint32_t *) rhs);
-	} else if (type == AZ_TYPE_INT64) {
-		*((int64_t *) lhs) = *((int64_t *) lhs) % *((int64_t *) rhs);
-	} else if (type == AZ_TYPE_UINT64) {
-		*((uint64_t *) lhs) = *((uint64_t *) lhs) % *((uint64_t *) rhs);
-	} else if (type == AZ_TYPE_FLOAT) {
-		*((float *) lhs) = fmodf (*((float *) lhs), *((float *) rhs));
-	} else if (type == AZ_TYPE_DOUBLE) {
-		*((double *) lhs) = fmod (*((double *) lhs), *((double *) rhs));
-	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
-	}
-	azo_stack_pop (&intr->stack, 1);
-	return ip + 2;
+	ip = add(intr, ip, type);
+	return (ip) ? ip + 1 : NULL;
 }
 
 static const unsigned char *
 interpret_ADD (AZOInterpreter *intr, const unsigned char *ip)
 {
-	unsigned int type;
-	const void *lhs, *rhs;
-	if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, 2)) return NULL;
-	type = azo_stack_type_bw (&intr->stack, 0);
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
-	if (type == AZ_TYPE_INT32) {
-		*((int32_t *) lhs) = *((int32_t *) lhs) + *((int32_t *) rhs);
-	} else if (type == AZ_TYPE_UINT32) {
-		*((uint32_t *) lhs) = *((uint32_t *) lhs) + *((uint32_t *) rhs);
-	} else if (type == AZ_TYPE_INT64) {
-		*((int64_t *) lhs) = *((int64_t *) lhs) + *((int64_t *) rhs);
-	} else if (type == AZ_TYPE_UINT64) {
-		*((uint64_t *) lhs) = *((uint64_t *) lhs) + *((uint64_t *) rhs);
-	} else if (type == AZ_TYPE_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) + *((float *) rhs);
-	} else if (type == AZ_TYPE_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) + *((double *) rhs);
-	} else if (type == AZ_TYPE_COMPLEX_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) + *((float *) rhs);
-		*((float *) lhs + 1) = *((float *) lhs + 1) + *((float *) rhs + 1);
-	} else if (type == AZ_TYPE_COMPLEX_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) + *((double *) rhs);
-		*((double *) lhs + 1) = *((double *) lhs + 1) + *((double *) rhs + 1);
-	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
+	CHECK_UNDERFLOW(2);
+	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
+	CHECK_TYPE_EXACT(1, type);
+	return add(intr, ip, type);
+}
+
+static const unsigned char *
+subtract (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
+{
+	AZValue *lhs = azo_stack_value_bw (&intr->stack, 1);
+	AZValue *rhs = azo_stack_value_bw (&intr->stack, 0);
+	switch(type) {
+	case AZ_TYPE_INT32:
+		lhs->int32_v -= rhs->int32_v;
+		break;
+	case AZ_TYPE_UINT32:
+		lhs->uint32_v -= rhs->uint32_v;
+		break;
+	case AZ_TYPE_INT64:
+		lhs->int64_v -= rhs->int64_v;
+		break;
+	case AZ_TYPE_UINT64:
+		lhs->uint64_v -= rhs->uint64_v;
+		break;
+	case AZ_TYPE_FLOAT:
+		lhs->float_v -= rhs->float_v;
+		break;
+	case AZ_TYPE_DOUBLE:
+		lhs->double_v -= rhs->double_v;
+		break;
+	case AZ_TYPE_COMPLEX_FLOAT:
+		lhs->cfloat_v.r -= rhs->cfloat_v.r;
+		lhs->cfloat_v.i -= rhs->cfloat_v.i;
+		break;
+	case AZ_TYPE_COMPLEX_DOUBLE:
+		lhs->cdouble_v.r -= rhs->cdouble_v.r;
+		lhs->cdouble_v.i -= rhs->cdouble_v.i;
+		break;
+	default:
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 1);
 	return ip + 1;
 }
 
-static const unsigned char *
-interpret_SUBTRACT (AZOInterpreter *intr, const unsigned char *ip)
+static const uint8_t *
+interpret_SUBTRACT_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 {
-	unsigned int type;
-	const void *lhs, *rhs;
-	if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, 2)) return NULL;
-	type = azo_stack_type_bw (&intr->stack, 0);
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
-	if (type == AZ_TYPE_INT32) {
-		*((int32_t *) lhs) = *((int32_t *) lhs) - *((int32_t *) rhs);
-	} else if (type == AZ_TYPE_UINT32) {
-		*((uint32_t *) lhs) = *((uint32_t *) lhs) - *((uint32_t *) rhs);
-	} else if (type == AZ_TYPE_INT64) {
-		*((int64_t *) lhs) = *((int64_t *) lhs) - *((int64_t *) rhs);
-	} else if (type == AZ_TYPE_UINT64) {
-		*((uint64_t *) lhs) = *((uint64_t *) lhs) - *((uint64_t *) rhs);
-	} else if (type == AZ_TYPE_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) - *((float *) rhs);
-	} else if (type == AZ_TYPE_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) - *((double *) rhs);
-	} else if (type == AZ_TYPE_COMPLEX_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) - *((float *) rhs);
-		*((float *) lhs + 1) = *((float *) lhs - 1) + *((float *) rhs + 1);
-	} else if (type == AZ_TYPE_COMPLEX_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) - *((double *) rhs);
-		*((double *) lhs + 1) = *((double *) lhs - 1) + *((double *) rhs + 1);
-	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
+	unsigned int type = ip[1];
+	CHECK_TYPE_EXACT(0, type);
+	CHECK_TYPE_EXACT(1, type);
+	ip = subtract(intr, ip, type);
+	return (ip) ? ip + 1 : NULL;
+}
+
+static const uint8_t *
+interpret_SUBTRACT (AZOInterpreter *intr, const uint8_t *ip)
+{
+	CHECK_UNDERFLOW(2);
+	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
+	CHECK_TYPE_EXACT(1, type);
+	return subtract(intr, ip, type);
+}
+
+static const uint8_t *
+multiply (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
+{
+	AZValue *lhs = azo_stack_value_bw(&intr->stack, 1);
+	AZValue *rhs = azo_stack_value_bw(&intr->stack, 0);
+	switch(type) {
+	case AZ_TYPE_INT32:
+		lhs->int32_v *= rhs->int32_v;
+		break;
+	case AZ_TYPE_UINT32:
+		lhs->uint32_v *= rhs->uint32_v;
+		break;
+	case AZ_TYPE_INT64:
+		lhs->int64_v *= rhs->int64_v;
+		break;
+	case AZ_TYPE_UINT64:
+		lhs->uint64_v *= rhs->uint64_v;
+		break;
+	case AZ_TYPE_FLOAT:
+		lhs->float_v *= rhs->float_v;
+		break;
+	case AZ_TYPE_DOUBLE:
+		lhs->double_v *= rhs->double_v;
+		break;
+	case AZ_TYPE_COMPLEX_FLOAT:
+		lhs->cfloat_v.r = lhs->cfloat_v.r * rhs->cfloat_v.r - lhs->cfloat_v.i * rhs->cfloat_v.i;
+		lhs->cfloat_v.i = lhs->cfloat_v.r * rhs->cfloat_v.i + lhs->cfloat_v.i * rhs->cfloat_v.r;
+		break;
+	case AZ_TYPE_COMPLEX_DOUBLE:
+		lhs->cdouble_v.r = lhs->cdouble_v.r * rhs->cdouble_v.r - lhs->cdouble_v.i * rhs->cdouble_v.i;
+		lhs->cdouble_v.i = lhs->cdouble_v.r * rhs->cdouble_v.i + lhs->cdouble_v.i * rhs->cdouble_v.r;
+		break;
+	default:
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 1);
 	return ip + 1;
+}
+
+static const uint8_t *
+interpret_MULTIPLY_TYPED (AZOInterpreter *intr, const uint8_t *ip)
+{
+	unsigned int type = ip[1];
+	CHECK_TYPE_EXACT(0, type);
+	CHECK_TYPE_EXACT(1, type);
+	ip = multiply(intr, ip, type);
+	return (ip) ? ip + 1 : NULL;
 }
 
 static const unsigned char *
 interpret_MULTIPLY (AZOInterpreter *intr, const unsigned char *ip)
 {
-	unsigned int type;
-	const void *lhs, *rhs;
-	if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, 2)) return NULL;
-	type = azo_stack_type_bw (&intr->stack, 0);
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
-	if (type == AZ_TYPE_INT32) {
-		*((int32_t *) lhs) = *((int32_t *) lhs) * *((int32_t *) rhs);
-	} else if (type == AZ_TYPE_UINT32) {
-		*((uint32_t *) lhs) = *((uint32_t *) lhs) * *((uint32_t *) rhs);
-	} else if (type == AZ_TYPE_INT64) {
-		*((int64_t *) lhs) = *((int64_t *) lhs) * *((int64_t *) rhs);
-	} else if (type == AZ_TYPE_UINT64) {
-		*((uint64_t *) lhs) = *((uint64_t *) lhs) * *((uint64_t *) rhs);
-	} else if (type == AZ_TYPE_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) * *((float *) rhs);
-	} else if (type == AZ_TYPE_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) * *((double *) rhs);
-	} else if (type == AZ_TYPE_COMPLEX_FLOAT) {
-		float r = *((float *) lhs) * *((float *) rhs) - *((float *) lhs + 1) * *((float *) rhs + 1);
-		float i = *((float *) lhs) * *((float *) rhs + 1) + *((float *) lhs + 1) * *((float *) rhs);
-		*((float *) lhs) = r;
-		*((float *) lhs + 1) = i;
-	} else if (type == AZ_TYPE_COMPLEX_DOUBLE) {
-		double r = *((double *) lhs) * *((double *) rhs) - *((double *) lhs + 1) * *((double *) rhs + 1);
-		double i = *((double *) lhs) * *((double *) rhs + 1) + *((double *) lhs + 1) * *((double *) rhs);
-		*((double *) lhs) = r;
-		*((double *) lhs + 1) = i;
-	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
+	CHECK_UNDERFLOW(2);
+	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
+	CHECK_TYPE_EXACT(1, type);
+	return multiply(intr, ip, type);
+}
+
+static const uint8_t *
+divide (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
+{
+	AZValue *lhs = azo_stack_value_bw (&intr->stack, 1);
+	AZValue *rhs = azo_stack_value_bw (&intr->stack, 0);
+	switch(type) {
+	case AZ_TYPE_INT32:
+		lhs->int32_v /= rhs->int32_v;
+		break;
+	case AZ_TYPE_UINT32:
+		lhs->uint32_v /= rhs->uint32_v;
+		break;
+	case AZ_TYPE_INT64:
+		lhs->int64_v /= rhs->int64_v;
+		break;
+	case AZ_TYPE_UINT64:
+		lhs->uint64_v /= rhs->uint64_v;
+		break;
+	case AZ_TYPE_FLOAT:
+		lhs->float_v /= rhs->float_v;
+		break;
+	case AZ_TYPE_DOUBLE:
+		lhs->double_v /= rhs->double_v;
+		break;
+	case AZ_TYPE_COMPLEX_FLOAT: {
+		float a = lhs->cfloat_v.r;
+		float b = lhs->cfloat_v.i;
+		float c = rhs->cfloat_v.r;
+		float d = rhs->cfloat_v.i;
+		lhs->cfloat_v.r = (a * c + b * d) / (c * c + d * d);
+		lhs->cfloat_v.i = (b * c - a * d) / (c * c + d * d);
+		break;
+	}
+	case AZ_TYPE_COMPLEX_DOUBLE: {
+		double a = lhs->cdouble_v.r;
+		double b = lhs->cdouble_v.i;
+		double c = rhs->cdouble_v.r;
+		double d = rhs->cdouble_v.i;
+		lhs->cdouble_v.r = (a * c + b * d) / (c * c + d * d);
+		lhs->cdouble_v.i = (b * c - a * d) / (c * c + d * d);
+		break;
+	}
+	default:
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 1);
 	return ip + 1;
 }
 
-static const unsigned char *
-interpret_DIVIDE (AZOInterpreter *intr, const unsigned char *ip)
+static const uint8_t *
+interpret_DIVIDE_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 {
-	unsigned int type;
-	const void *lhs, *rhs;
-	if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, 2)) return NULL;
-	type = azo_stack_type_bw (&intr->stack, 0);
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
-	if (type == AZ_TYPE_INT32) {
-		*((int32_t *) lhs) = *((int32_t *) lhs) / *((int32_t *) rhs);
-	} else if (type == AZ_TYPE_UINT32) {
-		*((uint32_t *) lhs) = *((uint32_t *) lhs) / *((uint32_t *) rhs);
-	} else if (type == AZ_TYPE_INT64) {
-		*((int64_t *) lhs) = *((int64_t *) lhs) / *((int64_t *) rhs);
-	} else if (type == AZ_TYPE_UINT64) {
-		*((uint64_t *) lhs) = *((uint64_t *) lhs) / *((uint64_t *) rhs);
-	} else if (type == AZ_TYPE_FLOAT) {
-		*((float *) lhs) = *((float *) lhs) / *((float *) rhs);
-	} else if (type == AZ_TYPE_DOUBLE) {
-		*((double *) lhs) = *((double *) lhs) / *((double *) rhs);
-	} else if (type == AZ_TYPE_COMPLEX_FLOAT) {
-		float a = *((float *) lhs);
-		float b = *((float *) lhs + 1);
-		float c = *((float *) rhs);
-		float d = *((float *) rhs + 1);
-		*((float *) lhs) = (a * c + b * d) / (c * c + d * d);
-		*((float *) lhs + 1) = (b * c - a * d) / (c * c + d * d);
-	} else if (type == AZ_TYPE_COMPLEX_DOUBLE) {
-		double a = *((double *) lhs);
-		double b = *((double *) lhs + 1);
-		double c = *((double *) rhs);
-		double d = *((double *) rhs + 1);
-		*((double *) lhs) = (a * c + b * d) / (c * c + d * d);
-		*((double *) lhs + 1) = (b * c - a * d) / (c * c + d * d);
-	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
+	unsigned int type = ip[1];
+	CHECK_TYPE_EXACT(0, type);
+	CHECK_TYPE_EXACT(1, type);
+	ip = divide(intr, ip, type);
+	return (ip) ? ip + 1 : NULL;
+}
+
+static const uint8_t *
+interpret_DIVIDE (AZOInterpreter *intr, const uint8_t *ip)
+{
+	CHECK_UNDERFLOW(2);
+	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
+	CHECK_TYPE_EXACT(1, type);
+	return divide(intr, ip, type);
+}
+
+static const uint8_t *
+modulo (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
+{
+	AZValue *lhs = azo_stack_value_bw (&intr->stack, 1);
+	AZValue *rhs = azo_stack_value_bw (&intr->stack, 0);
+	switch(type) {
+	case AZ_TYPE_INT32:
+		lhs->int32_v %= rhs->int32_v;
+		break;
+	case AZ_TYPE_UINT32:
+		lhs->uint32_v %= rhs->uint32_v;
+		break;
+	case AZ_TYPE_INT64:
+		lhs->int64_v %= rhs->int64_v;
+		break;
+	case AZ_TYPE_UINT64:
+		lhs->uint64_v %= rhs->uint64_v;
+		break;
+	case AZ_TYPE_FLOAT:
+		lhs->float_v = fmodf(lhs->float_v, rhs->float_v);
+		break;
+	case AZ_TYPE_DOUBLE:
+		lhs->double_v = fmod(lhs->double_v, rhs->double_v);
+		break;
+	default:
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 1);
 	return ip + 1;
 }
 
-static const unsigned char *
-interpret_MODULO (AZOInterpreter *intr, const unsigned char *ip)
+static const uint8_t *
+interpret_MODULO_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 {
-	unsigned int type;
-	const void *lhs, *rhs;
-	if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, 2)) return NULL;
-	type = azo_stack_type_bw (&intr->stack, 0);
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
-	if (type == AZ_TYPE_INT32) {
-		*((int32_t *) lhs) = *((int32_t *) lhs) % *((int32_t *) rhs);
-	} else if (type == AZ_TYPE_UINT32) {
-		*((uint32_t *) lhs) = *((uint32_t *) lhs) % *((uint32_t *) rhs);
-	} else if (type == AZ_TYPE_INT64) {
-		*((int64_t *) lhs) = *((int64_t *) lhs) % *((int64_t *) rhs);
-	} else if (type == AZ_TYPE_UINT64) {
-		*((uint64_t *) lhs) = *((uint64_t *) lhs) % *((uint64_t *) rhs);
-	} else if (type == AZ_TYPE_FLOAT) {
-		*((float *) lhs) = fmodf (*((float *) lhs), *((float *) rhs));
-	} else if (type == AZ_TYPE_DOUBLE) {
-		*((double *) lhs) = fmod (*((double *) lhs), *((double *) rhs));
-	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
-	}
-	azo_stack_pop (&intr->stack, 1);
-	return ip + 1;
+	unsigned int type = ip[1];
+	CHECK_TYPE_EXACT(0, type);
+	CHECK_TYPE_EXACT(1, type);
+	ip = modulo(intr, ip, type);
+	return (ip) ? ip + 1 : NULL;
+}
+
+static const uint8_t *
+interpret_MODULO (AZOInterpreter *intr, const uint8_t *ip)
+{
+	CHECK_UNDERFLOW(2);
+	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
+	CHECK_TYPE_EXACT(1, type);
+	return modulo(intr, ip, type);
 }
 
 static const unsigned char *
 interpret_MIN_MAX_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 {
 	unsigned int type;
-	const void *lhs, *rhs;
 	unsigned int remove;
 	type = ip[1];
 	if (!test_stack_type_exact_2 (intr, ip, type)) return NULL;
-	lhs = azo_stack_value_bw (&intr->stack, 1);
-	rhs = azo_stack_value_bw (&intr->stack, 0);
+	AZValue *lhs = azo_stack_value_bw (&intr->stack, 1);
+	AZValue *rhs = azo_stack_value_bw (&intr->stack, 0);
 	if (type == AZ_TYPE_INT8) {
-		remove = (*((int8_t *) lhs) > *((int8_t *) rhs));
+		remove = lhs->int8_v > rhs->int8_v;
 	} else if (type == AZ_TYPE_UINT8) {
-		remove = (*((uint8_t *) lhs) > *((uint8_t *) rhs));
+		remove = lhs->uint8_v > rhs->uint8_v;
 	} else if (type == AZ_TYPE_INT16) {
-		remove = (*((int16_t *) lhs) > *((int16_t *) rhs));
+		remove = lhs->int16_v > rhs->int16_v;
 	} else if (type == AZ_TYPE_UINT16) {
-		remove = (*((uint16_t *) lhs) > *((uint16_t *) rhs));
+		remove = lhs->uint16_v > rhs->uint16_v;
 	} else if (type == AZ_TYPE_INT32) {
-		remove = (*((int32_t *) lhs) > *((int32_t *) rhs));
+		remove = lhs->int32_v > rhs->int32_v;
 	} else if (type == AZ_TYPE_UINT32) {
-		remove = (*((uint32_t *) lhs) > *((uint32_t *) rhs));
+		remove = lhs->uint32_v > rhs->uint32_v;
 	} else if (type == AZ_TYPE_INT64) {
-		remove = (*((int64_t *) lhs) > *((int64_t *) rhs));
+		remove = lhs->int64_v > rhs->int64_v;
 	} else if (type == AZ_TYPE_UINT64) {
-		remove = (*((uint64_t *) lhs) > *((uint64_t *) rhs));
+		remove = lhs->uint64_v > rhs->uint64_v;
 	} else if (type == AZ_TYPE_FLOAT) {
-		remove = (*((float *) lhs) > *((float *) rhs));
+		remove = lhs->float_v > rhs->float_v;
 	} else if (type == AZ_TYPE_DOUBLE) {
-		remove = (*((double *) lhs) > *((double *) rhs));
+		remove = lhs->double_v > rhs->double_v;
 	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	if (ip[0] == MAX_TYPED) remove = !remove;
 	azo_stack_remove (&intr->stack, intr->stack.length - 1 - remove, 1);
@@ -1352,26 +1275,19 @@ interpret_MIN_MAX_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 static const unsigned char *
 interpret_GET_INTERFACE_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip)
 {
-	const AZImplementation *impl;
-	void *inst;
+	CHECK_UNDERFLOW(1);
 	uint32_t type;
 	memcpy (&type, ip + 1, 4);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_underflow (intr, ip, 1)) return NULL;
-		if (azo_stack_type_bw (&intr->stack, 0) <= AZ_TYPE_ANY) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-			return NULL;
+		if (!AZ_IMPL_IS_BLOCK(azo_stack_impl_bw(&intr->stack, 0))) {
+			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 		}
-		if (az_type_is_a (azo_stack_type_bw (&intr->stack, 0), AZ_TYPE_STRUCT)) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ( unsigned int) (ip - intr->prog->tcode));
-			return NULL;
-		}
-		if (!az_type_is_a (type, AZ_TYPE_INTERFACE)) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-			return NULL;
+		if (!AZ_TYPE_IS_INTERFACE(type)) {
+			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 		}
 	}
-	impl = az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), type, &inst);
+	void *inst;
+	const AZImplementation *impl = az_instance_get_interface(azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), type, &inst);
 	azo_stack_push_value (&intr->stack, impl, &inst);
 	return ip + 5;
 }
@@ -1386,20 +1302,16 @@ static const unsigned char *
 interpret_INVOKE (AZOInterpreter *intr, const unsigned char *ip)
 {
 	unsigned int pos = ip[1];
-	if (ip[0] & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_underflow (intr, ip, pos)) return NULL;
-	}
+	CHECK_UNDERFLOW(1);
 	AZFunctionInstance *func_inst;
 	const AZFunctionImplementation *func_impl = (const AZFunctionImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, pos), azo_stack_instance_bw (&intr->stack, pos), AZ_TYPE_FUNCTION, (void **) &func_inst);
 	if (!func_impl) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ( unsigned int) (ip - intr->prog->tcode));
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	const AZFunctionSignature *sig = az_function_get_signature (func_impl, func_inst);
 	for (unsigned int i = 0; i < sig->n_args; i++) {
 		if (!azo_stack_convert_bw (&intr->stack, sig->n_args - 1 - i, sig->arg_types[i])) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, (unsigned int) (ip - intr->prog->tcode));
-			return NULL;
+			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 		}
 	}
 	intr->vals[0].impl = NULL;
@@ -1418,9 +1330,7 @@ interpret_RETURN (AZOInterpreter *intr, const unsigned char *ip)
 static const unsigned char *
 interpret_RETURN_VALUE (AZOInterpreter *intr, const unsigned char *ip)
 {
-	if (ip[0] & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_underflow (intr, ip, 0)) return NULL;
-	}
+	CHECK_UNDERFLOW(1);
 	intr->vals[0].impl = az_value_copy_autobox(azo_stack_impl_bw(&intr->stack, 0), &intr->vals[0].v.value, azo_stack_value_bw(&intr->stack, 0), 64);
 	return NULL;
 }
@@ -1428,12 +1338,11 @@ interpret_RETURN_VALUE (AZOInterpreter *intr, const unsigned char *ip)
 static const unsigned char *
 interpret_BIND (AZOInterpreter *intr, const unsigned char *ip)
 {
-	AZOCompiledFunction *cfunc;
-	uint32_t pos, i;
+	uint32_t pos;
 	memcpy (&pos, ip + 1, 4);
 	CHECK_TYPE_EXACT(pos, AZO_TYPE_COMPILED_FUNCTION);
-	cfunc = (AZOCompiledFunction *) azo_stack_instance_bw (&intr->stack, pos);
-	for (i = 0; i < pos; i++) {
+	AZOCompiledFunction *cfunc = (AZOCompiledFunction *) azo_stack_instance_bw (&intr->stack, pos);
+	for (unsigned int i = 0; i < pos; i++) {
 		azo_compiled_function_bind (cfunc, i, azo_stack_impl_bw (&intr->stack, pos - 1 - i), azo_stack_instance_bw (&intr->stack, pos - 1 - i));
 	}
 	if (pos) azo_stack_pop (&intr->stack, pos);
@@ -1443,15 +1352,11 @@ interpret_BIND (AZOInterpreter *intr, const unsigned char *ip)
 static const unsigned char *
 interpret_NEW_ARRAY (AZOInterpreter *intr, const unsigned char *ip)
 {
+	CHECK_UNDERFLOW(1);
 	unsigned int size;
 	AZValueArrayRef *varray;
 	AZClass *varray_class;
 	if (*ip & AZO_TC_CHECK_ARGS) {
-		/* Test stack size */
-		if (intr->stack.length < 1) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_STACK_UNDERFLOW, 1UL << AZO_EXCEPTION_STACK_UNDERFLOW, (unsigned int) (ip - intr->prog->tcode));
-			return NULL;
-		}
 		if (!convert_to_u32 (intr, &size, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0), ip)) {
 			return NULL;
 		}
@@ -1881,40 +1786,6 @@ azo_interpreter_exception(AZOInterpreter *intr, const uint8_t *ip, unsigned int 
 	azo_exception_set (&intr->exc, type, 1UL << type, (unsigned int) (ip - intr->prog->tcode));
 }
 
-void
-azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog)
-{
-	AZOProgram *last_prog = intr->prog;
-	intr->prog = prog;
-
-	const uint8_t *ipc = prog->tcode;
-	const uint8_t *end = prog->tcode + prog->tcode_length;
-
-	fprintf(stdout, "\nStarting program\n");
-	for (unsigned int pos = 0; pos < prog->tcode_length; pos = azo_bc_next_instruction(ipc, pos, prog->tcode_length)) {
-		uint8_t c[1024];
-		azo_bc_print_instruction(c, 1024, ipc, pos, prog->tcode_length);
-		fprintf(stdout, "%04d %s\n", pos, c);
-	}
-	//getchar();
-
-	while (ipc && (ipc < end)) {
-		ipc = azo_interpreter_interpret_tc(intr, prog, ipc);
-	}
-	if (intr->exc.type != AZO_EXCEPTION_NONE) {
-		unsigned char b[1024];
-		/* Exception */
-		az_instance_to_string (&azo_exception_class->klass.impl, &intr->exc, b, 1024);
-		fprintf (stderr, "Fatal exception: %s\n", b);
-		azo_intepreter_print_stack (intr, stderr);
-		fprintf (stderr, "\n");
-
-		/* fixme: Clear for now (otherwise return will invoke exceptions) */
-		intr->exc.type = AZO_EXCEPTION_NONE;
-	}
-	intr->prog = last_prog;
-}
-
 const uint8_t *
 azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *ipc)
 {
@@ -2132,6 +2003,55 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint
 			return NULL;
 	}
 	return ipc;
+}
+
+void
+azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog)
+{
+	AZOProgram *last_prog = intr->prog;
+	intr->prog = prog;
+
+	if (0 && prog->debug.n_terms) {
+		fprintf(stdout, "\nProgram code\n");
+		for (unsigned int ip = 0; ip < prog->tcode_length; ip = azo_bc_next_instruction(prog->tcode, ip, prog->tcode_length)) {
+			uint8_t c[1024];
+			azo_bc_print_instruction(c, 1024, prog->tcode, ip, prog->tcode_length);
+			fprintf(stdout, "%04d %s\n", ip, c);
+		}
+		const uint8_t *ipc = prog->tcode;
+		const uint8_t *end = prog->tcode + prog->tcode_length;
+		while (ipc && (ipc < end)) {
+			unsigned int ip = ipc - prog->tcode;
+			unsigned int line = prog->debug.terms[ip].line;
+			azo_source_print_lines(prog->debug.src, line, line + 1);
+			while(ipc && (ipc < end) && (prog->debug.terms[ip].line == line)) {
+				ipc = azo_interpreter_interpret_tc(intr, prog, prog->tcode + ip);
+				ip = ipc - prog->tcode;
+			}
+		}
+
+		//getchar();
+	} else {
+		const uint8_t *ipc = prog->tcode;
+		const uint8_t *end = prog->tcode + prog->tcode_length;
+
+		while (ipc && (ipc < end)) {
+			ipc = azo_interpreter_interpret_tc(intr, prog, ipc);
+		}
+	}
+
+	if (intr->exc.type != AZO_EXCEPTION_NONE) {
+		unsigned char b[1024];
+		/* Exception */
+		az_instance_to_string (&azo_exception_class->klass.impl, &intr->exc, b, 1024);
+		fprintf (stderr, "Fatal exception: %s\n", b);
+		azo_intepreter_print_stack (intr, stderr);
+		fprintf (stderr, "\n");
+
+		/* fixme: Clear for now (otherwise return will invoke exceptions) */
+		intr->exc.type = AZO_EXCEPTION_NONE;
+	}
+	intr->prog = last_prog;
 }
 
 static const uint8_t *
