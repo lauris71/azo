@@ -2135,6 +2135,7 @@ interpreter_interpret (AZOInterpreter *intr, AZOProgram *prog, const AZImplement
 				/* Exception */
 				az_instance_to_string (&azo_exception_class->klass.impl, &intr->exc, b, 1024);
 				fprintf (stderr, "Fatal exception: %s\n", b);
+				fprintf(stderr, "Position: %d %d\n", intr->exc.ipc, prog->tcode[intr->exc.ipc] & 0x7f);
 				azo_intepreter_print_stack (intr, stderr);
 				fprintf (stderr, "\n");
 
