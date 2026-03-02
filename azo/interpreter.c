@@ -86,14 +86,15 @@ azo_intepreter_push_values (AZOInterpreter *intr, const AZImplementation **impls
 	}
 }
 
-void
+unsigned int
 azo_interpreter_push_frame (AZOInterpreter *intr, unsigned int n_elements)
 {
 	if (intr->n_frames >= intr->size_frames) {
 		intr->size_frames = intr->size_frames << 1;
 		intr->frames = ( unsigned int *) realloc (intr->frames, intr->size_frames * 4);
 	}
-	intr->frames[intr->n_frames++] = intr->stack.length - n_elements;
+	intr->frames[intr->n_frames] = intr->stack.length - n_elements;
+	return intr->n_frames++;
 }
 
 void
@@ -1826,13 +1827,13 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint
 		case AZO_TC_PUSH_VALUE:
 			ipc = interpret_PUSH_VALUE (intr, prog, ipc);
 			break;
-		case DUPLICATE:
+		case AZO_TC_DUPLICATE:
 			ipc = interpret_DUPLICATE (intr, ipc);
 			break;
-		case DUPLICATE_FRAME:
+		case AZO_TC_DUPLICATE_FRAME:
 			ipc = interpret_DUPLICATE_FRAME (intr, ipc);
 			break;
-		case EXCHANGE:
+		case AZO_TC_EXCHANGE:
 			ipc = interpret_EXCHANGE (intr, ipc);
 			break;
 		case AZO_TC_EXCHANGE_FRAME:
@@ -2011,33 +2012,11 @@ azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog)
 	AZOProgram *last_prog = intr->prog;
 	intr->prog = prog;
 
-	if (0 && prog->debug.n_terms) {
-		fprintf(stdout, "\nProgram code\n");
-		for (unsigned int ip = 0; ip < prog->tcode_length; ip = azo_bc_next_instruction(prog->tcode, ip, prog->tcode_length)) {
-			uint8_t c[1024];
-			azo_bc_print_instruction(c, 1024, prog->tcode, ip, prog->tcode_length);
-			fprintf(stdout, "%04d %s\n", ip, c);
-		}
-		const uint8_t *ipc = prog->tcode;
-		const uint8_t *end = prog->tcode + prog->tcode_length;
-		while (ipc && (ipc < end)) {
-			unsigned int ip = ipc - prog->tcode;
-			unsigned int line = prog->debug.terms[ip].line;
-			azo_source_print_lines(prog->debug.src, line, line + 1);
-			while(ipc && (ipc < end) && (prog->debug.terms[ip].line == line)) {
-				ipc = azo_interpreter_interpret_tc(intr, prog, prog->tcode + ip);
-				ip = ipc - prog->tcode;
-			}
-		}
+	const uint8_t *ipc = prog->tcode;
+	const uint8_t *end = prog->tcode + prog->tcode_length;
 
-		//getchar();
-	} else {
-		const uint8_t *ipc = prog->tcode;
-		const uint8_t *end = prog->tcode + prog->tcode_length;
-
-		while (ipc && (ipc < end)) {
-			ipc = azo_interpreter_interpret_tc(intr, prog, ipc);
-		}
+	while (ipc && (ipc < end)) {
+		ipc = azo_interpreter_interpret_tc(intr, prog, ipc);
 	}
 
 	if (intr->exc.type != AZO_EXCEPTION_NONE) {

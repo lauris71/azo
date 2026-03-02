@@ -117,12 +117,12 @@ azo_compiler_compile_arithmetic_any_any (AZOCompiler *comp, unsigned int operati
 }
 
 static unsigned int
-azo_compiler_compile_arithmetic_boolean (AZOCompiler *comp, unsigned int operation)
+azo_compiler_compile_arithmetic_boolean (AZOCompiler *comp, unsigned int operation, const AZOExpression *expr)
 {
 	unsigned int not_boolean_1, not_boolean_2, finished;
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_BOOLEAN);
+	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_BOOLEAN, expr);
 	not_boolean_1 = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_BOOLEAN);
+	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_BOOLEAN, expr);
 	not_boolean_2 = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
 	if (operation == ARITHMETIC_ANDAND) {
 		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_AND, NULL);
@@ -159,7 +159,7 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZOExpression *lhs, co
 		return azo_compiler_compile_arithmetic_any_any (comp, expr->term.subtype);
 	case ARITHMETIC_ANDAND:
 	case ARITHMETIC_OROR:
-		return azo_compiler_compile_arithmetic_boolean (comp, expr->term.subtype);
+		return azo_compiler_compile_arithmetic_boolean (comp, expr->term.subtype, expr);
 	default:
 		fprintf (stderr, "azo_compiler_compile_arithmetic: Unknown subtype %u\n", expr->term.subtype);
 		break;

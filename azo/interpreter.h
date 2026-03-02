@@ -48,8 +48,17 @@ void interpreter_delete (AZOInterpreter *intr);
 void azo_intepreter_push_instance (AZOInterpreter *intr, const AZImplementation *impl, void *inst);
 void azo_intepreter_push_value (AZOInterpreter *intr, const AZImplementation *impl, const AZValue *val);
 void azo_intepreter_push_values (AZOInterpreter *intr, const AZImplementation **impls, const AZValue **vals, unsigned int n_vals);
-/* Create new frame containing n_elements elements at the top of stack */
-void azo_interpreter_push_frame (AZOInterpreter *intr, unsigned int n_elements);
+
+/**
+ * @brief Pushes a new frame to the top of the frame stack
+ * 
+ * The new frame pointer is set to contain n_elements values from the top of the stack
+ * 
+ * @param intr the interpreter
+ * @param n_elements the number of elements to reserve
+ * @return the previous frame pointer
+ */
+unsigned int azo_interpreter_push_frame (AZOInterpreter *intr, unsigned int n_elements);
 void azo_interpreter_pop_frame (AZOInterpreter *intr);
 void azo_interpreter_clear_frame (AZOInterpreter *intr);
 void azo_interpreter_restore_frame (AZOInterpreter *intr, unsigned int frame);

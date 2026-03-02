@@ -9,7 +9,9 @@
 #include <stdlib.h>
 
 #include <az/packed-value.h>
+
 #include <azo/bytecode.h>
+#include <azo/debugger.h>
 #include <azo/parser.h>
 #include <azo/compiler/compiler.h>
 
@@ -81,10 +83,15 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 void
 azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, const AZImplementation *arg_impls[], const AZValue *arg_vals[], unsigned int n_args, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
 {
-	unsigned int frame = intr->n_frames;
-	azo_interpreter_push_frame (intr, 0);
+	unsigned int prev_frame = azo_interpreter_push_frame (intr, 0);
 	azo_intepreter_push_values (intr, arg_impls, arg_vals, n_args);
-	azo_interpreter_run (intr, prog);
+	if (prog->debug.n_terms) {
+		AZODebugger *debugger = azo_debugger_new(intr);
+		azo_debugger_run(debugger, prog);
+		azo_debugger_unref(debugger);
+	} else {
+		azo_interpreter_run (intr, prog);
+	}
 	*ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
-	azo_interpreter_restore_frame (intr, frame);
+	azo_interpreter_restore_frame (intr, prev_frame);
 }

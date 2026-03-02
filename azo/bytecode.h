@@ -65,21 +65,38 @@ enum {
 	PUSH_IMMEDIATE,
 	/* PUSH_VALUE LOCATION(U32) */
 	AZO_TC_PUSH_VALUE,
-	/* DUPLICATE POS(U32) */
-	/* Pushes a duplicate of an element into stack */
-	DUPLICATE,
+	/**
+	 * @brief Pushes a duplicate of an element into stack
+	 * 
+	 * DUPLICATE U32:POS
+	 * [val, ...]
+	 * [val, ..., val]
+	 */
+	AZO_TC_DUPLICATE,
 	/* DUPLICATE_FRAME POS(U32) */
 	/* Pushes a duplicate of a frame-relative element into stack */
-	DUPLICATE_FRAME,
-	/* Exchange POS(U32) */
-	/* Exchanges element with topmost */
-	EXCHANGE,
 	/**
-	 * @brief Exchanges frame-relative element with top of stack
+	 * @brief Pushes a duplicate of a frame-relative element into stack
+	 * 
+	 * DUPLICATE_FRAME U32:POS
+	 * [...; ..., val, ...]
+	 * [...; ..., val, ..., val]
+	 */
+	AZO_TC_DUPLICATE_FRAME,
+	/**
+	 * @brief Exchanges the stack element with the top of stack
+	 * 
+	 * EXCHANGE U32:POS
+	 * [val1, ..., val2]
+	 * [val2, ..., val1]
+	 */
+	AZO_TC_EXCHANGE,
+	/**
+	 * @brief Exchanges frame-relative element with the top of stack
 	 * 
 	 * EXCHANGE_FRAME U32:POS
-	 * [..., val1, ..., val2]
-	 * [..., val2, ..., val1]
+	 * [...; ..., val1, ..., val2]
+	 * [...; ..., val2, ..., val1]
 	 */
 	AZO_TC_EXCHANGE_FRAME,
 

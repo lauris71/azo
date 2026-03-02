@@ -5,6 +5,7 @@ set(AZO_HEADERS
 	compiled-function.h
 	context.h
 	debug.h
+	debugger.h
 	exception.h
 	expression.h
 	interpreter.h
@@ -27,6 +28,7 @@ set(AZO_SOURCES
 	compiled-function.c
 	context.c
 	debug.c
+	debugger.c
 	exception.c
 	expression.c
 	interpreter.c
