@@ -87,6 +87,19 @@ azo_source_ensure_lines(AZOSource *src)
 }
 
 unsigned int
+azo_source_get_line_len(AZOSource *src, unsigned int line)
+{
+	azo_source_ensure_lines(src);
+	if (line >= src->n_lines) return 0;
+	unsigned int e = src->lines[line];
+	while(e < src->csize) {
+		if (src->cdata[e] == '\n') break;
+		e += 1;
+	}
+	return e - src->lines[line];
+}
+
+unsigned int
 azo_source_find_line_range (AZOSource *src, unsigned int start, unsigned int end, unsigned int *first, unsigned int *last)
 {
 	unsigned int i, f, l;

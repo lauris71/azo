@@ -9,6 +9,8 @@
 
 typedef struct _AZODebugger AZODebugger;
 
+#include <arikkei/arikkei-token.h>
+
 #include <azo/program.h>
 
 #ifdef __cplusplus
@@ -16,6 +18,8 @@ extern "C" {
 #endif
 
 enum {
+    DBG_UNKNOWN,
+    DBG_QUIT,
     DBG_RUN,
     DBG_STEP_OVER,
     DBG_STEP_INTO,
@@ -30,6 +34,9 @@ AZODebugger *azo_debugger_new(AZOInterpreter *intr);
 void azo_debugger_unref(AZODebugger *debugger);
 
 void azo_debugger_run(AZODebugger *debugger, AZOProgram *prog);
+
+unsigned int azo_debugger_printf(const char *format, ...);
+unsigned int azo_debugger_get_command(ArikkeiToken *tokens, unsigned tokens_len);
 
 #ifdef __cplusplus
 }

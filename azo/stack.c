@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <arikkei/arikkei-strlib.h>
+
 #include <az/extend.h>
 
 #include <azo/stack.h>
@@ -294,6 +296,24 @@ azo_stack_convert (AZOStack *stack, unsigned int pos, unsigned int to_type)
 	return 1;
 }
 
+unsigned int
+azo_stack_print(AZOStack *stack, unsigned int pos, uint8_t *d, unsigned int d_len)
+{
+	uint8_t buf[1024];
+	const char *name = "NONE";
+	unsigned int type = azo_stack_type (stack, pos);
+	if (type) {
+		unsigned int len;
+		name = (const char *) AZ_CLASS_FROM_TYPE(type)->name;
+		az_instance_to_string (AZ_IMPL_FROM_TYPE(type), azo_stack_instance (stack, pos), buf, 1024);
+	} else {
+		buf[0] = 0;
+	}
+	unsigned int len = snprintf((char *) d, d_len, "%u: %2u\t%u %s %s", pos, (unsigned int) (stack->values[pos + 1].ptr - stack->values[pos].ptr), type, name, buf);
+	if (d_len && (len >= d_len)) d[d_len - 1] = 0;
+	return len;
+}
+
 void
 azo_stack_print_contents (AZOStack *stack, unsigned int start, unsigned int end, FILE *ofs)
 {
@@ -301,9 +321,8 @@ azo_stack_print_contents (AZOStack *stack, unsigned int start, unsigned int end,
 	for (i = start; i < end; i++) {
 		unsigned char b[1024];
 		const unsigned char *name;
-		unsigned int pos, type;
-		pos = end - 1 - (i - start);
-		type = azo_stack_type (stack, pos);
+		unsigned int pos = end - 1 - (i - start);
+		unsigned int type = azo_stack_type (stack, pos);
 		if (type) {
 			unsigned int len;
 			name = AZ_CLASS_FROM_TYPE(type)->name;

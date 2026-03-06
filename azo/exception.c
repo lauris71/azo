@@ -61,7 +61,7 @@ static exception_to_string (const AZImplementation* impl, void *inst, unsigned c
 }
 
 void
-azo_exception_set (AZOException *exc, unsigned int type, unsigned int mask, unsigned int ipc)
+azo_exception_set (AZOException *exc, unsigned int type, unsigned int mask, const uint8_t *ipc)
 {
  	exc->type = type;
 	exc->mask = mask;

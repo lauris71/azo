@@ -195,6 +195,7 @@ azo_stack_pointer_bw(AZOStack *stack, unsigned int pos_from_last)
 	return azo_stack_primitive_bw(stack, pos_from_last)->pointer_v;
 }
 
+unsigned int azo_stack_print(AZOStack *stack, unsigned int pos, uint8_t *d, unsigned int d_len);
 void azo_stack_print_contents (AZOStack *stack, unsigned int start, unsigned int end, FILE *ofs);
 
 #ifdef __cplusplus

@@ -28,7 +28,6 @@ extern "C" {
 
 struct _AZOInterpreter {
 	AZOContext *ctx;
-	AZOProgram *prog;
 
 	/* Current stack frame start */
 	unsigned int n_frames;

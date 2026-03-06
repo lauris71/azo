@@ -54,6 +54,7 @@ azo_source_unref(AZOSource *src)
 
 void azo_source_ensure_lines(AZOSource *src);
 
+unsigned int azo_source_get_line_len(AZOSource *src, unsigned int line);
 unsigned int azo_source_find_line_range (AZOSource *src, unsigned int start, unsigned int end, unsigned int *first, unsigned int *last);
 
 void azo_source_print_lines (AZOSource *src, unsigned int start, unsigned int end);

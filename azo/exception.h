@@ -51,7 +51,7 @@ struct _AZOException {
 	unsigned int type;
 	unsigned int mask;
 	/* IPC at the time of exception */
-	unsigned int ipc;
+	const uint8_t *ipc;
 };
 
 struct _AZOExceptionClass {
@@ -60,7 +60,7 @@ struct _AZOExceptionClass {
 
 unsigned int azo_exception_get_type (void);
 
-void azo_exception_set (AZOException *exc, unsigned int type, unsigned int mask, unsigned int ipc);
+void azo_exception_set (AZOException *exc, unsigned int type, unsigned int mask, const uint8_t *ipc);
 void azo_exception_clear (AZOException *exc);
 
 #ifdef __cplusplus
