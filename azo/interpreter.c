@@ -1453,8 +1453,7 @@ interpret_GET_GLOBAL (AZOInterpreter *intr, const unsigned char *ip)
 	AZString *key;
 	CHECK_TYPE_EXACT(0, AZ_TYPE_STRING);
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
-	intr->vals[0].impl = NULL;
-	if (azo_context_lookup (intr->ctx, key, &intr->vals[0].packed_val)) {
+	if ((intr->vals[0].impl = azo_context_lookup (intr->ctx, key, &intr->vals[0].v.value, 64))) {
 		azo_stack_pop (&intr->stack, 1);
 		azo_stack_push_value_transfer (&intr->stack, intr->vals[0].impl, &intr->vals[0].v.value);
 	} else {
@@ -1496,7 +1495,7 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		return ip + 1;
 	}
 	/* Try interface */
-	if (azo_context_lookup (intr->ctx, key, &intr->vals[0].packed_val) && (AZ_IMPL_TYPE(intr->vals[0].impl) == AZ_TYPE_CLASS)) {
+	if ((intr->vals[0].impl = azo_context_lookup (intr->ctx, key, &intr->vals[0].v.value, 64)) && (AZ_IMPL_TYPE(intr->vals[0].impl) == AZ_TYPE_CLASS)) {
 		AZClass *klass = (AZClass *) intr->vals[0].packed_val.v.block;
 		if ((AZ_CLASS_FLAGS(klass) & AZ_FLAG_INTERFACE) && az_type_implements (AZ_IMPL_TYPE(impl), AZ_CLASS_TYPE(klass))) {
 			/* fixme: Implement nested interfacing (by overriding boxed iface) */

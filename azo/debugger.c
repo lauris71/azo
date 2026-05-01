@@ -81,17 +81,17 @@ print_stack (AZODebugger *debugger)
     AZOStack *stack = &debugger->intr->stack;
 	for (unsigned int i = 0; i < intr->n_frames; i++) {
 		unsigned int frame = intr->n_frames - 1 - i;
-        unsigned int start = intr->frames[i];
+        unsigned int start = intr->frames[frame];
 		unsigned int end = (frame == (intr->n_frames - 1)) ? stack->length : intr->frames[frame + 1];
 		if (end > intr->frames[frame]) {
-			azo_debugger_printf("Frame %u (%u - %u)\n", frame, intr->frames[frame], end - 1);
+			azo_debugger_printf("Frame %u (%u - %u)\n", frame, start, end - 1);
 		} else {
 			azo_debugger_printf("Frame %u EMPTY\n", frame);
 		}
-        for (unsigned int i = intr->frames[i]; i < end; i++) {
-            unsigned int pos = end - 1 - (i - start);
+        for (unsigned int j = start; j < end; j++) {
+            unsigned int pos = (end - 1) - (j - start);
             uint8_t buf[1024];
-            unsigned int len = azo_stack_print(stack, pos, buf, 1024);
+            unsigned int len = azo_stack_print_element(stack, pos, buf, 1024);
             azo_debugger_printf("%s\n", buf);
         }
 	}
@@ -103,11 +103,23 @@ azo_debugger_run(AZODebugger *debugger, AZOProgram *prog)
     // fixme: Make standalone
     azo_debugger_printf("\nStarting debugger: %s\n", (prog->debug.src->name) ? (const char *) prog->debug.src->name->str : "unnamed");
 
+    unsigned int run = 0;
     unsigned int ip = 0;
 
     while(ip < prog->tcode_length) {
         unsigned int line = prog->debug.terms[ip].line;
         print_line(debugger, prog, line);
+
+        if (run) {
+            // next
+            while((ip < prog->tcode_length) && (prog->debug.terms[ip].line == line)) {
+                const uint8_t *ipc = prog->tcode + ip;
+                ipc = azo_interpreter_interpret_tc(debugger->intr, prog, ipc);
+                if (!ipc) return;
+                ip = ipc - prog->tcode;
+            }
+            continue;
+        }
 
         ArikkeiToken tokenz[256];
         unsigned int n_tokenz = azo_debugger_get_command(tokenz, 256);

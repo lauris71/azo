@@ -85,7 +85,23 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, const AZImplementa
 {
 	unsigned int prev_frame = azo_interpreter_push_frame (intr, 0);
 	azo_intepreter_push_values (intr, arg_impls, arg_vals, n_args);
-	if (prog->debug.n_terms) {
+	if (0 && prog->debug.n_terms) {
+		AZODebugger *debugger = azo_debugger_new(intr);
+		azo_debugger_run(debugger, prog);
+		azo_debugger_unref(debugger);
+	} else {
+		azo_interpreter_run (intr, prog);
+	}
+	*ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
+	azo_interpreter_restore_frame (intr, prev_frame);
+}
+
+void
+azo_program_interpret_call(AZOProgram *prog, AZOInterpreter *intr, const AZImplementation *arg_impls[], const AZValue *arg_vals[], unsigned int n_args, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
+{
+	unsigned int prev_frame = azo_interpreter_push_frame (intr, 0);
+	azo_intepreter_push_values (intr, arg_impls, arg_vals, n_args);
+	if (0 && prog->debug.n_terms) {
 		AZODebugger *debugger = azo_debugger_new(intr);
 		azo_debugger_run(debugger, prog);
 		azo_debugger_unref(debugger);

@@ -121,7 +121,7 @@ compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, cons
 	/* We have to keep reference during invocation */
 	az_object_ref ((AZObject *) cfunc);
 
-	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, arg_impls, arg_vals, cfunc->signature->n_args, ret_impl, &ret_val->value, 64);
+	azo_program_interpret_call(cfunc->prog, cfunc->ctx->intr, arg_impls, arg_vals, cfunc->signature->n_args, ret_impl, &ret_val->value, 64);
 
 	az_object_unref ((AZObject *) cfunc);
 	ARIKKEI_CHECK_INTEGRITY ();

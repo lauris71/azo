@@ -297,7 +297,7 @@ azo_stack_convert (AZOStack *stack, unsigned int pos, unsigned int to_type)
 }
 
 unsigned int
-azo_stack_print(AZOStack *stack, unsigned int pos, uint8_t *d, unsigned int d_len)
+azo_stack_print_element(AZOStack *stack, unsigned int pos, uint8_t *d, unsigned int d_len)
 {
 	uint8_t buf[1024];
 	const char *name = "NONE";

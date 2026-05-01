@@ -16,7 +16,7 @@ typedef struct _AZOContextFull AZOContextFull;
 
 #include <az/classes/active-object.h>
 #include <az/collections/list.h>
-#include <az/classes/map.h>
+#include <az/collections/map.h>
 #include <az/string.h>
 #include <az/value.h>
 #include <az/extend.h>
@@ -123,7 +123,7 @@ azo_context_define (AZOContext *ctx, AZString *key, const AZPackedValue *value)
 	arikkei_return_val_if_fail (ctx != NULL, 0);
 	arikkei_return_val_if_fail (key != NULL, 0);
 	arikkei_return_val_if_fail (value != NULL, 0);
-	if (arikkei_dict_exists (&fctx->definitions, key->str)) return 0;
+	if (arikkei_dict_exists_pval (&fctx->definitions, key->str)) return 0;
 	if (fctx->nvalues >= fctx->values_size) {
 		unsigned int newsize = fctx->values_size << 1;
 		fctx->values = (AZPackedValue *) realloc (fctx->values, newsize * sizeof (AZPackedValue));
@@ -131,7 +131,8 @@ azo_context_define (AZOContext *ctx, AZString *key, const AZPackedValue *value)
 		fctx->keys = (AZString **) realloc (fctx->keys, newsize * sizeof (AZString *));
 		fctx->values_size = newsize;
 	}
-	arikkei_dict_insert (&fctx->definitions, key->str, ARIKKEI_INT_TO_POINTER (fctx->nvalues));
+	void *valptr = ARIKKEI_INT_TO_POINTER (fctx->nvalues);
+	arikkei_dict_insert_pval (&fctx->definitions, key->str, valptr);
 	az_packed_value_copy (&fctx->values[fctx->nvalues], value);
 	az_string_ref (key);
 	fctx->keys[fctx->nvalues++] = key;
@@ -152,27 +153,26 @@ azo_context_define_by_str (AZOContext *ctx, const unsigned char *key, const AZPa
 	return result;
 }
 
-unsigned int
-azo_context_lookup (AZOContext *ctx, AZString *key, AZPackedValue *value)
+const AZImplementation *
+azo_context_lookup (AZOContext *ctx, AZString *key, AZValue *val, unsigned int size)
 {
 	arikkei_return_val_if_fail (ctx != NULL, 0);
 	arikkei_return_val_if_fail (key != NULL, 0);
-	arikkei_return_val_if_fail (value != NULL, 0);
-	return azo_context_lookup_by_str (ctx, key->str, value);
+	arikkei_return_val_if_fail (val != NULL, 0);
+	return azo_context_lookup_by_str (ctx, key->str, val, size);
 }
 
-unsigned int
-azo_context_lookup_by_str (AZOContext *ctx, const unsigned char *key, AZPackedValue *value)
+const AZImplementation *
+azo_context_lookup_by_str (AZOContext *ctx, const uint8_t *key, AZValue *val, unsigned int size)
 {
 	AZOContextFull *fctx = (AZOContextFull *) ctx;
-	unsigned int idx;
-	arikkei_return_val_if_fail (ctx != NULL, 0);
-	arikkei_return_val_if_fail (key != NULL, 0);
-	arikkei_return_val_if_fail (value != NULL, 0);
-	if (!arikkei_dict_exists (&fctx->definitions, key)) return 0;
-	idx = ARIKKEI_POINTER_TO_INT (arikkei_dict_lookup (&fctx->definitions, key));
-	az_packed_value_copy (value, &fctx->values[idx]);
-	return 1;
+	arikkei_return_val_if_fail (ctx != NULL, NULL);
+	arikkei_return_val_if_fail (key != NULL, NULL);
+	arikkei_return_val_if_fail (val != NULL, NULL);
+	void **ptr = (void **) arikkei_dict_lookup (&fctx->definitions, &key);
+	if (!ptr) return NULL;
+	unsigned int idx = ARIKKEI_POINTER_TO_INT(*ptr);
+	return az_value_copy_autobox(fctx->values[idx].impl, val, &fctx->values[idx].v, size);
 }
 
 void

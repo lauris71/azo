@@ -50,6 +50,7 @@ AZOProgram *azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	const uint8_t *code, unsigned int code_len);
 
 void azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, const AZImplementation *arg_impls[], const AZValue *arg_vals[], unsigned int n_args, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size);
+void azo_program_interpret_call(AZOProgram *prog, AZOInterpreter *intr, const AZImplementation *arg_impls[], const AZValue *arg_vals[], unsigned int n_args, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size);
 
 #ifdef __cplusplus
 }
