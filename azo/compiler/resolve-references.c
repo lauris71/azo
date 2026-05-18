@@ -89,7 +89,7 @@ resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass,
 		const AZAttribDictImplementation *attrd_impl = (AZAttribDictImplementation *) az_instance_get_interface (impl, inst, AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
 		AZValue64 attr_val;
 		unsigned int attr_flags;
-		const AZImplementation *attr_impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, str, &attr_val, &attr_flags);
+		const AZImplementation *attr_impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, str, &attr_val.value, 64, &attr_flags);
 		if (attr_flags & AZ_ATTRIB_ARRAY_IS_FINAL) {
 			az_packed_value_set_from_impl_value (&expr->value, attr_impl, &attr_val.value);
 			expr->term.type = EXPRESSION_CONSTANT;

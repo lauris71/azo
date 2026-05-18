@@ -19,14 +19,16 @@
 static void namespace_class_init (AZONamespaceClass *klass);
 static void namespace_init (AZONamespaceClass *klass, AZONamespace *nspace);
 
-static unsigned int namespace_get_size (const AZCollectionImplementation *coll_impl, void *coll_inst);
-static unsigned int namespace_contains (const AZCollectionImplementation *coll_impl, void *coll_inst, const AZImplementation *impl, const void *inst);
-static const AZImplementation *namespace_val_get_element (const AZListImplementation *list_impl, void *list_inst, unsigned int idx, AZValue *val, unsigned int size);
-static unsigned int namespace_keys_contains (const AZCollectionImplementation *coll_impl, void *coll_inst, const AZImplementation *impl, const void *inst);
-static const AZImplementation *namespace_keys_get_element (const AZListImplementation *list_impl, void *list_inst, unsigned int idx, AZValue *val, unsigned int size);
+static unsigned int namespace_get_size (const AZCollectionImplementation *coll_impl, AZCollection *coll_inst);
+static unsigned int namespace_contains (const AZCollectionImplementation *coll_impl, AZCollection *coll_inst, const AZImplementation *impl, const void *inst);
+static const AZImplementation *namespace_get_element (const AZCollectionImplementation *coll_impl, AZCollection *coll_inst, const AZValue *iter, AZValue *val, unsigned int size);
 
-const AZImplementation *namespace_lookup (const AZAttribDictImplementation *attrd_impl, void *attrd_inst, const AZString *key, AZValue *val, int size, unsigned int *flags);
-unsigned int namespace_set (const AZAttribDictImplementation *attrd_impl, void *attrd_inst, AZString *key, const AZImplementation *impl, void *inst, unsigned int flags);
+static const AZImplementation *namespace_get_key (const AZMapImplementation *map_impl, AZMap *map_inst, const AZValue *iter, AZValue *val, unsigned int size);
+static unsigned int namespace_contains_key (const AZMapImplementation *map_impl, AZMap *map_inst, const AZImplementation *key_impl, const void *key_inst);
+
+const AZImplementation *namespace_lookup (const AZAttribDictImplementation *attrd_impl, AZAttribDict *attrd_inst, const AZString *key, AZValue *val, int size, unsigned int *flags);
+
+unsigned int namespace_set (const AZAttribDictImplementation *attrd_impl, AZAttribDict *attrd_inst, AZString *key, const AZImplementation *impl, void *inst, unsigned int flags);
 
 static unsigned int azo_namespace_type = 0;
 static AZONamespaceClass *azo_namespace_class;
@@ -48,12 +50,13 @@ static void
 namespace_class_init (AZONamespaceClass *klass)
 {
 	az_class_set_num_interfaces ((AZClass *)klass, 1);
-	az_class_declare_interface ((AZClass *) klass, 0, AZ_TYPE_ATTRIBUTE_DICT, ARIKKEI_OFFSET (AZONamespaceClass, attrd_impl), 0);
+	az_class_declare_interface ((AZClass *) klass, 0, AZ_TYPE_ATTRIBUTE_DICT, ARIKKEI_OFFSET (AZONamespaceClass, attrd_impl), ARIKKEI_OFFSET(AZONamespace, adict));
 	klass->attrd_impl.map_impl.collection_impl.get_size = namespace_get_size;
 	klass->attrd_impl.map_impl.collection_impl.contains = namespace_contains;
-	klass->attrd_impl.val_list_impl.get_element = namespace_val_get_element;
-	klass->attrd_impl.key_list_impl.collection_impl.contains = namespace_keys_contains;
-	klass->attrd_impl.key_list_impl.get_element = namespace_keys_get_element;
+	klass->attrd_impl.map_impl.collection_impl.get_element = namespace_get_element;
+
+	klass->attrd_impl.map_impl.get_key = namespace_get_key;
+	klass->attrd_impl.map_impl.contains_key = namespace_contains_key;
 	klass->attrd_impl.lookup = namespace_lookup;
 	klass->attrd_impl.set = namespace_set;
 }
@@ -66,60 +69,61 @@ namespace_init (AZONamespaceClass *klass, AZONamespace *nspace)
 }
 
 static unsigned int
-namespace_get_size (const AZCollectionImplementation *coll_impl, void *coll_inst)
+namespace_get_size (const AZCollectionImplementation *coll_impl, AZCollection *coll_inst)
 {
 	AZONamespace *nspace = (AZONamespace *) coll_inst;
 	return nspace->length;
 }
 
 static unsigned int
-namespace_contains (const AZCollectionImplementation *coll_impl, void *coll_inst, const AZImplementation *impl, const void *inst)
+namespace_contains (const AZCollectionImplementation *coll_impl, AZCollection *coll_inst, const AZImplementation *impl, const void *inst)
 {
 	unsigned int i;
-	AZONamespace *nspace = (AZONamespace *) coll_inst;
+	AZONamespace *nspace = (AZONamespace *) ARIKKEI_BASE_ADDRESS(AZONamespace,adict,coll_inst);
 	for (i = 0; i < nspace->length; i++) {
 		if (nspace->entries[i].val.impl != impl) continue;
 		if (az_value_equals_instance (impl, &nspace->entries[i].val.v.value, inst)) return 1;
 	}
 	return 0;
 }
+
 static const AZImplementation *
-namespace_val_get_element (const AZListImplementation *list_impl, void *list_inst, unsigned int idx, AZValue *val, unsigned int size)
+namespace_get_key (const AZMapImplementation *map_impl, AZMap *map_inst, const AZValue *iter, AZValue *val, unsigned int size)
 {
-	AZONamespace *nspace = (AZONamespace *) list_inst;
-	return az_value_copy_autobox(nspace->entries[idx].val.impl, val, &nspace->entries[idx].val.v.value, size);
+	AZONamespace *nspace = (AZONamespace *) ARIKKEI_BASE_ADDRESS(AZONamespace,adict,map_inst);
+	uint32_t idx = iter->uint32_v;
+	az_value_set_reference(val, &nspace->entries[idx].key->reference);
+	return (AZImplementation *) &AZStringKlass;
 }
 
 static unsigned int
-namespace_keys_contains (const AZCollectionImplementation *coll_impl, void *coll_inst, const AZImplementation *impl, const void *inst)
+namespace_contains_key (const AZMapImplementation *map_impl, AZMap *map_inst, const AZImplementation *key_impl, const void *key_inst)
 {
-	unsigned int i;
-	arikkei_return_val_if_fail (AZ_IMPL_TYPE(impl) != AZ_TYPE_STRING, 0);
-	AZONamespace *nspace = (AZONamespace *) coll_inst;
-	for (i = 0; i < nspace->length; i++) {
-		if (nspace->entries[i].key == inst) return 1;
+	arikkei_return_val_if_fail (AZ_IMPL_TYPE(key_impl) == AZ_TYPE_STRING, 0);
+	AZONamespace *nspace = (AZONamespace *) ARIKKEI_BASE_ADDRESS(AZONamespace,adict,map_inst);
+	for (unsigned int i = 0; i < nspace->length; i++) {
+		if (nspace->entries[i].key == key_inst) return 1;
 	}
 	return 0;
 }
 
 static const AZImplementation *
-namespace_keys_get_element (const AZListImplementation *list_impl, void *list_inst, unsigned int idx, AZValue *val, unsigned int size)
+namespace_get_element (const AZCollectionImplementation *coll_impl, AZCollection *coll_inst, const AZValue *iter, AZValue *val, unsigned int size)
 {
-	AZONamespace *nspace = (AZONamespace *) list_inst;
-	az_value_set_reference(val, &nspace->entries[idx].key->reference);
-	return (AZImplementation *) &AZStringKlass;
+	AZONamespace *nspace = (AZONamespace *) ARIKKEI_BASE_ADDRESS(AZONamespace,adict,coll_inst);
+	uint32_t idx = iter->uint32_v;
+	return az_value_copy_autobox(nspace->entries[idx].val.impl, val, &nspace->entries[idx].val.v.value, size);
 }
 
 const AZImplementation *
-namespace_lookup (const AZAttribDictImplementation *attrd_impl, void *attrd_inst, const AZString *key, AZValue *val, int size, unsigned int *flags)
+namespace_lookup (const AZAttribDictImplementation *attrd_impl, AZAttribDict *attrd_inst, const AZString *key, AZValue *val, int size, unsigned int *flags)
 {
 	unsigned int i;
-	AZONamespace *nspace = (AZONamespace *) attrd_inst;
+	AZONamespace *nspace = (AZONamespace *) ARIKKEI_BASE_ADDRESS(AZONamespace,adict,attrd_inst);
 	for (i = 0; i < nspace->length; i++) {
 		if (nspace->entries[i].key == key) {
 			*flags = nspace->entries[i].flags;
 			return az_value_copy_autobox (nspace->entries[i].val.impl, val, &nspace->entries[i].val.v.value, size);
-			return nspace->entries[i].val.impl;
 		}
 	}
 	*flags = 0;
@@ -127,10 +131,10 @@ namespace_lookup (const AZAttribDictImplementation *attrd_impl, void *attrd_inst
 }
 
 unsigned int
-namespace_set (const AZAttribDictImplementation *attrd_impl, void *attrd_inst, AZString *key, const AZImplementation *impl, void *inst, unsigned int flags)
+namespace_set (const AZAttribDictImplementation *attrd_impl, AZAttribDict *attrd_inst, AZString *key, const AZImplementation *impl, void *inst, unsigned int flags)
 {
 	unsigned int i;
-	AZONamespace *nspace = (AZONamespace *) attrd_inst;
+	AZONamespace *nspace = (AZONamespace *) ARIKKEI_BASE_ADDRESS(AZONamespace,adict,attrd_inst);
 	for (i = 0; i < nspace->length; i++) {
 		arikkei_return_val_if_fail (nspace->entries[i].key != key, 0);
 	}
@@ -150,7 +154,7 @@ namespace_set (const AZAttribDictImplementation *attrd_impl, void *attrd_inst, A
 unsigned int
 azo_namespace_define (AZONamespace *nspace, AZString *key, const AZImplementation *impl, void *inst)
 {
-	return az_attrib_dict_set (&azo_namespace_class->attrd_impl, nspace, key, impl, inst, AZ_ATTRIB_ARRAY_IS_FINAL);
+	return az_attrib_dict_set (&azo_namespace_class->attrd_impl, &nspace->adict, key, impl, inst, AZ_ATTRIB_ARRAY_IS_FINAL);
 }
 
 unsigned int

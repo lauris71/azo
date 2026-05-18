@@ -1738,7 +1738,7 @@ interpret_GET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 	}
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
 	attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 1), azo_stack_instance_bw (&intr->stack, 1), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
-	intr->vals[0].impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, key, &intr->vals[0].v, &flags);
+	intr->vals[0].impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, key, &intr->vals[0].v.value, 64, &flags);
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value_transfer (&intr->stack, intr->vals[0].impl, &intr->vals[0].v);
 	return ip + 1;

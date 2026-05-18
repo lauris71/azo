@@ -144,7 +144,7 @@ azo_stack_remove (AZOStack *stack, unsigned int first, unsigned int n_data)
 		}
 		const unsigned char *mid = (const unsigned char *) azo_stack_value (stack, first + n_data);
 		const unsigned char *end = (const unsigned char *) azo_stack_value (stack, stack->length);
-		memcpy ((unsigned char *) start, mid, end - mid);
+		memmove ((unsigned char *) start, mid, end - mid);
 		for (i = 0; i <= n_tail; i++) {
 			stack->impls[first + i] = stack->impls[first + n_data + i];
 			stack->values[first + i].ptr = stack->values[first + n_data + i].ptr - (mid - start);
