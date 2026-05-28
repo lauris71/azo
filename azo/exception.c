@@ -25,7 +25,7 @@ unsigned int
 azo_exception_get_type (void)
 {
 	if (!azo_exception_type) {
-		az_register_type (&azo_exception_type, (const unsigned char *) "AZOException", AZ_TYPE_STRUCT, sizeof (AZOExceptionClass), sizeof (AZOException), 0,
+		az_register_type (&azo_exception_type, (const unsigned char *) "AZOException", AZ_TYPE_STRUCT, sizeof (AZOExceptionClass), sizeof (AZOException), 0, 0, 0,
 			(void (*) (AZClass *)) exception_class_init,
 			NULL, NULL);
 		azo_exception_class = (AZOExceptionClass *) az_type_get_class (azo_exception_type);

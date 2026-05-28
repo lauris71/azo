@@ -642,7 +642,7 @@ interpret_EQUAL_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 {
 	unsigned int type, result;
 	const AZValue *lhs, *rhs;
-	type = ip[1];
+	type = AZ_TYPE_FROM_INDEX(ip[1]);
 	if (AZ_TYPE_IS_PRIMITIVE (type)) {
 		if (!test_stack_type_exact_2 (intr, ip, type)) return NULL;
 		lhs = azo_stack_value_bw(&intr->stack, 1);
@@ -756,7 +756,7 @@ interpret_COMPARE_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int type;
 	const AZValue *lhs, *rhs;
 	int result;
-	type = ip[1];
+	type = AZ_TYPE_FROM_INDEX(ip[1]);
 	if (!test_stack_type_exact_2 (intr, ip, type)) return NULL;
 	lhs = azo_stack_value_bw (&intr->stack, 1);
 	rhs = azo_stack_value_bw (&intr->stack, 0);
@@ -986,7 +986,7 @@ add (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
 static const uint8_t *
 interpret_ADD_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 {
-	unsigned int type = ip[1];
+	unsigned int type = AZ_TYPE_FROM_INDEX(ip[1]);
 	CHECK_TYPE_EXACT(0, type);
 	CHECK_TYPE_EXACT(1, type);
 	ip = add(intr, ip, type);
@@ -1044,7 +1044,7 @@ subtract (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
 static const uint8_t *
 interpret_SUBTRACT_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 {
-	unsigned int type = ip[1];
+	unsigned int type = AZ_TYPE_FROM_INDEX(ip[1]);
 	CHECK_TYPE_EXACT(0, type);
 	CHECK_TYPE_EXACT(1, type);
 	ip = subtract(intr, ip, type);
@@ -1102,7 +1102,7 @@ multiply (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
 static const uint8_t *
 interpret_MULTIPLY_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 {
-	unsigned int type = ip[1];
+	unsigned int type = AZ_TYPE_FROM_INDEX(ip[1]);
 	CHECK_TYPE_EXACT(0, type);
 	CHECK_TYPE_EXACT(1, type);
 	ip = multiply(intr, ip, type);
@@ -1170,7 +1170,7 @@ divide (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
 static const uint8_t *
 interpret_DIVIDE_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 {
-	unsigned int type = ip[1];
+	unsigned int type = AZ_TYPE_FROM_INDEX(ip[1]);
 	CHECK_TYPE_EXACT(0, type);
 	CHECK_TYPE_EXACT(1, type);
 	ip = divide(intr, ip, type);
@@ -1220,7 +1220,7 @@ modulo (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
 static const uint8_t *
 interpret_MODULO_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 {
-	unsigned int type = ip[1];
+	unsigned int type = AZ_TYPE_FROM_INDEX(ip[1]);
 	CHECK_TYPE_EXACT(0, type);
 	CHECK_TYPE_EXACT(1, type);
 	ip = modulo(intr, ip, type);
@@ -1239,9 +1239,8 @@ interpret_MODULO (AZOInterpreter *intr, const uint8_t *ip)
 static const unsigned char *
 interpret_MIN_MAX_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 {
-	unsigned int type;
 	unsigned int remove;
-	type = ip[1];
+	unsigned int type = AZ_TYPE_FROM_INDEX(ip[1]);
 	if (!test_stack_type_exact_2 (intr, ip, type)) return NULL;
 	AZValue *lhs = azo_stack_value_bw (&intr->stack, 1);
 	AZValue *rhs = azo_stack_value_bw (&intr->stack, 0);

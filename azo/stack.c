@@ -50,7 +50,7 @@ unsigned int
 azo_stack_get_type (void)
 {
 	if (!stack_type) {
-		az_register_type (&stack_type, (const unsigned char *) "AZOStack", AZ_TYPE_BLOCK, sizeof (AZOStackClass), sizeof (AZOStack), AZ_FLAG_ZERO_MEMORY,
+		az_register_type (&stack_type, (const unsigned char *) "AZOStack", AZ_TYPE_BLOCK, sizeof (AZOStackClass), sizeof (AZOStack), AZ_FLAG_ZERO_MEMORY, 0, 0,
 			(void (*) (AZClass *)) stack_class_init,
 			(void (*) (const AZImplementation *, void *)) stack_init,
 			(void (*) (const AZImplementation *, void *)) stack_finalize);

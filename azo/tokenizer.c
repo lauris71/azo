@@ -27,7 +27,7 @@ unsigned int
 azo_tokenizer_get_type (void)
 {
 	if (!azo_tokenizer_type) {
-		az_register_type (&azo_tokenizer_type, (const unsigned char *) "AZOTokenizer", AZ_TYPE_BLOCK, sizeof (AZOTokenizerClass), sizeof (AZOTokenizer), AZ_FLAG_ZERO_MEMORY,
+		az_register_type (&azo_tokenizer_type, (const unsigned char *) "AZOTokenizer", AZ_TYPE_BLOCK, sizeof (AZOTokenizerClass), sizeof (AZOTokenizer), AZ_FLAG_ZERO_MEMORY, 0, 0,
 			NULL, NULL,
 			(void (*) (const AZImplementation *, void *)) tokenizer_finalize);
 		azo_tokenizer_class = (AZOTokenizerClass *) AZ_CLASS_FROM_TYPE(azo_tokenizer_type);

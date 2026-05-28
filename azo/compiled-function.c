@@ -49,7 +49,7 @@ azo_compiled_function_get_type (void)
 {
 	static unsigned int type = 0;
 	if (!type) {
-		az_register_type (&type, (const unsigned char *) "AZOCompiledFunction", AZ_TYPE_OBJECT, sizeof (AZOCompiledFunctionClass), sizeof (AZOCompiledFunction), 0,
+		az_register_type (&type, (const unsigned char *) "AZOCompiledFunction", AZ_TYPE_OBJECT, sizeof (AZOCompiledFunctionClass), sizeof (AZOCompiledFunction), 0, 1, NUM_PROPERTIES,
 			(void (*) (AZClass *)) aosora_compiled_function_class_init,
 			NULL,
 			(void (*) (const AZImplementation *, void *)) aosora_compiled_function_finalize);
@@ -60,10 +60,7 @@ azo_compiled_function_get_type (void)
 static void
 aosora_compiled_function_class_init (AZOCompiledFunctionClass *klass)
 {
-	/* Interfaces */
-	az_class_set_num_interfaces ((AZClass *) klass, 1);
 	az_class_declare_interface ((AZClass *) klass, 0, AZ_TYPE_FUNCTION, ARIKKEI_OFFSET (AZOCompiledFunctionClass, function_impl), 0);
-	az_class_set_num_properties ((AZClass *) klass, NUM_PROPERTIES);
 	az_class_define_method_va ((AZClass *) klass, FUNC_LIST, (const unsigned char *) "list", aosora_compiled_function_call_list, AZ_TYPE_NONE, 0);
 	az_class_define_property ((AZClass *) klass, PROP_BOUND, (const unsigned char *) "bound", AZ_TYPE_BOOLEAN, 0, 
 		AZ_FIELD_INSTANCE, AZ_FIELD_READ_VALUE, AZ_FIELD_WRITE_NONE, ARIKKEI_OFFSET(AZOCompiledFunction,bound), NULL, NULL);

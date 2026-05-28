@@ -67,7 +67,7 @@ unsigned int
 azo_parser_get_type (void)
 {
 	if (!azo_parser_type) {
-		azo_parser_class = (AZOParserClass *) az_register_type (&azo_parser_type, (const unsigned char *) "AZOParser", AZ_TYPE_BLOCK, sizeof (AZOParserClass), sizeof (AZOParser), AZ_FLAG_ZERO_MEMORY,
+		azo_parser_class = (AZOParserClass *) az_register_type (&azo_parser_type, (const unsigned char *) "AZOParser", AZ_TYPE_BLOCK, sizeof (AZOParserClass), sizeof (AZOParser), AZ_FLAG_ZERO_MEMORY, 0, 0,
 		NULL, NULL, NULL);
 	}
 	return azo_parser_type;

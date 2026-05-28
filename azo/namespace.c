@@ -37,7 +37,7 @@ unsigned int
 azo_namespace_get_type (void)
 {
 	if (!azo_namespace_type) {
-		az_register_type (&azo_namespace_type, (const unsigned char *) "AZONamespace", AZ_TYPE_BLOCK, sizeof (AZONamespaceClass), sizeof (AZONamespace), AZ_FLAG_ZERO_MEMORY | AZ_FLAG_FINAL,
+		az_register_type (&azo_namespace_type, (const unsigned char *) "AZONamespace", AZ_TYPE_BLOCK, sizeof (AZONamespaceClass), sizeof (AZONamespace), AZ_FLAG_ZERO_MEMORY | AZ_FLAG_FINAL, 1, 0,
 			(void (*) (AZClass *)) namespace_class_init,
 			(void (*) (const AZImplementation *, void *)) namespace_init,
 			NULL);
@@ -49,7 +49,6 @@ azo_namespace_get_type (void)
 static void
 namespace_class_init (AZONamespaceClass *klass)
 {
-	az_class_set_num_interfaces ((AZClass *)klass, 1);
 	az_class_declare_interface ((AZClass *) klass, 0, AZ_TYPE_ATTRIBUTE_DICT, ARIKKEI_OFFSET (AZONamespaceClass, attrd_impl), ARIKKEI_OFFSET(AZONamespace, adict));
 	klass->attrd_impl.map_impl.collection_impl.get_size = namespace_get_size;
 	klass->attrd_impl.map_impl.collection_impl.contains = namespace_contains;

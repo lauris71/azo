@@ -57,7 +57,7 @@ azo_context_get_type (void)
 {
 	static unsigned int type = 0;
 	if (!type) {
-		az_register_type (&type, (const unsigned char *) "AZOContext", AZ_TYPE_BLOCK, sizeof (AZOContextClass), sizeof (AZOContextFull), AZ_FLAG_FINAL | AZ_FLAG_ZERO_MEMORY,
+		az_register_type (&type, (const unsigned char *) "AZOContext", AZ_TYPE_BLOCK, sizeof (AZOContextClass), sizeof (AZOContextFull), AZ_FLAG_FINAL | AZ_FLAG_ZERO_MEMORY, 0, NUM_PROPERTIES,
 			(void (*) (AZClass *)) context_class_init,
 			(void (*) (const AZImplementation *, void *)) context_init,
 			(void (*) (const AZImplementation *, void *)) context_finalize);
@@ -68,7 +68,6 @@ azo_context_get_type (void)
 static void
 context_class_init (AZOContextClass *klass)
 {
-	az_class_set_num_properties ((AZClass *) klass, NUM_PROPERTIES);
 	/* Functions */
 	az_class_define_method_va ((AZClass *) klass, FUNC_DEFINE, (const unsigned char *) "define", context_call_define, AZ_TYPE_NONE, 0);
 }

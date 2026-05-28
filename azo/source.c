@@ -23,7 +23,7 @@ unsigned int
 azo_source_get_type (void)
 {
 	if (!source_type) {
-		az_register_type (&source_type, (const unsigned char *) "AZOSource", AZ_TYPE_OBJECT, sizeof (AZOSourceClass), sizeof (AZOSource), 0,
+		az_register_type (&source_type, (const unsigned char *) "AZOSource", AZ_TYPE_OBJECT, sizeof (AZOSourceClass), sizeof (AZOSource), 0, 0, 0,
 			NULL, NULL,
 			(void (*) (const AZImplementation *, void *)) source_finalize);
 	}

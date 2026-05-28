@@ -76,10 +76,10 @@ void azo_compiler_write_TYPE_OF (AZOCompiler *comp, unsigned int pos);
 unsigned int azo_compiler_write_JMP_32 (AZOCompiler *comp, unsigned int typecode, unsigned int to, const AZOExpression *expr);
 void azo_compiler_update_JMP_32 (AZOCompiler *comp, unsigned int from);
 void azo_compiler_write_PROMOTE (AZOCompiler *comp, uint8_t pos);
-void azo_compiler_write_EQUAL_TYPED (AZOCompiler *comp, uint8_t type);
-void azo_compiler_write_COMPARE_TYPED (AZOCompiler *comp, uint8_t type);
-void azo_compiler_write_ARITHMETIC_TYPED (AZOCompiler *comp, unsigned int typecode, uint8_t type);
-void azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint8_t type);
+void azo_compiler_write_EQUAL_TYPED (AZOCompiler *comp, uint32_t type);
+void azo_compiler_write_COMPARE_TYPED (AZOCompiler *comp, uint32_t type);
+void azo_compiler_write_ARITHMETIC_TYPED (AZOCompiler *comp, unsigned int typecode, uint32_t type);
+void azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint32_t type);
 
 unsigned int azo_compiler_compile_expression (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src);
 

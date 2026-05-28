@@ -266,27 +266,27 @@ azo_compiler_write_PROMOTE (AZOCompiler *comp, uint8_t pos)
 }
 
 void
-azo_compiler_write_EQUAL_TYPED (AZOCompiler *comp, uint8_t type)
+azo_compiler_write_EQUAL_TYPED (AZOCompiler *comp, uint32_t type)
 {
-	write_tc_u8 (comp, EQUAL_TYPED, type, NULL);
+	write_tc_u8 (comp, EQUAL_TYPED, type & 0xff, NULL);
 }
 
 void
-azo_compiler_write_COMPARE_TYPED (AZOCompiler *comp, uint8_t type)
+azo_compiler_write_COMPARE_TYPED (AZOCompiler *comp, uint32_t type)
 {
-	write_tc_u8 (comp, COMPARE_TYPED, type, NULL);
+	write_tc_u8 (comp, COMPARE_TYPED, type & 0xff, NULL);
 }
 
 void
-azo_compiler_write_ARITHMETIC_TYPED (AZOCompiler *comp, unsigned int typecode, uint8_t type)
+azo_compiler_write_ARITHMETIC_TYPED (AZOCompiler *comp, unsigned int typecode, uint32_t type)
 {
-	write_tc_u8 (comp, typecode, type, NULL);
+	write_tc_u8 (comp, typecode, type & 0xff, NULL);
 }
 
 void
-azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint8_t type)
+azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint32_t type)
 {
-	write_tc_u8 (comp, typecode, type, NULL);
+	write_tc_u8 (comp, typecode, type & 0xff, NULL);
 }
 
 /* End new stack methods */
