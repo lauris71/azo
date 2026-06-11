@@ -312,7 +312,11 @@ print_TYPE_EQUALS (const unsigned char *ip)
 {
 	unsigned int type;
 	memcpy (&type, ip + 1, 4);
-	fprintf (stdout, "IS_TYPE %s\n", az_type_get_class (type)->name);
+	if (type) {
+		fprintf (stdout, "IS_TYPE %s\n", az_type_get_class (type)->name);
+	} else {
+		fprintf (stdout, "IS_TYPE null\n");
+	}
 	return ip + 5;
 }
 

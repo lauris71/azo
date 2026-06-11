@@ -987,7 +987,7 @@ compile_function (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 	/* Bind function */
 
 	for (AZOVariable *var = expr->frame->parent_vars; var; var = var->next) {
-		if (var->parent_is_val) {
+		if (var->is_val) {
 			azo_compiler_write_PUSH_VALUE (comp, var->parent_pos);
 		} else {
 			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, var->parent_pos, expr);
@@ -1154,7 +1154,7 @@ compile_singular_reference (AZOCompiler *comp, const AZOExpression *expr)
 {
 	AZOVariable *var = azo_frame_lookup_var (comp->current, expr->value.v.string);
 	if (var) {
-		/* We have variable reference that is not resolved */
+		/* Orphan REFERENCE_VARIABLE (by name) - should have been resolved to EXPRESSION_VARIABLE (by position) */
 		fprintf (stderr, "compile_singular_reference: Internal error - variable %s is not resolved\n", expr->value.v.string->str);
 		return 0;
 	} else {
@@ -1298,7 +1298,9 @@ compile_statement (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 {
 	if (AZO_EXPRESSION_IS(expr, EXPRESSION_KEYWORD, AZO_KEYWORD_RETURN)) {
 		if (expr->children) {
-			if (!compile_expression_rvalue (comp, expr->children, src)) return 0;
+			// fixme: Why it was rvalue here?
+			// if (!compile_expression_rvalue (comp, expr->children, src)) return 0;
+			if (!azo_compiler_compile_expression(comp, expr->children, src)) return 0;
 			azo_compiler_write_ic (comp, AZO_TC_RETURN_VALUE, expr);
 		} else {
 			azo_compiler_write_ic (comp, AZO_TC_RETURN, expr);

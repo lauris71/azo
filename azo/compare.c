@@ -376,18 +376,21 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, const AZOExpressi
 	azo_compiler_update_JMP_32 (comp, types_equal_1);
 	azo_compiler_update_JMP_32 (comp, types_equal_2);
 
+#if 0
 	if (comp->debug) {
 		azo_compiler_write_DEBUG_STRING (comp, "azo_compiler_compile_comparison_lg_any_any pre-compare", NULL);
 		azo_compiler_write_DEBUG_STACK (comp);
 	}
+#endif
 
 	azo_compiler_write_ic (comp, COMPARE, NULL);
 
+#if 0
 	if (comp->debug) {
 		azo_compiler_write_DEBUG_STRING (comp, "azo_compiler_compile_comparison_lg_any_any post-compare", NULL);
 		azo_compiler_write_DEBUG_STACK (comp);
 	}
-
+#endif
 	switch (expr->term.subtype) {
 	case COMPARISON_LT:
 		is_true = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NEGATIVE, 0, NULL);

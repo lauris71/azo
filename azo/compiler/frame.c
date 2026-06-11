@@ -17,88 +17,6 @@
 
 #include <azo/compiler/frame.h>
 
-AZOVariable *
-azo_compiler_var_new (AZString *name, AZOVariable *next, unsigned int is_val, unsigned int pos)
-{
-	AZOVariable *var = (AZOVariable *) malloc (sizeof (AZOVariable));
-	memset (var, 0, sizeof (AZOVariable));
-	var->next = next;
-	var->name = name;
-	az_string_ref (var->name);
-	var->is_val = is_val;
-	var->pos = pos;
-	return var;
-}
-
-void
-azo_compiler_var_delete (AZOVariable *var)
-{
-	az_string_unref (var->name);
-	free (var);
-}
-
-AZOScope *
-azo_scope_new (AZOScope *parent, unsigned int next_var_pos)
-{
-	AZOScope *scope = ( AZOScope *) malloc (sizeof (AZOScope));
-	memset (scope, 0, sizeof (AZOScope));
-	scope->parent = parent;
-	scope->next_var_pos = next_var_pos;
-	return scope;
-}
-
-void
-azo_scope_delete (AZOScope *scope)
-{
-	while (scope->variables) {
-		AZOVariable *var = scope->variables;
-		scope->variables = var->next;
-		azo_compiler_var_delete (var);
-	}
-	free (scope);
-}
-
-unsigned int
-azo_scope_get_size (AZOScope *scope)
-{
-	if (scope->parent) {
-		return scope->next_var_pos - scope->parent->next_var_pos;
-	} else {
-		return scope->next_var_pos;
-	}
-}
-
-AZOVariable *
-azo_scope_lookup (AZOScope *scope, AZString *name)
-{
-	AZOVariable *var;
-	for (var = scope->variables; var; var = var->next) if (var->name == name) return var;
-	return NULL;
-}
-
-AZOVariable *
-azo_scope_lookup_chained (AZOScope *scope, AZString *name)
-{
-	while (scope) {
-		AZOVariable *var = azo_scope_lookup (scope, name);
-		if (var) return var;
-		scope = scope->parent;
-	}
-	return NULL;
-}
-
-AZOVariable *
-azo_scope_ensure_local_var (AZOScope *scope, AZOVariable *var)
-{
-	AZOVariable *loc;
-	for (loc = scope->variables; loc; loc = loc->next) if (loc == var) return var;
-	loc = azo_compiler_var_new (var->name, scope->variables, var->is_val, var->pos);
-	loc->parent_is_val = var->parent_is_val;
-	loc->parent_pos = var->parent_pos;
-	loc->const_expr = var->const_expr;
-	return loc;
-}
-
 AZOFrame *
 azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int debug)
 {
@@ -229,7 +147,7 @@ azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, 
 		*result = AZO_FRAME_VARIABLE_DEFINED;
 		return NULL;
 	}
-	frame->scope->variables = azo_compiler_var_new (name, frame->scope->variables, 0, frame->scope->next_var_pos++);
+	frame->scope->variables = azo_variable_new_stack(name, frame->scope->variables, frame->scope->next_var_pos++);
 	*result = AZO_FRAME_NO_ERROR;
 	return frame->scope->variables;
 }
@@ -244,8 +162,11 @@ azo_frame_ensure_variable (AZOFrame *frame, AZString *name)
 	if (frame->parent) {
 		AZOVariable *prev = azo_frame_ensure_variable (frame->parent, name);
 		if (!prev) return NULL;
-		var = azo_compiler_var_new (name, frame->parent_vars, 1, frame->n_parent_vars++);
-		var->parent_is_val = prev->is_val;
+		if (prev->is_val) {
+			var = azo_variable_new_data(name, frame->parent_vars, frame->n_parent_vars++);
+		} else {
+			var = azo_variable_new_stack(name, frame->parent_vars, frame->n_parent_vars++);
+		}
 		var->parent_pos = prev->pos;
 		var->const_expr = prev->const_expr;
 		frame->parent_vars = var;

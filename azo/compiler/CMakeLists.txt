@@ -5,6 +5,7 @@ SET(SOURCES
     resolve-constants.c
     resolve-frames.c
     resolve-references.c
+    scope.c scope.h
 )
 
 list(TRANSFORM SOURCES PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)

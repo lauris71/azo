@@ -1430,7 +1430,7 @@ interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 		if (!convert_to_u32 (intr, &idx, azo_stack_impl_bw (&intr->stack, 1), azo_stack_value_bw (&intr->stack, 1), ip)) {
 			return NULL;
 		}
-		if (idx >= varray->varray.length) {
+		if (idx >= varray->varray.list.collection.size) {
 			azo_exception_set (&intr->exc, AZO_EXCEPTION_OUT_OF_BOUNDS, 1UL << AZO_EXCEPTION_OUT_OF_BOUNDS, ip);
 			return NULL;
 		}

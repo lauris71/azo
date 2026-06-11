@@ -9,48 +9,16 @@
 
 typedef struct _AZOExpression AZOExpression;
 
-typedef struct _AZOVariable AZOVariable;
-typedef struct _AZOScope AZOScope;
 typedef struct _AZOFrame AZOFrame;
 
 #include <az/packed-value.h>
 
 #include <azo/code.h>
+#include <azo/compiler/scope.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-struct _AZOVariable {
-	AZOVariable *next;
-	AZString *name;
-	/* Variable data */
-	/* Whether pos refers to stack (0) or data (1) */
-	unsigned int is_val : 1;
-	unsigned int pos : 31;
-	/* If a readonly copy from parent frame then parent's data */
-	/* Whether parent_pos refers to stack (0) or data (1) */
-	unsigned int parent_is_val : 1;
-	unsigned int parent_pos : 31;
-
-	/* Value if determined to be const */
-	AZOExpression *const_expr;
-};
-
-struct _AZOScope {
-	AZOScope *parent;
-	/* First free stack position */
-	unsigned int next_var_pos;
-	AZOVariable *variables;
-};
-
-AZOScope *azo_scope_new (AZOScope *parent, unsigned int next_var_pos);
-void azo_scope_delete (AZOScope *scope);
-unsigned int azo_scope_get_size (AZOScope *scope);
-AZOVariable *azo_scope_lookup (AZOScope *scope, AZString *name);
-AZOVariable *azo_scope_lookup_chained (AZOScope *scope, AZString *name);
-/* Ensures that scope has local copy of variable so const assignment does not propagate to parent scope */
-AZOVariable *azo_scope_ensure_local_var (AZOScope *scope, AZOVariable *var);
 
 #define AZO_FRAME_NO_ERROR 0
 #define AZO_FRAME_VARIABLE_DEFINED 1
@@ -84,7 +52,13 @@ struct _AZOFrame {
 	void *this_inst;
 	/* Current scope */
 	AZOScope *scope;
-	/* Parent variables */
+	/*
+	 * Parent variables
+	 *
+	 * These are read-only references to variables from parent frames.
+	 * During the compilation of function body these are reserved to program data values.
+	 * The actual values are filled by binding during the execution of the code that defines the function.
+	 */
 	unsigned int n_parent_vars;
 	AZOVariable *parent_vars;
 	/* Compiled bytecode */

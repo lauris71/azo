@@ -46,6 +46,14 @@ unsigned int azo_compiled_function_get_type (void);
 
 AZOCompiledFunction *azo_compiled_function_new (AZOContext *ctx, AZOProgram *program, unsigned int ret_type, unsigned int nargs);
 
+/**
+ * @brief Write an actual value to the reserved parent variable slot
+ * 
+ * @param cfunc A compiled function
+ * @param pos The parent variable slot
+ * @param impl The value implementation
+ * @param inst The value instance
+ */
 void azo_compiled_function_bind (AZOCompiledFunction *cfunc, unsigned int pos, const AZImplementation *impl, void *inst);
 
 #ifdef __cplusplus

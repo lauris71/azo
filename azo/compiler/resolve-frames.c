@@ -237,9 +237,15 @@ resolve_assign (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 			return 1;
 		}
 		if (!(flags & AZO_COMPILER_NO_CONST_ASSIGN) && right->term.type == EXPRESSION_CONSTANT) {
-			/* fixme: In base block (i.e. no if/for/while we could ignore and treat all variables as local */
-			AZOVariable *loc = azo_scope_ensure_local_var (comp->current->scope, var);
+			/*
+			 * var = CONST_EXPRESSION
+			 * We can store the compile-time constant expression in the variable and treat is as a constant until the next assignment
+			 */
+			/* Ensure a scope-local copy of this variable to keep the constantness local to scope */
+			/* fixme: In plain block (i.e. not if/for/while) we could omit local-forcing and mark the original as constant */
+			AZOVariable *loc = azo_scope_ensure_local_var(comp->current->scope, var);
 			loc->const_expr = right;
+			/* If the variable was not local to the scope, we need to clear the constant expression of the original variable */
 			if (loc != var) var->const_expr = NULL;
 		} else {
 			var->const_expr = NULL;
@@ -290,7 +296,6 @@ resolve_return (AZOCompiler *comp, AZOExpression *term, unsigned int flags)
 				}
 			}
 		} else {
-
 		}
 	} else {
 		if (comp->current->ret_type != AZ_TYPE_NONE) {

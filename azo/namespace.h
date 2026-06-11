@@ -28,7 +28,6 @@ struct _AZONamespaceEntry {
 };
 
 struct _AZONamespace {
-	unsigned int length;
 	unsigned int size;
 	AZAttribDict adict;
 	AZONamespaceEntry *entries;
