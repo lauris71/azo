@@ -149,7 +149,7 @@ enum {
 	JMP_32_IF_NEGATIVE,
 
 	/* PROMOTE POS(U8) */
-	/* Promote given element in-place ty tupe specified by stack(0) */
+	/* Promote given element in-place to type specified by stack(0) */
 	/* Only arithmetic types are allowed */
 	PROMOTE,
 

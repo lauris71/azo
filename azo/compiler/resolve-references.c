@@ -176,7 +176,7 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	 * REFERENCE -> CONSTANT
 	 * REFERENCE -> VARIABLE, local
 	 */
-	AZOVariable *var = azo_frame_lookup_var (comp->current, expr->value.v.string);
+	AZOVariable *var = azo_frame_lookup_local_var (comp->current, expr->value.v.string);
 	if (var) {
 		if (!(flags & AZO_COMPILER_VAR_IS_LVALUE) && var->const_expr) {
 			expr->term.type = EXPRESSION_CONSTANT;

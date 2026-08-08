@@ -72,7 +72,7 @@ void azo_frame_delete_tree (AZOFrame *frame);
 void azo_frame_push_scope (AZOFrame *frame);
 void azo_frame_pop_scope (AZOFrame *frame);
 
-AZOVariable *azo_frame_lookup_var (AZOFrame *frame, AZString *name);
+AZOVariable *azo_frame_lookup_local_var (AZOFrame *frame, AZString *name);
 AZOVariable *azo_frame_lookup_parent_var (AZOFrame *frame, AZString *name);
 AZOVariable *azo_frame_lookup_chained (AZOFrame *frame, AZString *name);
 
@@ -84,8 +84,32 @@ unsigned int azo_frame_append_value (AZOFrame *frame, unsigned int type, const A
 unsigned int azo_frame_append_string (AZOFrame *frame, AZString *str);
 unsigned int azo_frame_append_object (AZOFrame *frame, AZObject *obj);
 
-/* Declares variable in current scope */
+/**
+ * @brief Declare variable in current scope
+ * 
+ * @param frame The frame
+ * @param name The variable name
+ * @param type The type of variable
+ * @param result pointer to error code
+ * @return The variable object
+ *
+ */
 AZOVariable *azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, unsigned int *result);
+/**
+ * @brief Ensure variable exists in current frame
+ * 
+ * Searches both local and parent variables for given name. If not found, recursively calls
+ * azo_frame_ensure_variable in parent frame and if found, creates a parent variable in active
+ * frame refering to it.
+ * 
+ * This is used to force variables from parent frames to be available in current frame for
+ * binding to closures (compiled fonctions).
+ * 
+ * @param frame The frame
+ * @param name The variable name
+ * @return The existing or created variable object or NULL, is there is no such name in the chain.
+ * 
+ */
 AZOVariable *azo_frame_ensure_variable (AZOFrame *frame, AZString *name);
 
 #ifdef __cplusplus

@@ -987,10 +987,10 @@ compile_function (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 	/* Bind function */
 
 	for (AZOVariable *var = expr->frame->parent_vars; var; var = var->next) {
-		if (var->is_val) {
-			azo_compiler_write_PUSH_VALUE (comp, var->parent_pos);
+		if (var->parent->parent) {
+			azo_compiler_write_PUSH_VALUE (comp, var->parent->pos);
 		} else {
-			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, var->parent_pos, expr);
+			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, var->parent->pos, expr);
 		}
 	}
 	write_tc_u32 (comp, AZO_TC_BIND, expr->frame->n_parent_vars, NULL);
@@ -1152,7 +1152,7 @@ compile_member_reference (AZOCompiler *comp, const AZOExpression *expr, AZOSourc
 static unsigned int
 compile_singular_reference (AZOCompiler *comp, const AZOExpression *expr)
 {
-	AZOVariable *var = azo_frame_lookup_var (comp->current, expr->value.v.string);
+	AZOVariable *var = azo_frame_lookup_local_var (comp->current, expr->value.v.string);
 	if (var) {
 		/* Orphan REFERENCE_VARIABLE (by name) - should have been resolved to EXPRESSION_VARIABLE (by position) */
 		fprintf (stderr, "compile_singular_reference: Internal error - variable %s is not resolved\n", expr->value.v.string->str);

@@ -1571,46 +1571,43 @@ interpret_GET_FUNCTION (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *i
 static const unsigned char *
 interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 {
-	AZString *key;
-	const AZClass *sub_class;
-	const AZImplementation *impl, *prop_impl;
-	void *inst, *prop_inst;
-	AZClass *klass;
-	int idx;
 	unsigned int result = 0;
 	// INSTANCE STRING VALUE
 	CHECK_TYPE_EXACT(1, AZ_TYPE_STRING);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
 		if (!test_stack_underflow (intr, ip, 3)) return NULL;
 	}
-	key = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
-	impl = azo_stack_impl_bw (&intr->stack, 2);
+	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
+	const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, 2);
 	if (!impl) {
 		azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
 		return NULL;
 	}
-	inst = azo_stack_instance_bw (&intr->stack, 2);
+	void *inst = azo_stack_instance_bw (&intr->stack, 2);
 	if (impl == &AZBoxedInterfaceKlass.klass.impl) {
 		az_boxed_interface_unbox(&impl, &inst);
 	}
-	klass = AZ_CLASS_FROM_IMPL(impl);
-	idx = az_class_lookup_property (klass, impl, inst, key, &sub_class, &prop_impl, &prop_inst);
+	AZClass *klass = AZ_CLASS_FROM_IMPL(impl);
+	const AZClass *def_class;
+	const AZImplementation *sub_impl;
+	void *sub_inst;
+	int idx = az_class_lookup_property (klass, impl, inst, key, &def_class, &sub_impl, &sub_inst);
 	if (idx >= 0) {
-		AZField *prop = &sub_class->props_self[idx];
+		AZField *prop = &def_class->props_self[idx];
 		unsigned int type = azo_stack_type_bw (&intr->stack, 0);
-		if (!type && (prop->is_reference || prop->is_interface)) {
-			result = az_instance_set_property_by_id (sub_class, prop_impl, prop_inst, idx, NULL, NULL, NULL);
+		if (!type && (AZ_TYPE_IS_REFERENCE(prop->type) || AZ_TYPE_IS_INTERFACE(prop->type))) {
+			result = az_instance_set_property_by_id (def_class, sub_impl, sub_inst, idx, NULL, NULL, NULL);
 		} else if (!az_type_is_assignable_to (type, prop->type)) {
 			intr->vals[0].impl = NULL;
 			intr->vals[1].impl = NULL;
 			az_packed_value_set_from_impl_value (&intr->vals[0].packed_val, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0));
 			if (az_packed_value_convert (&intr->vals[1].packed_val, prop->type, &intr->vals[0].packed_val)) {
-				result = az_instance_set_property_by_id (sub_class, prop_impl, prop_inst, idx, intr->vals[1].impl, az_packed_value_get_inst (&intr->vals[1].packed_val), NULL);
+				result = az_instance_set_property_by_id (def_class, sub_impl, sub_inst, idx, intr->vals[1].impl, az_packed_value_get_inst (&intr->vals[1].packed_val), NULL);
 				az_packed_value_clear (&intr->vals[1].packed_val);
 			}
 			az_packed_value_clear (&intr->vals[0].packed_val);
 		} else {
-			result = az_instance_set_property_by_id (sub_class, prop_impl, prop_inst, idx, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), NULL);
+			result = az_instance_set_property_by_id (def_class, sub_impl, sub_inst, idx, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), NULL);
 		}
 	}
 	if (result) azo_stack_pop (&intr->stack, 3);

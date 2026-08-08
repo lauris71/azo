@@ -25,26 +25,26 @@ azo_variable_new_stack (AZString *name, AZOVariable *next, unsigned int pos)
 	var->next = next;
 	var->name = name;
 	az_string_ref (var->name);
-	var->is_val = 0;
 	var->pos = pos;
 	return var;
 }
 
 AZOVariable *
-azo_variable_new_data (AZString *name, AZOVariable *next, unsigned int pos)
+azo_variable_new_data (AZString *name, AZOVariable *next, unsigned int pos, AZOVariable *parent)
 {
 	AZOVariable *var = (AZOVariable *) malloc (sizeof (AZOVariable));
 	memset (var, 0, sizeof (AZOVariable));
 	var->next = next;
 	var->name = name;
 	az_string_ref (var->name);
-	var->is_val = 1;
 	var->pos = pos;
+    var->parent = parent;
+    var->const_expr = parent->const_expr;
 	return var;
 }
 
 void
-azo_compiler_var_delete (AZOVariable *var)
+azo_variable_delete (AZOVariable *var)
 {
 	az_string_unref (var->name);
 	free (var);
@@ -66,7 +66,7 @@ azo_scope_delete (AZOScope *scope)
 	while (scope->variables) {
 		AZOVariable *var = scope->variables;
 		scope->variables = var->next;
-		azo_compiler_var_delete (var);
+		azo_variable_delete (var);
 	}
 	free (scope);
 }
@@ -82,25 +82,6 @@ azo_scope_get_size (AZOScope *scope)
 }
 
 AZOVariable *
-azo_scope_lookup (AZOScope *scope, AZString *name)
-{
-	AZOVariable *var;
-	for (var = scope->variables; var; var = var->next) if (var->name == name) return var;
-	return NULL;
-}
-
-AZOVariable *
-azo_scope_lookup_chained (AZOScope *scope, AZString *name)
-{
-	while (scope) {
-		AZOVariable *var = azo_scope_lookup (scope, name);
-		if (var) return var;
-		scope = scope->parent;
-	}
-	return NULL;
-}
-
-AZOVariable *
 azo_scope_ensure_local_var(AZOScope *scope, AZOVariable *var)
 {
 	AZOVariable *loc;
@@ -108,7 +89,6 @@ azo_scope_ensure_local_var(AZOScope *scope, AZOVariable *var)
         if (loc == var) return var;
     }
    	loc = azo_variable_new_stack(var->name, scope->variables, var->pos);
-	loc->parent_pos = var->parent_pos;
 	loc->const_expr = var->const_expr;
 	return loc;
 }

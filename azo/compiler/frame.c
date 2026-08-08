@@ -42,7 +42,7 @@ azo_frame_delete (AZOFrame *frame)
 	while (frame->parent_vars) {
 		AZOVariable *var = frame->parent_vars;
 		frame->parent_vars = var->next;
-		azo_compiler_var_delete (var);
+		azo_variable_delete (var);
 	}
 	free (frame);
 }
@@ -69,9 +69,9 @@ azo_frame_pop_scope (AZOFrame *frame)
 }
 
 AZOVariable *
-azo_frame_lookup_var (AZOFrame *frame, AZString *name)
+azo_frame_lookup_local_var (AZOFrame *frame, AZString *name)
 {
-	return azo_scope_lookup_chained (frame->scope, name);
+	return azo_scope_lookup_local_var_chained (frame->scope, name);
 }
 
 AZOVariable *
@@ -86,7 +86,7 @@ AZOVariable *
 azo_frame_lookup_chained (AZOFrame *frame, AZString *name)
 {
 	while (frame) {
-		AZOVariable *var = azo_frame_lookup_var (frame, name);
+		AZOVariable *var = azo_frame_lookup_local_var (frame, name);
 		if (var) return var;
 		var = azo_frame_lookup_parent_var (frame, name);
 		if (var) return var;
@@ -143,7 +143,7 @@ azo_frame_append_object (AZOFrame *frame, AZObject *obj)
 AZOVariable *
 azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, unsigned int *result)
 {
-	if (azo_scope_lookup (frame->scope, name)) {
+	if (azo_scope_lookup_local_var (frame->scope, name)) {
 		*result = AZO_FRAME_VARIABLE_DEFINED;
 		return NULL;
 	}
@@ -155,20 +155,14 @@ azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, 
 AZOVariable *
 azo_frame_ensure_variable (AZOFrame *frame, AZString *name)
 {
-	AZOVariable *var = azo_frame_lookup_var (frame, name);
+	AZOVariable *var = azo_frame_lookup_local_var (frame, name);
 	if (var) return var;
 	var = azo_frame_lookup_parent_var (frame, name);
 	if (var) return var;
 	if (frame->parent) {
 		AZOVariable *prev = azo_frame_ensure_variable (frame->parent, name);
 		if (!prev) return NULL;
-		if (prev->is_val) {
-			var = azo_variable_new_data(name, frame->parent_vars, frame->n_parent_vars++);
-		} else {
-			var = azo_variable_new_stack(name, frame->parent_vars, frame->n_parent_vars++);
-		}
-		var->parent_pos = prev->pos;
-		var->const_expr = prev->const_expr;
+		var = azo_variable_new_data(name, frame->parent_vars, frame->n_parent_vars++, prev);
 		frame->parent_vars = var;
 		return var;
 	}

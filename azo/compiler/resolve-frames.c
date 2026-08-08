@@ -141,7 +141,7 @@ resolve_declaration (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	unsigned int result;
 	id = expr->children;
 	value = id->next;
-	if (azo_scope_lookup (comp->current->scope, id->value.v.string)) {
+	if (azo_scope_lookup_local_var (comp->current->scope, id->value.v.string)) {
 		fprintf (stderr, "resolve_declaration: Variable %s already declared in scope\n", id->value.v.string->str);
 		return 1;
 	}
@@ -191,9 +191,8 @@ resolve_declaration_list (AZOCompiler *comp, AZOExpression *expr, unsigned int f
 static unsigned int
 resolve_children (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 {
-	AZOExpression *child;
-	unsigned int result;
-	for (child = expr->children; child; child = child->next) {
+	for (AZOExpression *child = expr->children; child; child = child->next) {
+		unsigned int result;
 		azo_compiler_resolve_expression (comp, child, flags, &result);
 		if (result) return result;
 	}
@@ -203,11 +202,10 @@ resolve_children (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 static unsigned int
 resolve_for (AZOCompiler *comp, AZOExpression *expr, unsigned int *result)
 {
-	AZOExpression *init, *test, *step, *content;
-	init = expr->children;
-	test = init->next;
-	step = test->next;
-	content = step->next;
+	AZOExpression *init = expr->children;
+	AZOExpression *test = init->next;
+	AZOExpression *step = test->next;
+	AZOExpression *content = step->next;
 	/* for: create new scope */
 	azo_frame_push_scope (comp->current);
 	azo_compiler_resolve_expression (comp, init, AZO_COMPILER_NO_CONST_ASSIGN, result);
@@ -231,7 +229,7 @@ resolve_assign (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	right = azo_compiler_resolve_expression (comp, right, flags, &result);
 	if (result) return result;
 	if ((left->term.type == EXPRESSION_VARIABLE) && (left->term.subtype == VARIABLE_LOCAL)) {
-		AZOVariable *var = azo_frame_lookup_var (comp->current, left->value.v.string);
+		AZOVariable *var = azo_frame_lookup_local_var (comp->current, left->value.v.string);
 		if (!var) {
 			fprintf (stderr, "resolve_assign: CRITICAL variable %u not found\n", left->var_pos);
 			return 1;
@@ -262,7 +260,7 @@ resolve_prefix_suffix (AZOCompiler *comp, AZOExpression *expr, unsigned int flag
 	left = azo_compiler_resolve_expression (comp, left, flags | AZO_COMPILER_VAR_IS_LVALUE, &result);
 	if (result) return result;
 	if ((left->term.type == EXPRESSION_VARIABLE) && (left->term.subtype == VARIABLE_LOCAL)) {
-		AZOVariable *var = azo_frame_lookup_var (comp->current, left->value.v.string);
+		AZOVariable *var = azo_frame_lookup_local_var (comp->current, left->value.v.string);
 		if (!var) {
 			fprintf (stderr, "Critical failure: variable %u not found\n", left->var_pos);
 			return 1;
