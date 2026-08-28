@@ -63,7 +63,7 @@ resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass,
 		AZField *field = &def_class->props_self[idx];
 		if (!inst && (field->spec == AZ_FIELD_INSTANCE)) return 0;
 		if (!impl && (field->spec == AZ_FIELD_IMPLEMENTATION)) return 0;
-		if (field->is_final && !field->is_function) {
+		if (AZ_FIELD_IS_FINAL(field) && !AZ_FIELD_IS_FUNCTION(field)) {
 			az_packed_value_clear(&expr->value);
 			if (!az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &expr->value.impl, &expr->value.v, 16, NULL)) {
 				fprintf (stderr, "resolve_member: Property %s is not readable\n", str->str);
@@ -342,7 +342,7 @@ azo_compiler_resolve_function_call (AZOCompiler *comp, AZOExpression *expr, unsi
 	az_function_signature_delete (sig);
 	if (idx >= 0) {
 		AZField *field = &def_class->props_self[idx];
-		if (field->is_final && field->is_function) {
+		if (AZ_FIELD_IS_FINAL(field) && AZ_FIELD_IS_FUNCTION(field)) {
 			const AZImplementation *prop_impl;
 			AZValue64 prop_val;
 			if (!az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &prop_impl, &prop_val.value, 64, NULL)) {
@@ -427,7 +427,7 @@ azo_compiler_resolve_new (AZOCompiler *comp, AZOExpression *expr, unsigned int f
 	az_function_signature_delete (sig);
 	if (idx >= 0) {
 		AZField *field = &def_class->props_self[idx];
-		if (field->is_final && field->is_function) {
+		if (AZ_FIELD_IS_FINAL(field) && AZ_FIELD_IS_FUNCTION(field)) {
 			const AZImplementation *prop_impl;
 			AZValue64 prop_val;
 			if (!az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &prop_impl, &prop_val.value, 64, NULL)) {
