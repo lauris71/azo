@@ -57,7 +57,7 @@ struct _LValue {
 };
 
 void
-azo_compiler_init(AZOCompiler *compiler, AZOContext *ctx)
+azo_compiler_init(AZOCompiler *compiler, AZOCompilerContext *ctx)
 {
 	memset (compiler, 0, sizeof (AZOCompiler));
 	compiler->ctx = ctx;
@@ -76,6 +76,14 @@ azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, v
 	AZOFrame *frame = azo_frame_new (comp->current, this_impl, this_inst, ret_type, comp->debug);
 	frame->parent = comp->current;
 	comp->current = frame;
+}
+
+AZOFrame *
+azo_compiler_set_frame (AZOCompiler *comp, AZOFrame *frame)
+{
+	AZOFrame *prev = comp->current;
+	comp->current = frame;
+	return prev;
 }
 
 AZOFrame *
@@ -960,19 +968,23 @@ compile_function (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 	unsigned int ret_type = type->term.subtype;
 
 	unsigned int n_args = 0;
+	//if (obj) n_args = 1;
 	for (child = args->children; child; child = child->next) n_args += 1;
 
-	AZOFrame *prev = comp->current;
-	comp->current = expr->frame;
+	AZOFrame *func_frame = expr->frame;
+	AZOFrame *prev_frame = azo_compiler_set_frame(comp, func_frame);
 
+	/* Compile function body in it's own resolved frame */
 	prog = azo_compiler_compile (comp, body, 0, src);
 	if (!prog) {
 		fprintf (stderr, "compile_function: error compiling function\n");
-		comp->current = prev;
+		/* Restore the previous frame */
+		azo_compiler_set_frame(comp, prev_frame);
 		return 0;
 	}
-	cfunc = azo_compiled_function_new (comp->ctx, prog, ret_type, n_args);
-	comp->current = prev;
+	cfunc = azo_compiled_function_new (comp->ctx->globals, prog, ret_type, n_args);
+	/* Restore the previous frame */
+	azo_compiler_set_frame(comp, prev_frame);
 
 	compile_PUSH_VALUE_object (comp, AZ_OBJECT (cfunc));
 	/* Function */
@@ -984,24 +996,21 @@ compile_function (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 	/* Function, Boolean */
 	bound = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
 	/* Function */
-	/* Bind function */
-
-	for (AZOVariable *var = expr->frame->parent_vars; var; var = var->next) {
+	/* Bind function - i.e. assign the values to all inherited variables */
+	for (AZOVariable *var = func_frame->parent_vars; var; var = var->next) {
 		if (var->parent->parent) {
+			/* Variable is inherited from grandparent so present in current frame as value */
 			azo_compiler_write_PUSH_VALUE (comp, var->parent->pos);
 		} else {
+			/* Local variable in current frame (present in stack) */
 			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, var->parent->pos, expr);
 		}
 	}
 	write_tc_u32 (comp, AZO_TC_BIND, expr->frame->n_parent_vars, NULL);
-	//write_tc_u32 (comp, AZO_TC_BIND, 0);
 
 	/* Function is already bound */
 	azo_compiler_update_JMP_32 (comp, bound);
-#ifdef DEBUG_FUNCTION
-	write_DEBUG_STRING (comp, "Function\n");
-	write_DEBUG_STACK (comp);
-#endif
+
 	az_object_unref ((AZObject *) cfunc);
 	return 1;
 }
@@ -1065,6 +1074,17 @@ compile_test (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
 	return 1;
 }
 
+static unsigned int
+compile_cast (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
+{
+	AZOExpression *type = expr->children;
+	AZOExpression *val = type->next;
+
+	if (!azo_compiler_compile_expression (comp, val, src)) return 0;
+	azo_code_write_ic_u32(&comp->current->code, AZO_TC_CONVERT_TYPE, type->term.subtype, expr);
+	return 1;
+}
+
 /* Compile rvalue expression (this, null, literal...) */
 
 #define noDEBUG_PARENT_VAR
@@ -1118,6 +1138,8 @@ compile_expression_rvalue (AZOCompiler *comp, const AZOExpression *expr, AZOSour
 		if (!azo_compiler_compile_arithmetic (comp, expr->children, expr->children->next, expr, src)) return 0;
 	} else if (expr->term.type == AZO_EXPRESSION_TEST) {
 		if (!compile_test (comp, expr, src)) return 0;
+	} else if (expr->term.type == EXPRESSION_CAST) {
+		if (!compile_cast (comp, expr, src)) return 0;
 	} else {
 		fprintf (stderr, "compile_expression_rvalue: Invalid expression type %u\n", expr->term.type);
 		return 0;
@@ -1482,6 +1504,7 @@ azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, unsigned int need_
 
 	if (need_resolve) {
 		root = azo_compiler_resolve_frame (comp, root);
+		azo_expression_print_info(root, stdout, src, 0);
 	}
 
 	/* Have to reserve closure before compilation */
@@ -1498,7 +1521,7 @@ azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, unsigned int need_
 		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", root->term.type);
 		return NULL;
 	}
-	prog = azo_program_new(comp->ctx, &comp->current->code, root, src);
+	prog = azo_program_new(comp->ctx->globals, &comp->current->code, root, src);
 
 	return prog;
 }

@@ -26,8 +26,8 @@ azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_i
 	frame->ret_type = ret_type;
 	frame->this_impl = this_impl;
 	frame->this_inst = this_inst;
-	/* fixme: Declare this like other variables? */
-	frame->scope = azo_scope_new (NULL, 1);
+	/* If this is present, reserve the first variable position to it */
+	frame->scope = azo_scope_new (NULL, (this_impl) ? 1 : 0);
 	azo_code_init(&frame->code, debug);
 	return frame;
 }

@@ -152,6 +152,9 @@ enum {
 	/* Promote given element in-place to type specified by stack(0) */
 	/* Only arithmetic types are allowed */
 	PROMOTE,
+	/* CONVERT TYPE(U32) */
+	/* Convert the topmost element in stack to specified type */
+	AZO_TC_CONVERT_TYPE,
 
 	/* Comparisons */
 	/* EQUAL TYPE(U8) */

@@ -101,24 +101,19 @@ azo_expression_new_reference (unsigned int subtype, const AZOSource *src, const 
 	return expr;
 }
 
-static void print_sentences (AZOExpression *expr, FILE *ofs, unsigned int indent, unsigned int level);
-static void print_sentence (AZOExpression *expr, FILE *ofs, unsigned int indent, unsigned int level);
+static void print_sentences (AZOExpression *expr, FILE *ofs);
+static void print_sentence (AZOExpression *expr, FILE *ofs);
 
-static void
-print_indent (FILE *ofs, unsigned int level)
-{
-	unsigned int i;
-	for (i = 0; i < level; i++) fprintf (ofs, "    ");
-}
-
-static void
-azo_print_expression (AZOExpression *expr, FILE *ofs, unsigned int indent, unsigned int level)
+void
+azo_print_expression (AZOExpression *expr, FILE *ofs)
 {
 	static const char *suffixes[] = { "++", "--" };
 	static const char *prefixes[] = { "++", "--", "+", "-", "!" };
 	static const char *arithmetics[] = { "+", "-", "/", "*", "%", "<<", ">>", "&", "&&", "|", "||", "^" };
 	static const char *comparisons[] = { "==", "!=", "<", "<=", ">", ">=" };
 	static const char *assigns[] = { "=", "+=", "-=", "*=", "/=", "%=", "<<=", ">>=", "&=", "^=", "|=" };
+	uint8_t b[1024];
+	AZClass *klass;
 	AZOExpression *child;
 	switch (expr->term.type) {
 	case AZO_TERM_INVALID:
@@ -133,10 +128,8 @@ azo_print_expression (AZOExpression *expr, FILE *ofs, unsigned int indent, unsig
 		fprintf (ofs, "\nEND_PROGRAM\n");
 		break;
 	case AZO_EXPRESSION_BLOCK:
-		if (indent) print_indent (ofs, level);
 		fprintf (ofs, "{\n");
 		azo_print_expression_list (expr->children, ofs, "\n");
-		if (indent) print_indent (ofs, level);
 		fprintf (ofs, "}\n");
 		break;
 	case EXPRESSION_KEYWORD:
@@ -146,34 +139,41 @@ azo_print_expression (AZOExpression *expr, FILE *ofs, unsigned int indent, unsig
 			break;
 		case AZO_KEYWORD_FOR:
 			fprintf (ofs, "for (");
-			azo_print_expression (expr->children, ofs, indent, level);
+			azo_print_expression (expr->children, ofs);
 			fprintf (ofs, ";");
-			azo_print_expression (expr->children->next, ofs, indent, level);
+			azo_print_expression (expr->children->next, ofs);
 			fprintf (ofs, ";");
-			azo_print_expression (expr->children->next->next, ofs, indent, level);
+			azo_print_expression (expr->children->next->next, ofs);
 			fprintf (ofs, ") ");
-			azo_print_expression (expr->children->next->next->next, ofs, indent, level);
+			azo_print_expression (expr->children->next->next->next, ofs);
 			fprintf (ofs, "\n");
 			break;
 		case AZO_KEYWORD_NEW:
 			fprintf (ofs, "new ");
-			azo_print_expression (expr->children, ofs, indent, level);
+			azo_print_expression (expr->children, ofs);
 			fprintf (ofs, "(");
-			azo_print_expression (expr->children->next, ofs, indent, level);
+			azo_print_expression (expr->children->next, ofs);
 			fprintf (ofs, ") ");
 			break;
 		case AZO_KEYWORD_IF:
 			fprintf (ofs, "if (");
-			azo_print_expression (expr->children, ofs, indent, level);
+			azo_print_expression (expr->children, ofs);
 			fprintf (ofs, ") {\n");
-			azo_print_expression (expr->children->next, ofs, indent, level);
+			azo_print_expression (expr->children->next, ofs);
 			fprintf (ofs, " }");
 			if (expr->children->next->next) {
-				fprintf (ofs, " else {");
-				azo_print_expression (expr->children->next->next, ofs, indent, level);
+				fprintf (ofs, " else {\n");
+				azo_print_expression (expr->children->next->next, ofs);
 				fprintf (ofs, " }");
 			}
 			fprintf (ofs, "\n");
+			break;
+		case AZO_KEYWORD_RETURN:
+			azo_print_keyword (expr->term.subtype, ofs);
+			fprintf(ofs, " ");
+			if (expr->children) {
+				azo_print_expression (expr->children, ofs);
+			}
 			break;
 		default:
 			azo_print_keyword (expr->term.subtype, ofs);
@@ -183,58 +183,56 @@ azo_print_expression (AZOExpression *expr, FILE *ofs, unsigned int indent, unsig
 		}
 		break;
 	case EXPRESSION_DECLARATION:
-		azo_print_expression (expr->children, ofs, indent, level);
+		azo_print_expression (expr->children, ofs);
 		if (expr->children->next) {
 			fprintf (ofs, "= ");
-			azo_print_expression (expr->children->next, ofs, indent, level);
+			azo_print_expression (expr->children->next, ofs);
 		}
 		break;
 	case EXPRESSION_DECLARATION_LIST:
-		azo_print_expression (expr->children, ofs, indent, level);
+		azo_print_expression (expr->children, ofs);
 		for (child = expr->children->next; child; child = child->next) {
-			azo_print_expression (child, ofs, indent, level);
+			azo_print_expression (child, ofs);
 			if (child->next) fprintf (ofs, ", ");
 		}
 		break;
 	case EXPRESSION_FUNCTION:
 		if (expr->term.subtype == FUNCTION_MEMBER) {
-			if (indent) print_indent (ofs, level);
-			azo_print_expression (expr->children, ofs, 0, level);
+			azo_print_expression (expr->children, ofs);
 			fprintf (ofs, ".function ");
-			azo_print_expression (expr->children->next, ofs, 0, level);
+			azo_print_expression (expr->children->next, ofs);
 			fprintf (ofs, "(");
-			azo_print_expression (expr->children->next->next, ofs, 0, level);
+			azo_print_expression (expr->children->next->next, ofs);
 			fprintf (ofs, ") ");
 			if (expr->children->next->next->next) {
-				print_sentence (expr->children->next->next->next, ofs, 1, level + 1);
+				print_sentence (expr->children->next->next->next, ofs);
 			}
 		} else {
-			if (indent) print_indent (ofs, level);
 			fprintf (ofs, "function ");
-			azo_print_expression (expr->children, ofs, indent, level);
+			azo_print_expression (expr->children, ofs);
 			fprintf (ofs, "(");
-			azo_print_expression (expr->children->next, ofs, indent, level);
+			azo_print_expression (expr->children->next, ofs);
 			fprintf (ofs, ") ");
 			if (expr->children->next->next) {
-				print_sentence (expr->children->next->next, ofs, 1, level + 1);
+				print_sentence (expr->children->next->next, ofs);
 			}
 		}
 		break;
 	case EXPRESSION_FUNCTION_CALL:
-		azo_print_expression (expr->children, ofs, indent, level);
+		azo_print_expression (expr->children, ofs);
 		fprintf (ofs, "(");
-		azo_print_expression (expr->children->next, ofs, indent, level);
+		azo_print_expression (expr->children->next, ofs);
 		fprintf (ofs, ")");
 		break;
 	case EXPRESSION_ARRAY_ELEMENT:
-		azo_print_expression (expr->children, ofs, indent, level);
+		azo_print_expression (expr->children, ofs);
 		fprintf (ofs, "[");
-		azo_print_expression (expr->children->next, ofs, indent, level);
+		azo_print_expression (expr->children->next, ofs);
 		fprintf (ofs, "]");
 		break;
 	case EXPRESSION_LIST:
 		for (child = expr->children; child; child = child->next) {
-			azo_print_expression (child, ofs, indent, level);
+			azo_print_expression (child, ofs);
 			if (child->next) fprintf (ofs, ", ");
 		}
 		break;
@@ -245,9 +243,9 @@ azo_print_expression (AZOExpression *expr, FILE *ofs, unsigned int indent, unsig
 			fprintf (ofs, " ");
 			break;
 		case REFERENCE_MEMBER:
-			azo_print_expression (expr->children, ofs, indent, level);
+			azo_print_expression (expr->children, ofs);
 			fprintf (ofs, ".");
-			azo_print_expression (expr->children->next, ofs, indent, level);
+			azo_print_expression (expr->children->next, ofs);
 			break;
 		default:
 			fprintf (ofs, "REFERENCE");
@@ -257,38 +255,51 @@ azo_print_expression (AZOExpression *expr, FILE *ofs, unsigned int indent, unsig
 	case EXPRESSION_LITERAL_ARRAY:
 		fprintf (ofs, "{");
 		for (child = expr->children; child; child = child->next) {
-			azo_print_expression (child, ofs, indent, level);
-			if (child->next) fprintf (ofs, ",");
+			azo_print_expression (child, ofs);
+			if (child->next) fprintf (ofs, ", ");
 		}
 		fprintf (ofs, "}");
 		break;
 	case EXPRESSION_SUFFIX:
-		azo_print_expression (expr->children, ofs, indent, level);
+		azo_print_expression (expr->children, ofs);
 		fprintf (ofs, "%s", suffixes[expr->term.subtype]);
 		fprintf (ofs, " ");
 		break;
 	case EXPRESSION_PREFIX:
 		fprintf (ofs, "%s", prefixes[expr->term.subtype]);
-		azo_print_expression (expr->children, ofs, indent, level);
+		azo_print_expression (expr->children, ofs);
 		fprintf (ofs, " ");
 		break;
 	case EXPRESSION_BINARY:
-		azo_print_expression (expr->children, ofs, indent, level);
+		azo_print_expression (expr->children, ofs);
 		fprintf (ofs, "%s", arithmetics[expr->term.subtype]);
 		fprintf (ofs, " ");
-		azo_print_expression (expr->children->next, ofs, indent, level);
+		azo_print_expression (expr->children->next, ofs);
 		break;
 	case EXPRESSION_COMPARISON:
-		azo_print_expression (expr->children, ofs, indent, level);
+		azo_print_expression (expr->children, ofs);
 		fprintf (ofs, "%s", comparisons[expr->term.subtype]);
 		fprintf (ofs, " ");
-		azo_print_expression (expr->children->next, ofs, indent, level);
+		azo_print_expression (expr->children->next, ofs);
 		break;
 	case EXPRESSION_ASSIGN:
-		azo_print_expression (expr->children, ofs, indent, level);
+		azo_print_expression (expr->children, ofs);
 		fprintf (ofs, "%s", assigns[expr->term.subtype]);
 		fprintf (ofs, " ");
-		azo_print_expression (expr->children->next, ofs, indent, level);
+		azo_print_expression (expr->children->next, ofs);
+		break;
+	case EXPRESSION_CONSTANT:
+		az_instance_to_string(expr->value.impl, az_value_get_inst(expr->value.impl, &expr->value.v), b, 1024);
+		fprintf (ofs, "%s ", b);
+		break;
+	case EXPRESSION_VARIABLE:
+		fprintf (ofs, "##VAR(%u/%u) ", expr->term.type, expr->term.subtype);
+		azo_print_expression_list (expr->children, ofs, " ");
+		fprintf (ofs, "## ");
+		break;
+	case EXPRESSION_TYPE:
+		klass = AZ_CLASS_FROM_TYPE(expr->term.subtype);
+		fprintf (ofs, "%s ", klass->name);
 		break;
 	default:
 		fprintf (ofs, "##(%u/%u) ", expr->term.type, expr->term.subtype);
@@ -299,71 +310,63 @@ azo_print_expression (AZOExpression *expr, FILE *ofs, unsigned int indent, unsig
 }
 
 static void
-print_line (AZOExpression *expr, FILE *ofs, unsigned int indent, unsigned int level)
+print_line (AZOExpression *expr, FILE *ofs)
 {
 	switch (expr->term.type) {
 	case AZO_TERM_INVALID:
-		if (indent) print_indent (ofs, level);
 		fprintf (ofs, "INVALID;");
 		break;
 	case AZO_TERM_EMPTY:
-		if (indent) print_indent (ofs, level);
 		fprintf (ofs, "EMPTY;");
 		break;
 	case AZO_EXPRESSION_PROGRAM:
-		if (indent) print_indent (ofs, level);
 		fprintf (ofs, "BEGIN_PROGRAM\n");
-		print_sentences (expr->children, ofs, 1, level + 1);
-		print_indent (ofs, level);
+		print_sentences (expr->children, ofs);
 		fprintf (ofs, "END_PROGRAM");
 		break;
 	default:
-		azo_print_expression (expr, ofs, indent, level);
+		azo_print_expression (expr, ofs);
 	}
 }
 
 static void
-print_sentence (AZOExpression *expr, FILE *ofs, unsigned int indent, unsigned int level)
+print_sentence (AZOExpression *expr, FILE *ofs)
 {
 	switch (expr->term.type) {
 	case AZO_EXPRESSION_BLOCK:
-		if (indent) print_indent (ofs, level);
 		fprintf (ofs, "{\n");
-		print_sentences (expr->children, ofs, 1, level + 1);
-		print_indent (ofs, level);
+		print_sentences (expr->children, ofs);
 		fprintf (ofs, "}\n");
 		break;
 	case EXPRESSION_KEYWORD:
 		switch (expr->term.subtype) {
 		case AZO_KEYWORD_FOR:
-			if (indent) print_indent (ofs, level);
 			fprintf (ofs, "for (");
-			azo_print_expression (expr->children, ofs, 0, level);
+			azo_print_expression (expr->children, ofs);
 			fprintf (ofs, ";");
-			azo_print_expression (expr->children->next, ofs, 0, level);
+			azo_print_expression (expr->children->next, ofs);
 			fprintf (ofs, ";");
-			azo_print_expression (expr->children->next->next, ofs, 0, level);
+			azo_print_expression (expr->children->next->next, ofs);
 			fprintf (ofs, ") ");
-			azo_print_expression (expr->children->next->next->next, ofs, 0, level);
+			azo_print_expression (expr->children->next->next->next, ofs);
 			fprintf (ofs, "\n");
 			break;
 		case AZO_KEYWORD_WHILE:
-			if (indent) print_indent (ofs, level);
-			fprintf (ofs, "for (");
-			azo_print_expression (expr->children, ofs, 0, level);
+			fprintf (ofs, "while (");
+			azo_print_expression (expr->children, ofs);
 			fprintf (ofs, ") ");
-			azo_print_expression (expr->children->next->next->next, ofs, 0, level);
+			azo_print_expression (expr->children->next->next->next, ofs);
 			fprintf (ofs, "\n");
 			break;
 		case AZO_KEYWORD_IF:
 			fprintf (ofs, "if (");
-			azo_print_expression (expr->children, ofs, 0, level);
+			azo_print_expression (expr->children, ofs);
 			fprintf (ofs, ") {\n");
-			azo_print_expression (expr->children->next, ofs, 0, level);
+			azo_print_expression (expr->children->next, ofs);
 			fprintf (ofs, " }");
 			if (expr->children->next->next) {
 				fprintf (ofs, " else {");
-				azo_print_expression (expr->children->next->next, ofs, 0, level);
+				azo_print_expression (expr->children->next->next, ofs);
 				fprintf (ofs, " }");
 			}
 			fprintf (ofs, "\n");
@@ -371,16 +374,16 @@ print_sentence (AZOExpression *expr, FILE *ofs, unsigned int indent, unsigned in
 		}
 		break;
 	default:
-		print_line (expr, ofs, 0, level);
+		print_line (expr, ofs);
 		break;
 	}
 }
 
 static void
-print_sentences (AZOExpression *expr, FILE *ofs, unsigned int indent, unsigned int level)
+print_sentences (AZOExpression *expr, FILE *ofs)
 {
 	while (expr) {
-		print_sentence (expr, ofs, indent, level);
+		print_sentence (expr, ofs);
 		fprintf (ofs, "\n");
 		expr = expr->next;
 	}
@@ -390,9 +393,59 @@ void
 azo_print_expression_list (AZOExpression *expr, FILE *ofs, const char *separator)
 {
 	while (expr) {
-		azo_print_expression (expr, ofs, 0, 0);
+		azo_print_expression (expr, ofs);
 		if (expr->next) fprintf (ofs, "%s", separator);
 		expr = expr->next;
 	}
 }
 
+const char *expr_names[] = {
+	"INVALID",
+	"EMPTY",
+	"PROGRAM",
+	"BLOCK",
+	"KEYWORD",
+	"DECLARATION_LIST",
+	"DECLARATION",
+	"ARGUMENT_DECLARATION",
+	"FUNCTION",
+	"FUNCTION_CALL",
+	"ARRAY_ELEMENT",
+	"LIST",
+	"REFERENCE",
+	"LITERAL_ARRAY",
+	"CAST",
+
+	"SUFFIX",
+	"PREFIX",
+	"BINARY",
+	"COMPARISON",
+	"ASSIGN",
+	"COMMA",
+	"TEST",
+
+	"CONSTANT",
+	"VARIABLE",
+	"TYPE",
+};
+
+void
+azo_expression_print_info(AZOExpression *expr, FILE *ofs, AZOSource *src, unsigned int indent)
+{
+	for (unsigned int i = 0; i < indent; i++) fprintf(ofs, " ");
+	uint8_t b[256];
+	arikkei_utf8_strncpy_len_shorten(b, 255, src->cdata + expr->term.start, expr->term.end - expr->term.start);
+	b[255] = 0;
+	for (unsigned int i = 0; b[i]; i++) if (b[i] == '\n') b[i] = ' ';
+	fprintf (ofs, "{%s:%u [%s] [%u,%u]", expr_names[expr->term.type], expr->term.subtype, b, expr->term.start, expr->term.end);
+	if (expr->children) {
+		fprintf(ofs, "\n");
+		for (AZOExpression *child = expr->children; child; child = child->next) {
+			azo_expression_print_info(child, ofs, src, indent + 2);
+		}
+		for (unsigned int i = 0; i < indent; i++) fprintf(ofs, " ");
+		fprintf(ofs, "}\n");
+	} else {
+		fprintf(ofs, "}\n");
+	}
+}

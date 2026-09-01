@@ -569,6 +569,7 @@ azo_parser_parse_expression (AZOParser *parser, AZOToken *token, unsigned int le
 
 /*
 * Parenthesed_expression:
+*   (Cast)
 *   (Expression)
 */
 
@@ -581,6 +582,17 @@ azo_parser_parse_parenthesed_expression (AZOParser *parser, AZOToken *token, uns
 	if (token->type == AZO_TOKEN_EOF) return ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) return ERROR_SYNTAX;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
+	AZOExpression *expr = parser_get_last (parser);
+	if ((expr->term.type == EXPRESSION_REFERENCE) || (expr->term.type == EXPRESSION_ARRAY_ELEMENT) || (expr->term.type == EXPRESSION_FUNCTION_CALL)) {
+		result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_CAST);
+		if (result) return result;
+		AZOExpression *right = parser_detach_last (parser);
+		AZOExpression *left = parser_detach_last (parser);
+		AZOExpression *cast_expr = azo_expression_new(EXPRESSION_CAST, EXPRESSION_GENERIC, expr->term.start, right->term.end);
+		cast_expr->children = left;
+		left->next = right;
+		parser_append (parser, cast_expr);
+	}
 	return azo_parser_continue_expression (parser, token, left_precedence);
 }
 
@@ -1156,7 +1168,7 @@ parse_function_call (AZOParser *parser, AZOToken *token)
 	right = parser_detach_last (parser);
 	left = parser_detach_last (parser);
 	if (!left || !right) return ERROR_SYNTAX;
-	expr = azo_expression_new (EXPRESSION_FUNCTION_CALL, EXPRESSION_GENERIC, left->term.start, right->term.start);
+	expr = azo_expression_new (EXPRESSION_FUNCTION_CALL, EXPRESSION_GENERIC, left->term.start, right->term.end);
 	expr->children = left;
 	left->next = right;
 	parser_append (parser, expr);

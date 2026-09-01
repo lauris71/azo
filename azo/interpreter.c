@@ -626,6 +626,7 @@ interpret_PROMOTE (AZOInterpreter *intr, const uint8_t *ip)
 	unsigned int pos, result;
 	pos = ip[1];
 	if (*ip & AZO_TC_CHECK_ARGS) {
+		if (!test_stack_underflow (intr, ip, pos + 1)) return NULL;
 	}
 	unsigned int type = azo_stack_uint32_bw(&intr->stack, 0);
 	/* fixme: Test clamped/rounded */
@@ -635,6 +636,21 @@ interpret_PROMOTE (AZOInterpreter *intr, const uint8_t *ip)
 	}
 	azo_stack_pop (&intr->stack, 1);
 	return ip + 2;
+}
+
+static const unsigned char *
+interpret_CONVERT_TYPE (AZOInterpreter *intr, const uint8_t *ip)
+{
+	uint32_t to_type;
+	memcpy(&to_type, ip + 1, 4);
+	if (*ip & AZO_TC_CHECK_ARGS) {
+		if (!test_stack_underflow (intr, ip, 1)) return NULL;
+	}
+	if (!azo_stack_convert_bw(&intr->stack, 0, to_type)) {
+		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_CONVERSION, 1UL << AZO_EXCEPTION_INVALID_CONVERSION, ip);
+		return NULL;
+	}
+	return ip + 5;
 }
 
 static const unsigned char *
@@ -1868,6 +1884,9 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint
 		/* Conversions */
 		case PROMOTE:
 			ipc = interpret_PROMOTE (intr, ipc);
+			break;
+		case AZO_TC_CONVERT_TYPE:
+			ipc = interpret_CONVERT_TYPE (intr, ipc);
 			break;
 
 		/* Comparisons */

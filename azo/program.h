@@ -49,7 +49,19 @@ AZOProgram *azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[],
 	const uint8_t *code, unsigned int code_len);
 
-void azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, const AZImplementation *arg_impls[], const AZValue *arg_vals[], unsigned int n_args, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size);
+/**
+ * @brief Interpret a program
+ * 
+ * @param prog The program to interpret
+ * @param intr The interpreter instance
+ * @param n_args The number of arguments (including this)
+ * @param arg_impls Array of argument implementations (including this)
+ * @param arg_vals Array of argument values (including this)
+ * @param ret_impl Pointer to store the return implementation
+ * @param ret_val Pointer to store the return value
+ * @param ret_size Size of the return value buffer
+ */
+void azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, unsigned int n_args, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size);
 void azo_program_interpret_call(AZOProgram *prog, AZOInterpreter *intr, const AZImplementation *arg_impls[], const AZValue *arg_vals[], unsigned int n_args, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size);
 
 #ifdef __cplusplus

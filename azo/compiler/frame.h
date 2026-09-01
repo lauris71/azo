@@ -65,6 +65,16 @@ struct _AZOFrame {
 	AZOCode code;
 };
 
+/**
+ * @brief Create a new frame
+ * 
+ * @param parent The parent frame (NULL for root)
+ * @param this_impl Implementation of the current object (NULL for static code)
+ * @param this_inst Instance of the current object or NULL if not known at compile time
+ * @param ret_type Return type of the code block (AZ_TYPE_NONE for void)
+ * @param debug Debug flag (non-zero to enable debugging)
+ * @return Pointer to the newly created frame, or NULL on failure
+ */
 AZOFrame *azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int debug);
 void azo_frame_delete (AZOFrame *frame);
 void azo_frame_delete_tree (AZOFrame *frame);

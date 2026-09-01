@@ -292,7 +292,10 @@ azo_stack_convert (AZOStack *stack, unsigned int pos, unsigned int to_type)
 	arikkei_return_val_if_fail (pos < stack->length, 0);
 	klass = az_type_get_class (to_type);
 	stack_ensure_element_size (stack, pos, az_class_value_size(klass));
-	if (!az_value_convert_in_place (&stack->impls[pos], (AZValue *) stack->values[pos].ptr, to_type)) return 0;
+	// fixme: Should go to EXACT
+	if (az_value_convert_in_place_autobox(&stack->impls[pos], (AZValue *) stack->values[pos].ptr, 16, to_type, AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
+		return 0;
+	}
 	return 1;
 }
 

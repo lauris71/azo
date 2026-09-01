@@ -53,6 +53,8 @@ enum {
 	EXPRESSION_REFERENCE,
 	/* Literal array */
 	EXPRESSION_LITERAL_ARRAY,
+	/* Cast */
+	EXPRESSION_CAST,
 
 	/* Operators */
 	EXPRESSION_SUFFIX,
@@ -225,7 +227,10 @@ AZOExpression *azo_expression_new_complex (const AZOSource *src, const AZOToken 
 AZOExpression *azo_expression_new_text (const AZOSource *src, const AZOToken *token);
 AZOExpression *azo_expression_new_reference (unsigned int subtype, const AZOSource *src, const AZOToken *token);
 
+void azo_print_expression (AZOExpression *expr, FILE *ofs);
 void azo_print_expression_list (AZOExpression *expr, FILE *ofs, const char *separator);
+
+void azo_expression_print_info(AZOExpression *expr, FILE *ofs, AZOSource *src, unsigned int indent);
 
 #ifdef __cplusplus
 }

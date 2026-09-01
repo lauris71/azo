@@ -160,7 +160,7 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	AZString *str = expr->value.v.string;
 #endif
 	assert (!expr->children);
-	expr->value.impl = azo_context_lookup (comp->ctx, expr->value.v.string, &expr->value.v, 16);
+	expr->value.impl = azo_context_lookup (comp->ctx->globals, expr->value.v.string, &expr->value.v, 16);
 	if (expr->value.impl) {
 		expr->term.type = EXPRESSION_CONSTANT;
 		expr->term.subtype = (expr->value.impl) ? AZ_PACKED_VALUE_TYPE(&expr->value) : 0;

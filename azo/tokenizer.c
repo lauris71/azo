@@ -140,9 +140,9 @@ azo_tokenizer_skip_line (AZOTokenizer *tokenizer, AZOToken *current)
 	current->type = AZO_TOKEN_NONE;
 	while (current->end < tokenizer->csize) {
 		if (tokenizer->cdata[current->end] == '\n') {
-			current->end += 1;
 			break;
 		}
+		current->end += 1;
 	}
 	return 1;
 }

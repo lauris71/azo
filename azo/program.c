@@ -52,9 +52,15 @@ azo_program_delete (AZOProgram *program)
 }
 
 void
-azo_program_print_bytecode (AZOProgram *program)
+azo_program_print_bytecode (AZOProgram *prog)
 {
-	print_bytecode (program);
+	unsigned int ic = 0;
+	while (ic < prog->tcode_length) {
+		uint8_t c[1024];
+		azo_bc_print_instruction(c, 1024, prog->tcode, ic, prog->tcode_length);
+		fprintf(stdout, "%04d %s\n", ic, c);
+		ic = azo_bc_next_instruction(prog->tcode, ic, prog->tcode_length);
+	}
 }
 
 AZOProgram *
@@ -62,8 +68,17 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[],
 	const uint8_t *code, unsigned int code_len)
 {
+	AZOCompilerContext comp_ctx = {
+		.globals = ctx,
+		.this_impl = this_impl,
+		.this_inst = this_inst,
+		.ret_type = ret_type,
+		.n_args = n_args,
+		.arg_names = arg_names,
+		.arg_types = arg_types
+	};
 	AZOCompiler comp;
-	azo_compiler_init(&comp, ctx);
+	azo_compiler_init(&comp, &comp_ctx);
 	comp.debug = 1;
 	azo_compiler_push_frame(&comp, this_impl, this_inst, ret_type);
 	for (unsigned int i = 0; i < n_args; i++) {
@@ -73,6 +88,7 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	AZOParser parser;
 	azo_parser_setup (&parser, src);
 	AZOExpression *expr = azo_parser_parse (&parser);
+	azo_expression_print_info(expr, stdout, src, 0);
 	AZOProgram *prog = azo_compiler_compile (&comp, expr, 1, src);
 	azo_parser_release (&parser);
 	azo_source_unref(src);
@@ -81,7 +97,7 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 }
 
 void
-azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, const AZImplementation *arg_impls[], const AZValue *arg_vals[], unsigned int n_args, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
+azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, unsigned int n_args, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
 {
 	unsigned int prev_frame = azo_interpreter_push_frame (intr, 0);
 	azo_intepreter_push_values (intr, arg_impls, arg_vals, n_args);

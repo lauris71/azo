@@ -85,9 +85,17 @@ Array_reference:
   Expression[Expression]
   
 Expression:
+  Cast_expression
   Parenthesed_expression
   Naked_expression
-  
+
+Cast_expression:
+  (Cast) Expression
+
+Cast:
+  (LValue)
+  (Function_call)
+
 Parenthesed_expression:
   (Expression)
 

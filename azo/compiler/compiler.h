@@ -8,6 +8,7 @@
 */
 
 typedef struct _AZOCompiler AZOCompiler;
+typedef struct _AZOCompilerContext AZOCompilerContext;
 
 #include <stdint.h>
 
@@ -21,12 +22,29 @@ typedef struct _AZOCompiler AZOCompiler;
 extern "C" {
 #endif
 
-struct _AZOCompiler {
+struct _AZOCompilerContext {
 	/**
 	 * @brief Global definitions
 	 * 
 	 */
-	AZOContext *ctx;
+	AZOContext *globals;
+	/**
+	 * @brief Local variables
+	 * 
+	 */
+	const AZImplementation *this_impl;
+	void *this_inst;
+	unsigned int ret_type;
+	unsigned int n_args;
+	AZString **arg_names;
+	const unsigned int *arg_types;
+};
+
+struct _AZOCompiler {
+	/** Context
+	 * 
+	 */
+	AZOCompilerContext *ctx;
 	/**
 	 * @brief Force typecode argument checking
 	 * 
@@ -46,12 +64,32 @@ struct _AZOCompiler {
 	AZOFrame *current;
 };
 
-void azo_compiler_init (AZOCompiler *compiler, AZOContext *ctx);
+void azo_compiler_init (AZOCompiler *compiler, AZOCompilerContext *ctx);
 void azo_compiler_finalize (AZOCompiler *compiler);
 
 AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOExpression *root, unsigned int need_resolve, AZOSource *src);
 
+/**
+ * @brief Start new current frame, preserving link to parent
+ *
+ * I.e. start compiling an outermost program body or resolve function definition inside code
+ * 
+ * @param comp The compiler.
+ * @param this_impl The implementation of this (or NULL for none).
+ * @param this_inst The instance of this (or NULL if none/not defined).
+ * @param ret_type The return type of the code.
+ */
 void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type);
+/**
+ * @brief Set the new current frame, removing all references to parent
+ * 
+ * I.e. start compiling the resolved function definition using it's resolved frame
+ * 
+ * @param comp The compiler.
+ * @param frame The frame to set as current.
+ * @return AZOFrame* The previous current frame.
+ */
+AZOFrame *azo_compiler_set_frame (AZOCompiler *comp, AZOFrame *frame);
 AZOFrame *azo_compiler_pop_frame (AZOCompiler *comp);
 
 /* Declares variable at next free position unless already known */
