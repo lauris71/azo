@@ -35,7 +35,7 @@ struct _AZOOptimizer {
 };
 
 static unsigned int
-token_is_equal (AZOOptimizer *opt, AZOExpression *expr, const char *word, const unsigned char *cdata)
+token_is_equal (AZOOptimizer *opt, AZONode *expr, const char *word, const unsigned char *cdata)
 {
 	unsigned int i;
 	for (i = expr->term.start; i < expr->term.end; i++) {
@@ -45,10 +45,10 @@ token_is_equal (AZOOptimizer *opt, AZOExpression *expr, const char *word, const 
 }
 
 #if 0
-static AZOExpression *
-resolve_member_reference (AZOOptimizer *opt, AZOExpression *expr)
+static AZONode *
+resolve_member_reference (AZOOptimizer *opt, AZONode *expr)
 {
-	AZOExpression *lhs, *rhs;
+	AZONode *lhs, *rhs;
 	AZPackedValue val;
 
 	lhs = expr->children;
@@ -56,7 +56,7 @@ resolve_member_reference (AZOOptimizer *opt, AZOExpression *expr)
 	lhs = resolve (opt, lhs);
 	rhs = resolve (opt, rhs);
 	if (lhs->type != EXPRESSION_CONSTANT) return expr;
-	if ((rhs->type != EXPRESSION_REFERENCE) || (rhs->subtype != REFERENCE_VARIABLE)) {
+	if ((rhs->type != EXPRESSION_REFERENCE) || (rhs->subtype != AZO_TERM_REFERENCE_VARIABLE)) {
 		fprintf (stderr, "resolve_member_reference: Invalid rhs type %u/%u\n", rhs->type, rhs->subtype);
 		expr->type = EXPRESSION_INVALID;
 		return expr;
@@ -72,22 +72,22 @@ resolve_member_reference (AZOOptimizer *opt, AZOExpression *expr)
 	expr->subtype = val.impl->type;
 	az_packed_value_clear (&val);
 	expr->children = NULL;
-	azo_expression_free (lhs);
-	azo_expression_free (rhs);
+	azo_node_free (lhs);
+	azo_node_free (rhs);
 	return expr;
 }
 
 static unsigned int
-resolve_references (AZOOptimizer *opt, AZOExpression *expr, AZPackedValue *thisval, const unsigned char *cdata)
+resolve_references (AZOOptimizer *opt, AZONode *expr, AZPackedValue *thisval, const unsigned char *cdata)
 {
-	AZOExpression *child;
+	AZONode *child;
 	unsigned int result;
 	result = 0;
 	for (child = expr->children; child; child = child->next) {
 		result = result || resolve_references (opt, child, thisval, cdata);
 	}
 	if (expr->type == EXPRESSION_REFERENCE) {
-		if (expr->subtype == REFERENCE_VARIABLE) {
+		if (expr->subtype == AZO_TERM_REFERENCE_VARIABLE) {
 			/* fixme: Look for variables */
 			const unsigned char *word = opt->src->cdata + expr->start;
 			unsigned int len = expr->end - expr->start;
@@ -125,7 +125,7 @@ resolve_references (AZOOptimizer *opt, AZOExpression *expr, AZPackedValue *thisv
 				}
 				/* fixme: If not final we can still detect type */
 			}
-		} else if (expr->subtype == REFERENCE_MEMBER) {
+		} else if (expr->subtype == AZO_TERM_REFERENCE_MEMBER) {
 		}
 	}
 	return result;

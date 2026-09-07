@@ -12,7 +12,7 @@ typedef struct _AZOScope AZOScope;
 
 #include <az/reference.h>
 
-#include <azo/expression.h>
+#include <azo/node.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,7 +38,7 @@ struct _AZOVariable {
 	AZOVariable *parent;
 
 	/* Value if determined to be const */
-	AZOExpression *const_expr;
+	AZONode *const_expr;
 };
 
 AZOVariable *azo_variable_new_stack(AZString *name, AZOVariable *next, unsigned int pos);

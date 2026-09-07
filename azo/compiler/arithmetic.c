@@ -41,7 +41,7 @@ azo_compiler_compile_arithmetic_any_any (AZOCompiler *comp, unsigned int operati
 	unsigned int finished;
 
 	/* Test LHS and RHS is in range */
-	if (operation == ARITHMETIC_PERCENT) {
+	if (operation == AZO_TERM_ARITHMETIC_PERCENT) {
 		compile_type_is_in_range (comp, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, &lhs_type_lt_min, &lhs_type_gt_max);
 		compile_type_is_in_range (comp, 0, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, &rhs_type_lt_min, &rhs_type_gt_max);
 	} else {
@@ -90,15 +90,15 @@ azo_compiler_compile_arithmetic_any_any (AZOCompiler *comp, unsigned int operati
 	azo_compiler_write_DEBUG_STRING (comp, "azo_compiler_compile_arithmetic_any_any");
 	azo_compiler_write_DEBUG_STACK (comp);
 #endif
-	if (operation == ARITHMETIC_PLUS) {
+	if (operation == AZO_TERM_ARITHMETIC_PLUS) {
 		azo_compiler_write_ic (comp, AZO_TC_ADD, NULL);
-	} else if (operation == ARITHMETIC_MINUS) {
+	} else if (operation == AZO_TERM_ARITHMETIC_MINUS) {
 		azo_compiler_write_ic (comp, AZO_TC_SUBTRACT, NULL);
-	} else if (operation == ARITHMETIC_STAR) {
+	} else if (operation == AZO_TERM_ARITHMETIC_STAR) {
 		azo_compiler_write_ic (comp, AZO_TC_MULTIPLY, NULL);
-	} else if (operation == ARITHMETIC_SLASH) {
+	} else if (operation == AZO_TERM_ARITHMETIC_SLASH) {
 		azo_compiler_write_ic (comp, AZO_TC_DIVIDE, NULL);
-	} else if (operation == ARITHMETIC_PERCENT) {
+	} else if (operation == AZO_TERM_ARITHMETIC_PERCENT) {
 		azo_compiler_write_ic (comp, AZO_TC_MODULO, NULL);
 	}
 	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
@@ -117,16 +117,16 @@ azo_compiler_compile_arithmetic_any_any (AZOCompiler *comp, unsigned int operati
 }
 
 static unsigned int
-azo_compiler_compile_arithmetic_boolean (AZOCompiler *comp, unsigned int operation, const AZOExpression *expr)
+azo_compiler_compile_arithmetic_boolean (AZOCompiler *comp, unsigned int operation, const AZONode *expr)
 {
 	unsigned int not_boolean_1, not_boolean_2, finished;
 	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_BOOLEAN, expr);
 	not_boolean_1 = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
 	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_BOOLEAN, expr);
 	not_boolean_2 = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
-	if (operation == ARITHMETIC_ANDAND) {
+	if (operation == AZO_TERM_ARITHMETIC_ANDAND) {
 		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_AND, NULL);
-	} else if (operation == ARITHMETIC_OROR) {
+	} else if (operation == AZO_TERM_ARITHMETIC_OROR) {
 		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_OR, NULL);
 	}
 	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
@@ -140,25 +140,25 @@ azo_compiler_compile_arithmetic_boolean (AZOCompiler *comp, unsigned int operati
 }
 
 unsigned int
-azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *rhs, const AZOExpression *expr, AZOSource *src)
+azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, AZOSource *src)
 {
 	if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
 	if (!azo_compiler_compile_expression (comp, rhs, src)) return 0;
 	/* LHS RHS */
 	switch (expr->term.subtype) {
-	case ARITHMETIC_PLUS:
-	case ARITHMETIC_MINUS:
-	case ARITHMETIC_SLASH:
-	case ARITHMETIC_STAR:
-	case ARITHMETIC_PERCENT:
-	case ARITHMETIC_SHIFT_LEFT:
-	case ARITHMETIC_SHIFT_RIGHT:
-	case ARITHMETIC_AND:
-	case ARITHMETIC_OR:
-	case ARITHMETIC_CARET:
+	case AZO_TERM_ARITHMETIC_PLUS:
+	case AZO_TERM_ARITHMETIC_MINUS:
+	case AZO_TERM_ARITHMETIC_SLASH:
+	case AZO_TERM_ARITHMETIC_STAR:
+	case AZO_TERM_ARITHMETIC_PERCENT:
+	case AZO_TERM_ARITHMETIC_SHIFT_LEFT:
+	case AZO_TERM_ARITHMETIC_SHIFT_RIGHT:
+	case AZO_TERM_ARITHMETIC_AND:
+	case AZO_TERM_ARITHMETIC_OR:
+	case AZO_TERM_ARITHMETIC_CARET:
 		return azo_compiler_compile_arithmetic_any_any (comp, expr->term.subtype);
-	case ARITHMETIC_ANDAND:
-	case ARITHMETIC_OROR:
+	case AZO_TERM_ARITHMETIC_ANDAND:
+	case AZO_TERM_ARITHMETIC_OROR:
 		return azo_compiler_compile_arithmetic_boolean (comp, expr->term.subtype, expr);
 	default:
 		fprintf (stderr, "azo_compiler_compile_arithmetic: Unknown subtype %u\n", expr->term.subtype);
@@ -168,7 +168,7 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZOExpression *lhs, co
 }
 
 unsigned int
-azo_compiler_compile_tilde (AZOCompiler *comp, const AZOExpression *expr, AZOSource *src)
+azo_compiler_compile_tilde (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 {
 	unsigned int lt_i8, gt_i64, gt_cd, finished_1, finished_2;
 	if (!azo_compiler_compile_expression (comp, expr, src)) return 0;
@@ -188,7 +188,7 @@ azo_compiler_compile_tilde (AZOCompiler *comp, const AZOExpression *expr, AZOSou
 }
 
 unsigned int
-azo_compiler_compile_increment (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *expr, AZOSource *src)
+azo_compiler_compile_increment (AZOCompiler *comp, const AZONode *lhs, const AZONode *expr, AZOSource *src)
 {
 	unsigned int lhs_type_lt_min, lhs_type_gt_max;
 	unsigned int types_equal;
@@ -225,7 +225,7 @@ azo_compiler_compile_increment (AZOCompiler *comp, const AZOExpression *lhs, con
 }
 
 unsigned int
-azo_compiler_compile_decrement (AZOCompiler *comp, const AZOExpression *lhs, const AZOExpression *expr, AZOSource *src)
+azo_compiler_compile_decrement (AZOCompiler *comp, const AZONode *lhs, const AZONode *expr, AZOSource *src)
 {
 	unsigned int lhs_type_lt_min, lhs_type_gt_max;
 	unsigned int types_equal;

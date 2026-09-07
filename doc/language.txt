@@ -1,42 +1,108 @@
+#
+# Notation
+#
+# Name: defines a rule;
+# stacked indented lines are alternatives;
+# [X] is optional, EXCEPT for Array_reference where it is part of the grammar;
+# X ... is repetition;
+# UPPER_CASE is a lexer token except EMPTY which means no token;
+# bare lowercase words are keywords.
+#
+# Rules are evaluated in the order listed, 1st match wins
+#   E.g. "(NAME)+3" is parsed as cast (1st rule wins)
+#        "(NAME)(3)" is parsed as cast (1st rule wins)
+#
+# Composite rule definitions are evaluated from left to right
+#
+# In recursive evaluation the deeper recursion level is evaluated greedily
+#   E.g. in "if(expr1) if(expr2) statement1 else statement2" else binds to if(expr2)
+#
+
+# Program flow
+
 Program:
   Sentences
 
 Sentences:
-  [Sentence...]
+  [ Sentence ...]
 
 Sentence:
   Block
   Line
-  for
-  while
-  if
+  For_statement
+  While_statement
+  If_statement
+  Do_statement
   
 Block:
   { Sentences }
 
 Line:
-  Statement;
+  Statement ;
+  Multi_statement ;
 
 Statement:
   Step_statement
-  Return
-
-Return:
-  return [Expression]
+  Return_statement
+  break
+  continue
 
 Step_statement:
+  Empty_statement
+  Nonempty_step_statement
+
+Nonempty_step_statement:
   Declaration
-  Silent_statement
+  Nonempty_silent_statement
+
+Silent_statement:
+  Empty_statement
+  Nonempty_silent_statement
+
+Nonempty_silent_statement:
+  Assignment
+  Function_call
+  Prefix_arithmetic
+  Suffix_arithmetic
+
+Multi_statement:
+  Empty_statement
+  Nonempty_step_statement [, Nonempty_step_statement ...]
+
+Silent_multi_statement:
+  Empty_statement
+  Nonempty_silent_statement [, Nonempty_silent_statement ...]
+
+Statement_with_expression:
+  [Multi_statement ,] Expression
+
+Return_statement:
+  return [Expression]
+
+Empty_statement:
+  EMPTY
+
+# Controlled flow
+
+For_statement:
+  for (Multi_statement ; [Expression] ; Silent_multi_statement) Sentence
+
+While_statement:
+  while (Expression) Sentence
+  
+If_statement:
+  if (Statement_with_expression) Sentence [else Sentence]
+
+Do_statement:
+  do Sentence while (Expression) ;
+
+# Declarations
 
 Declaration:
-  Qualifiers Type Single_declaration [, Single_declaration ...]
+  Declaration_qualifiers Type Single_declaration [, Single_declaration ...]
 
-Qualifiers:
+Declaration_qualifiers:
   [static] [const] [final]
-
-Type:
-  Expression
-  function
 
 Single_declaration:
   Pure_declaration
@@ -48,24 +114,29 @@ Pure_declaration:
 Declaration_initialization:
   Pure_declaration = Expression
 
-Silent_statement:
-  Empty_statement
-  Assignment
-  Function_call
-  Prefix_arithmetic
-  Suffix_arithmetic
+Type:
+  Type_expression
+  function
 
-Empty statement:
+# Expressions
 
-Assignment:
-  LValue = Expression;
-  LValue += Expression;
-  LValue -= Expression;
-  LValue *= Expression;
-  LValue /= Expression;
-  LValue %= Expression;
-  LValue >>= Expression;
-  LValue <<= Expression;
+Expression:
+  Cast_expression
+  Parenthesized_expression
+  Naked_expression
+
+Statement_and_expression:
+  Nonempty_silent_statement , Expression
+
+Cast_expression:
+  (Type) Expression
+
+Parenthesized_expression:
+  (Expression)
+
+Naked_expression:
+  LValue
+  RValue
 
 LValue:
   Variable_reference
@@ -79,30 +150,11 @@ Singular_reference:
   NAME
 
 Member_reference:
-  Expression.NAME
+  Expression . NAME
 
 Array_reference:
   Expression[Expression]
   
-Expression:
-  Cast_expression
-  Parenthesed_expression
-  Naked_expression
-
-Cast_expression:
-  (Cast) Expression
-
-Cast:
-  (LValue)
-  (Function_call)
-
-Parenthesed_expression:
-  (Expression)
-
-Naked_expression:
-  LValue
-  RValue
-
 RValue:
   null
   this
@@ -112,38 +164,65 @@ RValue:
   Function_call
   Unary_operation
   Binary_operation
+  Prefix_arithmetic
+  Suffix_arithmetic
+  Selection
   
 Literal:
   BOOLEAN_LITERAL
   INTEGER_LITERAL
-  FLOAT_LITERAL
+  FLOATING_POINT_LITERAL
   STRING_LITERAL
   Structured_literal
 
 Structured_literal:
-  {Expression [, Expression ...] }
+  {[Expression [, Expression ...]] }
+
+Type_expression:
+  LValue
+  Function_call
+
+# Assignments
+
+Assignment:
+  LValue = Expression
+  LValue += Expression
+  LValue -= Expression
+  LValue *= Expression
+  LValue /= Expression
+  LValue %= Expression
+  LValue >>= Expression
+  LValue <<= Expression
+  LValue &= Expression
+  LValue |= Expression
+  LValue ^= Expression
+
+# Functions and new
 
 New:
   new Expression Arguments
   new Function_definition
 
 Arguments:
-  (Expression [, Expression ...])
+  ([Expression [, Expression ...]])
 
 Function_definition:
   function Signature_definition Block
 
 Signature_definition:
-  [Type|void] Arguments_definition Block
+  void Arguments_definition
+  Type Arguments_definition
 
 Arguments_definition:
-  ([Argument_definition] [, Argument_definition ...])
+  ([Argument_definition [, Argument_definition ...]])
 
 Argument_definition:
   Type NAME
 
 Function_call:
   Expression Arguments
+
+# Operations
 
 Prefix_arithmetic:
   ++ LValue
@@ -153,17 +232,48 @@ Suffix_arithmetic:
   LValue ++
   LValue --
 
-for:
-  for (Step_statement; Expression; Silent_statement) Sentence
-
-while:
-  while (Expression) Sentence
-  
-if:
-  if (Expression) Sentence [else Sentence]
-
 Unary_operation:
-  [+|-|!] Expression
+  + Expression
+  - Expression
+  ! Expression
+  ~ Expression
 
-Binary_operation
-  Expression [+ - * / % | & ~ || && ^ << >> is implements] Expression
+Binary_operation:
+  Arithmetic_operation
+  Bitwise_operation
+  Comparison
+  Logical_operation
+  Type_operation
+
+Arithmetic_operation:
+  Expression + Expression
+  Expression - Expression
+  Expression * Expression
+  Expression / Expression
+  Expression % Expression
+
+Bitwise_operation:
+  Expression & Expression
+  Expression | Expression
+  Expression ^ Expression
+  Expression << Expression
+  Expression >> Expression
+
+Comparison:
+  Expression == Expression
+  Expression != Expression
+  Expression < Expression
+  Expression <= Expression
+  Expression > Expression
+  Expression >= Expression
+
+Logical_operation:
+  Expression && Expression
+  Expression || Expression
+
+Type_operation:
+  Expression is Expression
+  Expression implements Expression
+
+Selection:
+  (Expression) ? Expression : Expression

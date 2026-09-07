@@ -8,12 +8,16 @@
 
 #include <azo/operator.h>
 
+/* The tokenizer matches operators greedily in table order (first match wins), so
+ * longer operators have to be listed before their prefixes (e.g. "<<=" before "<<") */
 AZOOperator azo_operators[] = {
 	{ AZO_OPERATOR_DOT, ".", 2, 0, 1 },
+	/* Not used currently, keep for C reference */
 	{ AZO_OPERATOR_ARROW, "->", 2, 0, 1 },
-	/* fixme: While parsing function arguments and literal arrays we should not treat comma as operator */
+	/* In current version comma is not an operator at all (is separator) but we keep it here for C reference */
 	{ AZO_OPERATOR_COMMA, ",", 0, 0, 255 },
 
+	{ AZO_OPERATOR_IDENTICAL, "===", 2, 0, 7 },
 	{ AZO_OPERATOR_EQUAL, "==", 2, 0, 7 },
 	{ AZO_OPERATOR_ASSIGN, "=", 2, 0, 14 },
 
@@ -47,11 +51,13 @@ AZOOperator azo_operators[] = {
 	{ AZO_OPERATOR_LE, "<=", 2, 0, 6 },
 	{ AZO_OPERATOR_LT, "<", 2, 0, 6 },
 
+	{ AZO_OPERATOR_NOT_IDENTICAL, "!==", 2, 0, 7 },
 	{ AZO_OPERATOR_NE, "!=", 2, 0, 7 },
 	{ AZO_OPERATOR_NOT, "!", 1, 2, 0 },
 
 	{ AZO_OPERATOR_TILDE, "~", 1, 2, 0 },
 
+	{ AZO_OPERATOR_ANDAND_ASSIGN, "&&=", 2, 0, 14 },
 	{ AZO_OPERATOR_ANDAND, "&&", 2, 0, 11 },
 	{ AZO_OPERATOR_AND_ASSIGN, "&=", 2, 0, 14 },
 	/* AdressOf/and */
@@ -60,6 +66,7 @@ AZOOperator azo_operators[] = {
 	{ AZO_OPERATOR_CARET_ASSIGN, "^=", 2, 0, 14 },
 	{ AZO_OPERATOR_CARET, "^", 2, 0, 9 },
 
+	{ AZO_OPERATOR_OROR_ASSIGN, "||=", 2, 0, 14 },
 	{ AZO_OPERATOR_OROR, "||", 2, 0, 12 },
 	{ AZO_OPERATOR_OR_ASSIGN, "|=", 2, 0, 14 },
 	{ AZO_OPERATOR_OR, "|", 2, 0, 10 },

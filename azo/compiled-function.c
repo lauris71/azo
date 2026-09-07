@@ -21,7 +21,7 @@
 #include <az/extend.h>
 
 #include <azo/compiled-function.h>
-#include <azo/expression.h>
+#include <azo/node.h>
 
 static void aosora_compiled_function_class_init (AZOCompiledFunctionClass *klass);
 static void aosora_compiled_function_finalize (AZOCompiledFunctionClass *klass, AZOCompiledFunction *func);
@@ -81,7 +81,7 @@ compiled_function_shutdown (AZObject *obj)
 {
 	AZOCompiledFunction *cfunc = (AZOCompiledFunction *) obj;
 	if (cfunc->root) {
-		azo_expression_free_tree (cfunc->root);
+		azo_node_free_tree (cfunc->root);
 		cfunc->root = NULL;
 	}
 	if (cfunc->prog) {

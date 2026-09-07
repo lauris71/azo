@@ -1,0 +1,42 @@
+
+
+else binds to closest if
+expression result cannot be discarded (except function call which is statement in its own right) - I.e. plain expression (a + 1) is not a statement.
+LValues can be created from RValues by member or array reference. E.g. myFunction().member or myFunction()[1].
+  This is logical - RValue is pure value, but members and array elements are value containers.
+
+Rough edges:
+
+1. Currently no way to extend (no class keyword)
+2. No new type[size] (creating typed array)
+3. Casting is ambiguous:
+   (a) +3 - is it cast to a or a+3?
+   (a) (b) - cast or function call a(b)
+   Requirement atm is that parenthesed lvalues and function calls are always casts
+   . binds with maximum strength (prefix:0, suffix:1) function is precedence 1 so there is never need to parenthese function reference
+   The lvalue/function call requirement comes simply from the fact that these are the only expressions that can have class type and parentheses for these are no-op anyways.
+   An option is to do casting in some other way:
+   - cast<type> expression - c++ like, ugly but allows to differentiate casts (reinterpret signed/unsigned vs. clamp)
+   - expression as type - nice syntax but harder to read
+   - some other way
+4. Type/cast should be dynamic - i.e. solved at runtime (expression has to return class type). Type is simply an expression with class value.
+5. No out/inout designator for function arguments (would be cleaner than returning composites)
+6. No boxing of primitives (probably doable with referenceOf/boxed value but needs to be transparent)
+7. No final function arguments (const in function scope)
+8. No function signature designation for variables
+9. There should be separate function... and new function... variants for creating a function
+   function - creates shared closure, capturing variable values from the first run
+   new function - creates fresh closure, capturing current variable values
+10. ActiveObject attributes specific syntax, either
+   a. object.attribute
+   b. object["attribute"]
+   c. object{"attribute"}
+   d. object->attribute
+   Variant a mixes members and attributes. Variant b confuses array and attribute access (if attribute is a variable (any) it has to be resolved runtime)
+   Variant c adds confusing syntax (not all {} are blocks), d adds new operator for one specific case.
+   Maybe we can add -> as a generic lookUp method (for all map-like objects?) Should it then also resolve interfaces (a->Map gives a as map)?.
+11. Need array casts (type[]) for array literals
+12. There should be a way to create ad-hoc member functions:
+   new value.function...
+   These are not discoverable from value, but locally have this keyword and references are tried as value members
+   For optimizer side it means, that they can be bound to specific value - i.e. all final members resolved to constants, interface and property accesses can be streamlined etc.

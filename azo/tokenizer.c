@@ -6,6 +6,7 @@
 * Copyright (C) Lauris Kaplinski 2016
 */
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,7 +16,6 @@
 #include <az/extend.h>
 
 #include <azo/operator.h>
-#include <azo/source.h>
 #include <azo/tokenizer.h>
 
 static void tokenizer_finalize (AZOTokenizerClass *klass, AZOTokenizer *tokenizer);
@@ -61,16 +61,38 @@ struct AZOTokenDescription descriptions[] = {
 #define NUM_DESCRIPTIONS (sizeof (descriptions) / sizeof (descriptions[0]))
 
 #define IS_NUMBER_2(v) (((v) == '0') || ((v) == '1'))
-#define IS_NUMBER_10(v) (((v) >= '0') && ((v) <= '9'))
-#define IS_NUMBER_16(v) ((((v) >= '0') && ((v) == '1')) || (((v) >= 'A') && ((v) <= 'F')) || (((v) >= 'a') && ((v) <= 'f')))
-/* fixme: All whitespace types */
-#define IS_WS(v) (((v) < ' ') || (v == 160))
-#define IS_SEPARATOR(v) (((v) <= ' ') || strchr (",;+-/*<>&|^()[]{}", (v)) != NULL)
+/* ctype functions require the argument to fit into unsigned char (or be EOF) */
+#define IS_NUMBER_10(v) (((unsigned int) (v) < 256) && isdigit ((unsigned char) (v)))
+#define IS_NUMBER_16(v) (((unsigned int) (v) < 256) && isxdigit ((unsigned char) (v)))
+#define IS_SEPARATOR(v) (((v) <= ' ') || strchr (",;+-*/%=!<>&|^()[]{}~?:.", (v)) != NULL)
 #define IS_ALPHA(v) ((((v) >= 'A') && ((v) <= 'Z')) || (((v) >= 'a') && ((v) <= 'z')) || ((v) == '_'))
 #define IS_LINE_END(v) (((v) == 10) || ((v) == 13))
 
-static void tokenizer_ensure_lines (AZOTokenizer *tokenizer, unsigned int req);
-static void tokenizer_ensure_tokens (AZOTokenizer *tokenizer, unsigned int req);
+/* Cursor access macros
+ * These assume the current text to be in cdata/csize
+ * Reading past the end of input returns NUL */
+#define C_HAS_CHAR(p) ((p) < csize)
+#define C_PEEK(p) (C_HAS_CHAR (p) ? cdata[p] : 0)
+#define C_IS(p, c) (C_PEEK (p) == (c))
+#define C_IS_ANY_OF(p, s) (C_PEEK (p) && (strchr (s, C_PEEK (p)) != NULL))
+#define C_IS_NUMBER_2(p) IS_NUMBER_2 (C_PEEK (p))
+#define C_IS_NUMBER_10(p) IS_NUMBER_10 (C_PEEK (p))
+#define C_IS_NUMBER_16(p) IS_NUMBER_16 (C_PEEK (p))
+#define C_IS_SEPARATOR(p) IS_SEPARATOR (C_PEEK (p))
+#define C_IS_LINE_END(p) IS_LINE_END (C_PEEK (p))
+#define C_IS_TEXT(p, t) (c_match_text (cdata, csize, p, t) > 0)
+#define C_MATCH_TEXT(p, t) c_match_text (cdata, csize, p, t)
+
+/* Check whether the text at cpos matches the given (NUL-terminated) string
+ * Returns the length of the match (0 if the text does not match) */
+static unsigned int
+c_match_text (const unsigned char *cdata, unsigned int csize, unsigned int cpos, const char *text)
+{
+	unsigned int p = 0;
+	while (text[p] && ((cpos + p) < csize) && (cdata[cpos + p] == text[p])) p += 1;
+	return text[p] ? 0 : p;
+}
+
 static unsigned int get_token (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token);
 
 void
@@ -154,52 +176,67 @@ get_number (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 	unsigned int csize = tokenizer->csize - cpos;
 	unsigned int p = 0;
 	unsigned int type = AZO_TOKEN_INTEGER;
-	if ((cdata[p] == '0') && (csize >= 3)) {
-		if ((cdata[p + 1] == 'b') || (cdata[p + 1] == 'B')) {
+	if (C_IS (p, '0')) {
+		if (C_IS_ANY_OF (p + 1, "bB")) {
 			/* Binary */
 			p += 2;
-			while ((p < csize) && IS_NUMBER_2 (cdata[p])) p += 1;
-			type = AZO_TOKEN_INTEGER_BIN;
-		} else if ((cdata[p + 1] == 'x') || (cdata[p + 1] == 'X')) {
+			while (C_IS_NUMBER_2 (p)) p += 1;
+			/* At least one digit is required */
+			type = (p > 2) ? AZO_TOKEN_INTEGER_BIN : AZO_TOKEN_INVALID;
+		} else if (C_IS_ANY_OF (p + 1, "xX")) {
 			/* Hex */
 			p += 2;
-			while ((p < csize) && IS_NUMBER_16 (cdata[p])) p += 1;
-			type = AZO_TOKEN_INTEGER_HEX;
+			while (C_IS_NUMBER_16 (p)) p += 1;
+			/* At least one digit is required */
+			type = (p > 2) ? AZO_TOKEN_INTEGER_HEX : AZO_TOKEN_INVALID;
 		}
 	}
 	if (type == AZO_TOKEN_INTEGER) {
 		/* Decimal */
-		while ((p < csize) && IS_NUMBER_10 (cdata[p])) p += 1;
-		if ((p < csize) && (cdata[p] == '.')) {
+		while (C_IS_NUMBER_10 (p)) p += 1;
+		if (C_IS (p, '.')) {
 			/* Real */
-			type = AZO_TOKEN_REAL;
+			type = AZO_TOKEN_FLOATING_POINT;
 			p += 1;
-			while ((p < csize) && IS_NUMBER_10 (cdata[p])) p += 1;
+			while (C_IS_NUMBER_10 (p)) p += 1;
 		}
-		if ((p < csize) && ((cdata[p] == 'e') || (cdata[p] == 'E'))) {
+		if (C_IS_ANY_OF (p, "eE")) {
 			/* Real with exponent */
 			p += 1;
-			while ((p < csize) && IS_NUMBER_10 (cdata[p])) p += 1;
+			if (C_IS_ANY_OF (p, "+-")) p += 1;
+			if (C_IS_NUMBER_10 (p)) {
+				type = AZO_TOKEN_FLOATING_POINT;
+				while (C_IS_NUMBER_10 (p)) p += 1;
+			} else {
+				/* Exponent requires at least one digit */
+				type = AZO_TOKEN_INVALID;
+			}
 		}
 	}
 	/* Qualifiers */
-	if ((type == AZO_TOKEN_INTEGER) || (type == AZO_TOKEN_REAL)) {
+	if ((type == AZO_TOKEN_INTEGER) || (type == AZO_TOKEN_FLOATING_POINT)) {
 		/* Possible qualifiers: f, i, fi */
-		if ((p < csize) && ((cdata[p] == 'f') || (cdata[p] == 'F'))) {
+		if (C_IS_ANY_OF (p, "fF")) {
 			p += 1;
-			type = AZO_TOKEN_REAL;
+			type = AZO_TOKEN_FLOATING_POINT;
 		}
-		if ((p < csize) && ((cdata[p] == 'i') || (cdata[p] == 'I'))) {
+		if (C_IS_ANY_OF (p, "iI")) {
 			p += 1;
-			type = AZO_TOKEN_IMAGINARY;
+			type = AZO_TOKEN_FLOATING_POINT;
 		}
 	}
 	if ((type == AZO_TOKEN_INTEGER) || (type == AZO_TOKEN_INTEGER_BIN) || (type == AZO_TOKEN_INTEGER_HEX)) {
-		/* Possible qualifiers: u, l, ul */
-		if ((p < csize) && ((cdata[p] == 'u') || (cdata[p] == 'U'))) p += 1;
-		if ((p < csize) && ((cdata[p] == 'l') || (cdata[p] == 'L'))) p += 1;
+		/* Possible qualifiers: u, l, ul, lu (ll is invalid, integers are either 32 or 64 bit) */
+		if (C_IS_ANY_OF (p, "uU")) {
+			p += 1;
+			if (C_IS_ANY_OF (p, "lL")) p += 1;
+		} else if (C_IS_ANY_OF (p, "lL")) {
+			p += 1;
+			if (C_IS_ANY_OF (p, "uU")) p += 1;
+		}
 	}
-	if ((p < csize) && !IS_SEPARATOR(cdata[p])) {
+	/* Numbers have to be terminated by a separator */
+	if (C_HAS_CHAR (p) && !C_IS_SEPARATOR (p)) {
 		type = AZO_TOKEN_INVALID;
 	}
 	token->type = type;
@@ -214,7 +251,7 @@ get_cpp_comment (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 	unsigned int csize = tokenizer->csize - cpos;
 	unsigned int p = 2;
 	/* C++ style comment until the end of line */
-	while ((p < csize) && !IS_LINE_END (cdata[p])) p += 1;
+	while (C_HAS_CHAR (p) && !C_IS_LINE_END (p)) p += 1;
 	token->type = AZO_TOKEN_COMMENT;
 	token->end = token->start + p;
 	return p;
@@ -227,8 +264,8 @@ get_c_comment (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 	unsigned int csize = tokenizer->csize - cpos;
 	unsigned int p = 2;
 	/* C style comment (possibly multi-line) */
-	while (p < (csize - 1)) {
-		if (!strncmp ((const char *) cdata + p, "*/", 2)) {
+	while (C_HAS_CHAR (p)) {
+		if (C_IS_TEXT (p, "*/")) {
 			p += 2;
 			token->type = AZO_TOKEN_COMMENT;
 			token->end = token->start + p;
@@ -237,34 +274,39 @@ get_c_comment (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 			p += 1;
 		}
 	}
+	/* Unterminated comment - consume the rest of input */
 	token->type = AZO_TOKEN_INVALID;
-	token->end = token->start + p;
-	return p;
+	token->end = token->start + csize;
+	return csize;
 }
 
 static unsigned int
 get_token (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 {
-	unsigned int unival;
+	int unival;
 	unsigned int i;
 
 	const unsigned char *cdata = tokenizer->cdata + cpos;
 	unsigned int csize = tokenizer->csize - cpos;
 	unsigned int p = 0;
 	/* Comments */
-	if ((csize >= 2) && !strncmp ((const char *) cdata + p, "//", 2)) {
-		return get_cpp_comment(tokenizer, cpos, token);
+	if (C_IS_TEXT (p, "//")) {
+		return get_cpp_comment (tokenizer, cpos, token);
 	}
-	if ((csize >= 2) && !strncmp ((const char *) cdata + p, "/*", 2)) {
-		return get_c_comment(tokenizer, cpos, token);
+	if (C_IS_TEXT (p, "/*")) {
+		return get_c_comment (tokenizer, cpos, token);
+	}
+
+	/* Number starting with the decimal point (has to be tried before operators or . would match the dot operator) */
+	if (C_IS (p, '.') && C_IS_NUMBER_10 (p + 1)) {
+		return get_number (tokenizer, cpos, token);
 	}
 
 	/* Operators */
 	for (i = 0; i < AZO_NUM_OPERATORS; i++) {
-		unsigned int j = 0;
-		while ((cdata[p + j] == azo_operators[i].text[j]) && azo_operators[i].text[j] && ((p + j) < csize)) j += 1;
-		if (!azo_operators[i].text[j]) {
-			p += j;
+		unsigned int len = C_MATCH_TEXT (p, azo_operators[i].text);
+		if (len) {
+			p += len;
 			token->type = AZO_TOKEN_OPERATOR | azo_operators[i].type;
 			token->end = token->start + p;
 			return p;
@@ -273,10 +315,9 @@ get_token (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 
 	/* Standard tokens */
 	for (i = 0; i < NUM_DESCRIPTIONS; i++) {
-		int j = 0;
-		while ((cdata[p + j] == descriptions[i].text[j]) && descriptions[i].text[j] && ((p + j) < csize)) j += 1;
-		if (!descriptions[i].text[j]) {
-			p += j;
+		unsigned int len = C_MATCH_TEXT (p, descriptions[i].text);
+		if (len) {
+			p += len;
 			token->type = descriptions[i].type;
 			token->end = token->start + p;
 			return p;
@@ -284,33 +325,31 @@ get_token (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 	}
 
 	/* Numbers */
-	if (IS_NUMBER_10 (cdata[p])) {
+	if (C_IS_NUMBER_10 (p)) {
 		return get_number (tokenizer, cpos, token);
 	}
 	/* Text */
-	if (cdata[p] == '\"') {
-		unsigned int start = p;
+	if (C_IS (p, '\"')) {
 		p += 1;
-		while ((p < csize) && (cdata[p] != '\"')) {
-			if (cdata[p] < ' ') {
+		while (C_HAS_CHAR (p) && !C_IS (p, '\"')) {
+			if (C_PEEK (p) < ' ') {
 				token->type = AZO_TOKEN_INVALID;
 				token->end = token->start + p;
 				return p;
 			}
-			if (cdata[p] == '\\') {
+			if (C_IS (p, '\\')) {
 				p += 1;
-				if (p >= csize) break;
+				if (!C_HAS_CHAR (p)) break;
 			}
 			p += 1;
 		}
-		if (p >= csize) {
+		if (!C_HAS_CHAR (p)) {
 			token->type = AZO_TOKEN_INVALID;
 			token->end = token->start + p;
 			return p;
 		}
 		token->type = AZO_TOKEN_TEXT;
-		token->start = start + (unsigned int) (cdata - tokenizer->cdata);
-		token->end = token->start + p + 1 - start;
+		token->end = token->start + p + 1;
 		return p + 1;
 	}
 
@@ -320,6 +359,7 @@ get_token (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 		/* Invalid unicode value */
 		p += 1;
 		token->type = AZO_TOKEN_INVALID;
+		token->end = token->start + p;
 		return p;
 	}
 	p = (unsigned int) (u - cdata);
@@ -327,7 +367,7 @@ get_token (AZOTokenizer *tokenizer, unsigned int cpos, AZOToken *token)
 	if (IS_ALPHA (unival)) {
 		const unsigned char *r;
 		r = cdata + p;
-		while ((p < csize) && (IS_ALPHA (unival) || IS_NUMBER_10 (unival))) {
+		while (C_HAS_CHAR (p) && (IS_ALPHA (unival) || IS_NUMBER_10 (unival))) {
 			p = (unsigned int) (r - cdata);
 			unival = arikkei_utf8_get_unicode (&r, csize - p);
 		}

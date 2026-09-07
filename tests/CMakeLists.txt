@@ -24,3 +24,6 @@ if(MATH_LIBRARY)
 endif()
 
 add_test(NAME compile COMMAND azo_test compile)
+add_test(NAME assign COMMAND azo_test assign)
+add_test(NAME function COMMAND azo_test function)
+add_test(NAME tokenizer COMMAND azo_test tokenizer)

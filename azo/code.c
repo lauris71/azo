@@ -17,7 +17,7 @@ azo_code_init(AZOCode *code, unsigned int debug)
     code->bc_size = 256;
     code->bc = (uint8_t *) malloc(code->bc_size);
     if (debug) {
-        code->exprs = (const AZOExpression **) malloc(code->bc_size * sizeof(AZOExpression *));
+        code->exprs = (const AZONode **) malloc(code->bc_size * sizeof(AZONode *));
     }
 }
 
@@ -48,7 +48,7 @@ azo_code_ensure_data(AZOCode *code, unsigned int amount)
 }
 
 void
-azo_code_write_bc(AZOCode *code, const void *data, unsigned int size, const AZOExpression *expr)
+azo_code_write_bc(AZOCode *code, const void *data, unsigned int size, const AZONode *expr)
 {
     /* Ensure room at the end of bytecode buffer */
 	if ((code->bc_len + size) > code->bc_size) {
@@ -56,7 +56,7 @@ azo_code_write_bc(AZOCode *code, const void *data, unsigned int size, const AZOE
 		if (code->bc_size < 256) code->bc_size = 256;
 		if (code->bc_size < (code->bc_len + size)) code->bc_size = code->bc_len + size;
 		code->bc = (uint8_t *) realloc(code->bc, code->bc_size);
-        if (code->exprs) code->exprs = (const AZOExpression **) realloc(code->exprs, code->bc_size * sizeof(AZOExpression *));
+        if (code->exprs) code->exprs = (const AZONode **) realloc(code->exprs, code->bc_size * sizeof(AZONode *));
 	}
 	memcpy (code->bc + code->bc_len, data, size);
     if (code->exprs) {

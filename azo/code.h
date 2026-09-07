@@ -9,7 +9,7 @@
 
 #include <az/packed-value.h>
 
-#include <azo/expression.h>
+#include <azo/node.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,7 +29,7 @@ struct _AZOCode {
      * @brief Expressions for generating debug data
      * 
      */
-    const AZOExpression **exprs;
+    const AZONode **exprs;
 	/* Data */
 	/* fixme: Implement as stack/array */
 	unsigned int data_size;
@@ -48,38 +48,38 @@ void azo_code_clear(AZOCode *code);
  * @param size the number of bytes
  * @param expr the current expression
  */
-void azo_code_write_bc(AZOCode *code, const void *data, unsigned int size, const AZOExpression *expr);
+void azo_code_write_bc(AZOCode *code, const void *data, unsigned int size, const AZONode *expr);
 
 static inline void
-azo_code_write_ic(AZOCode *code, unsigned int ic, const AZOExpression *expr)
+azo_code_write_ic(AZOCode *code, unsigned int ic, const AZONode *expr)
 {
 	uint8_t ic8 = ic;
 	azo_code_write_bc(code, &ic8, 1, expr);
 }
 
 static inline void
-azo_code_write_ic_u8(AZOCode *code, unsigned int ic, unsigned int val, const AZOExpression *expr)
+azo_code_write_ic_u8(AZOCode *code, unsigned int ic, unsigned int val, const AZONode *expr)
 {
 	uint8_t ic8[] = {(uint8_t) ic, (uint8_t) val};
 	azo_code_write_bc(code, &ic8, 2, expr);
 }
 
 static inline void
-azo_code_write_ic_u32 (AZOCode *code, uint8_t ic, uint32_t val, const AZOExpression *expr)
+azo_code_write_ic_u32 (AZOCode *code, uint8_t ic, uint32_t val, const AZONode *expr)
 {
 	azo_code_write_bc(code, &ic, 1, expr);
 	azo_code_write_bc(code, &val, 4, expr);
 }
 
 static inline void
-azo_code_write_ic_i32 (AZOCode *code, uint8_t ic, int32_t val, const AZOExpression *expr)
+azo_code_write_ic_i32 (AZOCode *code, uint8_t ic, int32_t val, const AZONode *expr)
 {
 	azo_code_write_bc(code, &ic, 1, expr);
 	azo_code_write_bc(code, &val, 4, expr);
 }
 
 static inline void
-azo_code_write_ic_u8_u32 (AZOCode *code, unsigned int ic, unsigned int val1, unsigned int val2, const AZOExpression *expr)
+azo_code_write_ic_u8_u32 (AZOCode *code, unsigned int ic, unsigned int val1, unsigned int val2, const AZONode *expr)
 {
 	uint8_t ic8[] = {(uint8_t) ic, (uint8_t) val1};
 	azo_code_write_bc(code, &ic8, 2, expr);
@@ -87,7 +87,7 @@ azo_code_write_ic_u8_u32 (AZOCode *code, unsigned int ic, unsigned int val1, uns
 }
 
 static inline void
-azo_code_write_ic_u32_u32(AZOCode *code, unsigned int ic, unsigned int val1, unsigned int val2, const AZOExpression *expr)
+azo_code_write_ic_u32_u32(AZOCode *code, unsigned int ic, unsigned int val1, unsigned int val2, const AZONode *expr)
 {
 	uint8_t ic8 = ic;
 	azo_code_write_bc(code, &ic8, 1, expr);

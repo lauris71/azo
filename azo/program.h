@@ -39,7 +39,7 @@ struct _AZOProgram {
  * @param code a compiled AZOCode object
  * @return a new AZOProgram
  */
-AZOProgram *azo_program_new(AZOContext *ctx, AZOCode *code, AZOExpression *tree, AZOSource *src);
+AZOProgram *azo_program_new(AZOContext *ctx, AZOCode *code, AZONode *tree, AZOSource *src);
 
 void azo_program_delete (AZOProgram *program);
 

@@ -12,12 +12,12 @@
 #include <az/string.h>
 
 #include <azo/compiler/compiler.h>
-#include <azo/expression.h>
+#include <azo/node.h>
 #include <azo/keyword.h>
 #include <azo/optimizer.h>
 
 static void
-analyze_variables (AZOCompiler *comp, AZOExpression *expr)
+analyze_variables (AZOCompiler *comp, AZONode *expr)
 {
 	AZOVariable *var;
 	fprintf (stderr, "Popping scope:\n");
@@ -27,11 +27,11 @@ analyze_variables (AZOCompiler *comp, AZOExpression *expr)
 }
 
 static unsigned int
-resolve_function (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
+resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
-	AZOExpression *obj, *type, *args, *body, *child;
+	AZONode *obj, *type, *args, *body, *child;
 	unsigned int result = 0;
-	if (expr->term.subtype == FUNCTION_MEMBER) {
+	if (expr->term.subtype == AZO_TERM_FUNCTION_MEMBER) {
 		type = expr->children;
 		obj = type->next;
 		args = obj->next;
@@ -47,14 +47,14 @@ resolve_function (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	unsigned int ret_type;
 	type = azo_compiler_resolve_expression (comp, type, flags, &result);
 	if (result) return result;
-	if ((type->term.type == AZO_TERM_EMPTY) || ((type->term.type == EXPRESSION_KEYWORD) && (type->term.subtype == AZO_KEYWORD_VOID))) {
+	if ((type->term.type == AZO_TERM_EMPTY) || ((type->term.type == AZO_TERM_KEYWORD) && (type->term.subtype == AZO_KEYWORD_VOID))) {
 		/* Replace void with type none */
-		type->term.type = EXPRESSION_TYPE;
+		type->term.type = AZO_TERM_TYPE;
 		type->term.subtype = AZ_TYPE_NONE;
 		az_packed_value_clear (&type->value);
 		ret_type = AZ_TYPE_NONE;
 	} else {
-		if (type->term.type != EXPRESSION_CONSTANT) {
+		if (type->term.type != AZO_TERM_CONSTANT) {
 			fprintf (stderr, "resolve_function: Return type is not a compile-time constant (%u/%u)\n", type->term.type, type->term.subtype);
 			return 1;
 		}
@@ -62,7 +62,7 @@ resolve_function (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 			fprintf (stderr, "resolve_function: Return type is not a class\n");
 			return 1;
 		}
-		type->term.type = EXPRESSION_TYPE;
+		type->term.type = AZO_TERM_TYPE;
 		type->term.subtype = AZ_IMPL_TYPE((AZImplementation *) type->value.v.block);
 		ret_type = AZ_IMPL_TYPE((AZImplementation *) type->value.v.block);
 	}
@@ -72,7 +72,7 @@ resolve_function (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	if (obj) {
 		obj = azo_compiler_resolve_expression (comp, obj, flags, &result);
 		if (result) return result;
-		if (obj->term.type == EXPRESSION_CONSTANT) {
+		if (obj->term.type == AZO_TERM_CONSTANT) {
 			if (obj->term.subtype != AZ_TYPE_CLASS) {
 				fprintf (stderr, "resolve_function: parent is constant non-class (%u)\n", obj->term.subtype);
 				return 1;
@@ -84,16 +84,16 @@ resolve_function (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 
 	unsigned int n_args = 0;
 	for (child = args->children; child; child = child->next) {
-		if (child->term.type != EXPRESSION_ARGUMENT_DECLARATION) {
+		if (child->term.type != AZO_TERM_ARGUMENT_DECLARATION) {
 			fprintf (stderr, "resolve_function: Invalid expression type %u/%u in signature\n", child->term.type, child->term.subtype);
 			return 1;
 		}
 		type = child->children;
-		AZOExpression *name = type->next;
+		AZONode *name = type->next;
 		type = azo_compiler_resolve_expression (comp, type, flags, &result);
 		if (result) return result;
 		if (type->term.type != AZO_TERM_EMPTY) {
-			if (type->term.type != EXPRESSION_CONSTANT) {
+			if (type->term.type != AZO_TERM_CONSTANT) {
 				fprintf (stderr, "resolve_function: Argument type is not a compile-time constant (%u/%u)\n", type->term.type, type->term.subtype);
 				return 1;
 			}
@@ -102,7 +102,7 @@ resolve_function (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 				return 1;
 			}
 		}
-		if ((name->term.type != EXPRESSION_REFERENCE) || (name->term.subtype != REFERENCE_VARIABLE)) {
+		if ((name->term.type != AZO_TERM_REFERENCE) || (name->term.subtype != AZO_TERM_REFERENCE_VARIABLE)) {
 			fprintf (stderr, "resolve_function: Invalid expression type %u/%u in signature\n", name->term.type, name->term.subtype);
 			return 1;
 		}
@@ -134,9 +134,9 @@ resolve_function (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 }
 
 static unsigned int
-resolve_declaration (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
+resolve_declaration (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
-	AZOExpression *id, *value;
+	AZONode *id, *value;
 	AZOVariable *var;
 	unsigned int result;
 	id = expr->children;
@@ -151,7 +151,7 @@ resolve_declaration (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	if (value) {
 		value = azo_compiler_resolve_expression (comp, value, flags, &result);
 		if (result) return result;
-		if (!(flags & AZO_COMPILER_NO_CONST_ASSIGN) && value->term.type == EXPRESSION_CONSTANT) {
+		if (!(flags & AZO_COMPILER_NO_CONST_ASSIGN) && value->term.type == AZO_TERM_CONSTANT) {
 			var->const_expr = value;
 		}
 	}
@@ -159,9 +159,9 @@ resolve_declaration (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 }
 
 static unsigned int
-resolve_declaration_list (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
+resolve_declaration_list (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
-	AZOExpression *type, *child;
+	AZONode *type, *child;
 	unsigned int result;
 	type = expr->children;
 	child = type->next;
@@ -169,7 +169,7 @@ resolve_declaration_list (AZOCompiler *comp, AZOExpression *expr, unsigned int f
 	if (result) {
 		return result;
 	}
-	if (type->term.type != EXPRESSION_CONSTANT) {
+	if (type->term.type != AZO_TERM_CONSTANT) {
 		fprintf (stderr, "resolve_declaration_list: Type expression is not compile-time constant (%u/%u)\n", type->term.type, type->term.subtype);
 		return 1;
 	}
@@ -177,7 +177,7 @@ resolve_declaration_list (AZOCompiler *comp, AZOExpression *expr, unsigned int f
 		fprintf (stderr, "resolve_declaration_list: Type expression is not a class\n");
 		return 1;
 	}
-	type->term.type = EXPRESSION_TYPE;
+	type->term.type = AZO_TERM_TYPE;
 	type->term.subtype = AZ_IMPL_TYPE((AZImplementation *) type->value.v.block);
 	az_packed_value_clear (&type->value);
 	for (child = type->next; child; child = child->next) {
@@ -189,9 +189,9 @@ resolve_declaration_list (AZOCompiler *comp, AZOExpression *expr, unsigned int f
 }
 
 static unsigned int
-resolve_children (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
+resolve_children (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
-	for (AZOExpression *child = expr->children; child; child = child->next) {
+	for (AZONode *child = expr->children; child; child = child->next) {
 		unsigned int result;
 		azo_compiler_resolve_expression (comp, child, flags, &result);
 		if (result) return result;
@@ -200,12 +200,12 @@ resolve_children (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 }
 
 static unsigned int
-resolve_for (AZOCompiler *comp, AZOExpression *expr, unsigned int *result)
+resolve_for (AZOCompiler *comp, AZONode *expr, unsigned int *result)
 {
-	AZOExpression *init = expr->children;
-	AZOExpression *test = init->next;
-	AZOExpression *step = test->next;
-	AZOExpression *content = step->next;
+	AZONode *init = expr->children;
+	AZONode *test = init->next;
+	AZONode *step = test->next;
+	AZONode *content = step->next;
 	/* for: create new scope */
 	azo_frame_push_scope (comp->current);
 	azo_compiler_resolve_expression (comp, init, AZO_COMPILER_NO_CONST_ASSIGN, result);
@@ -219,54 +219,54 @@ resolve_for (AZOCompiler *comp, AZOExpression *expr, unsigned int *result)
 }
 
 static unsigned int
-resolve_assign (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
+resolve_assign (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
-	AZOExpression *left = expr->children;
-	AZOExpression *right = left->next;
+	AZONode *left = expr->children;
+	AZONode *right = left->next;
 
 	/* Replace shorhand binary operations with full binary operations */
 	int binary_type = -1;
 	switch (expr->term.subtype) {
-		case ASSIGN_PLUS:
-			binary_type = ARITHMETIC_PLUS;
+		case AZO_TERM_ASSIGN_PLUS:
+			binary_type = AZO_TERM_ARITHMETIC_PLUS;
 			break;
-		case ASSIGN_MINUS:
-			binary_type = ARITHMETIC_MINUS;
+		case AZO_TERM_ASSIGN_MINUS:
+			binary_type = AZO_TERM_ARITHMETIC_MINUS;
 			break;
-		case ASSIGN_STAR:
-			binary_type = ARITHMETIC_STAR;
+		case AZO_TERM_ASSIGN_STAR:
+			binary_type = AZO_TERM_ARITHMETIC_STAR;
 			break;
-		case ASSIGN_SLASH:
-			binary_type = ARITHMETIC_SLASH;
+		case AZO_TERM_ASSIGN_SLASH:
+			binary_type = AZO_TERM_ARITHMETIC_SLASH;
 			break;
-		case ASSIGN_PERCENT:
-			binary_type = ARITHMETIC_PERCENT;
+		case AZO_TERM_ASSIGN_PERCENT:
+			binary_type = AZO_TERM_ARITHMETIC_PERCENT;
 			break;
-		case ASSIGN_SHIFT_LEFT:
-			binary_type = ARITHMETIC_SHIFT_LEFT;
+		case AZO_TERM_ASSIGN_SHIFT_LEFT:
+			binary_type = AZO_TERM_ARITHMETIC_SHIFT_LEFT;
 			break;
-		case ASSIGN_SHIFT_RIGHT:
-			binary_type = ARITHMETIC_SHIFT_RIGHT;
+		case AZO_TERM_ASSIGN_SHIFT_RIGHT:
+			binary_type = AZO_TERM_ARITHMETIC_SHIFT_RIGHT;
 			break;
-		case ASSIGN_AND:
-			binary_type = ARITHMETIC_AND;
+		case AZO_TERM_ASSIGN_AND:
+			binary_type = AZO_TERM_ARITHMETIC_AND;
 			break;
-		case ASSIGN_OR:
-			binary_type = ARITHMETIC_OR;
+		case AZO_TERM_ASSIGN_OR:
+			binary_type = AZO_TERM_ARITHMETIC_OR;
 			break;
-		case ASSIGN_XOR:
-			binary_type = ARITHMETIC_CARET;
+		case AZO_TERM_ASSIGN_XOR:
+			binary_type = AZO_TERM_ARITHMETIC_CARET;
 			break;
 		default:
 			break;
 	}
 	if (binary_type >= 0) {
-		AZOExpression *binary = azo_expression_new (EXPRESSION_BINARY, binary_type, expr->term.start, expr->term.end);
-		AZOExpression *lhs = azo_expression_new (left->term.type, left->term.subtype, left->term.start, left->term.end);
+		AZONode *binary = azo_node_new (AZO_TERM_BINARY, binary_type, expr->term.start, expr->term.end);
+		AZONode *lhs = azo_node_new (left->term.type, left->term.subtype, left->term.start, left->term.end);
 		az_packed_value_copy(&lhs->value, &left->value);
 		binary->children = lhs;
 		lhs->next = right;
-		expr->term.subtype = ASSIGN;
+		expr->term.subtype = AZO_TERM_ASSIGN_PLAIN;
 		left->next = binary;
 		unsigned int result;
 		azo_compiler_resolve_expression(comp, expr, flags, &result);
@@ -278,7 +278,7 @@ resolve_assign (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	if (result) return result;
 	right = azo_compiler_resolve_expression (comp, right, flags, &result);
 	if (result) return result;
-	if ((left->term.type == EXPRESSION_VARIABLE) && (left->term.subtype == VARIABLE_LOCAL)) {
+	if ((left->term.type == AZO_TERM_VARIABLE) && (left->term.subtype == AZO_TERM_VARIABLE_LOCAL)) {
 		AZOVariable *var = azo_frame_lookup_local_var (comp->current, left->value.v.string);
 		if (!var) {
 			fprintf (stderr, "resolve_assign: CRITICAL variable %u not found\n", left->var_pos);
@@ -289,7 +289,7 @@ resolve_assign (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 			return 0;
 		}
 		/* Plain assignment of constant variable creates a compile-time constant expression */
-		if ((expr->term.subtype == ASSIGN) && (right->term.type == EXPRESSION_CONSTANT)) {
+		if ((expr->term.subtype == AZO_TERM_ASSIGN_PLAIN) && (right->term.type == AZO_TERM_CONSTANT)) {
 			/*
 			 * var = CONST_EXPRESSION
 			 * We can store the compile-time constant expression in the variable and treat is as a constant until the next assignment
@@ -308,13 +308,13 @@ resolve_assign (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 }
 
 static unsigned int
-resolve_prefix_suffix (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
+resolve_prefix_suffix (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
-	AZOExpression *left = expr->children;
+	AZONode *left = expr->children;
 	unsigned int result;
 	left = azo_compiler_resolve_expression (comp, left, flags | AZO_COMPILER_VAR_IS_LVALUE, &result);
 	if (result) return result;
-	if ((left->term.type == EXPRESSION_VARIABLE) && (left->term.subtype == VARIABLE_LOCAL)) {
+	if ((left->term.type == AZO_TERM_VARIABLE) && (left->term.subtype == AZO_TERM_VARIABLE_LOCAL)) {
 		AZOVariable *var = azo_frame_lookup_local_var (comp->current, left->value.v.string);
 		if (!var) {
 			fprintf (stderr, "Critical failure: variable %u not found\n", left->var_pos);
@@ -327,11 +327,11 @@ resolve_prefix_suffix (AZOCompiler *comp, AZOExpression *expr, unsigned int flag
 }
 
 static unsigned int
-resolve_return (AZOCompiler *comp, AZOExpression *term, unsigned int flags)
+resolve_return (AZOCompiler *comp, AZONode *term, unsigned int flags)
 {
 	unsigned int result = 0;
 	if (term->children) {
-		AZOExpression *val = term->children;
+		AZONode *val = term->children;
 		val = azo_compiler_resolve_expression (comp, val, flags, &result);
 		if (result) return result;
 		if (val->term.type == AZO_TERM_EMPTY) {
@@ -339,7 +339,7 @@ resolve_return (AZOCompiler *comp, AZOExpression *term, unsigned int flags)
 				fprintf (stderr, "azo_compiler_resolve_expression: Must return a value\n");
 				result = 1;
 			}
-		} else if (val->term.type == EXPRESSION_CONSTANT) {
+		} else if (val->term.type == AZO_TERM_CONSTANT) {
 			if (!az_type_is_a (val->term.subtype, comp->current->ret_type)) {
 				if (az_value_convert_in_place (&val->value.impl, &val->value.v, comp->current->ret_type, AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
 					fprintf (stderr, "azo_compiler_resolve_expression: Return value is wrong type\n");
@@ -360,14 +360,14 @@ resolve_return (AZOCompiler *comp, AZOExpression *term, unsigned int flags)
 }
 
 unsigned int
-azo_compiler_resolve_cast (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
+azo_compiler_resolve_cast (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
-	AZOExpression *type = expr->children;
-	AZOExpression *val = type->next;
+	AZONode *type = expr->children;
+	AZONode *val = type->next;
 	unsigned int result;
 	type = azo_compiler_resolve_expression (comp, type, flags, &result);
 	if (result) return result;
-	if (type->term.type != EXPRESSION_CONSTANT) {
+	if (type->term.type != AZO_TERM_CONSTANT) {
 		fprintf (stderr, "azo_compiler_resolve_cast: Type expression is not a compile-time constant\n");
 		return 1;
 	}
@@ -375,7 +375,7 @@ azo_compiler_resolve_cast (AZOCompiler *comp, AZOExpression *expr, unsigned int 
 		fprintf (stderr, "azo_compiler_resolve_cast: Type is not a class\n");
 		return 1;
 	}
-	type->term.type = EXPRESSION_TYPE;
+	type->term.type = AZO_TERM_TYPE;
 	type->term.subtype = AZ_IMPL_TYPE((AZImplementation *) type->value.v.block);
 
 	val = azo_compiler_resolve_expression (comp, val, flags, &result);
@@ -383,68 +383,68 @@ azo_compiler_resolve_cast (AZOCompiler *comp, AZOExpression *expr, unsigned int 
 	return 0;
 }
 
-AZOExpression *
-azo_compiler_resolve_expression (AZOCompiler *comp, AZOExpression *expr, unsigned int flags, unsigned int *result)
+AZONode *
+azo_compiler_resolve_expression (AZOCompiler *comp, AZONode *expr, unsigned int flags, unsigned int *result)
 {
 	*result = 0;
-	if ((expr->term.type == EXPRESSION_KEYWORD) && (expr->term.subtype == AZO_KEYWORD_FOR)) {
+	if ((expr->term.type == AZO_TERM_KEYWORD) && (expr->term.subtype == AZO_KEYWORD_FOR)) {
 		resolve_for (comp, expr, result);
-	} else if (expr->term.type == AZO_EXPRESSION_BLOCK) {
+	} else if (expr->term.type == AZO_TERM_BLOCK) {
 		/* block: create new scope */
 		azo_frame_push_scope (comp->current);
 		resolve_children (comp, expr, flags);
 		//analyze_variables (comp, expr);
 		expr->scope_size = azo_scope_get_size (comp->current->scope);
 		azo_frame_pop_scope (comp->current);
-	} else if (expr->term.type == EXPRESSION_FUNCTION) {
+	} else if (expr->term.type == AZO_TERM_FUNCTION) {
 		/* function: create new frame */
 		*result = resolve_function (comp, expr, flags);
-	} else if (expr->term.type == EXPRESSION_DECLARATION_LIST) {
+	} else if (expr->term.type == AZO_TERM_DECLARATION_LIST) {
 		*result = resolve_declaration_list (comp, expr, flags);
-	} else if (expr->term.type == EXPRESSION_REFERENCE) {
+	} else if (expr->term.type == AZO_TERM_REFERENCE) {
 		expr = azo_compiler_resolve_reference (comp, expr, flags, result);
-	} else if (expr->term.type == EXPRESSION_CAST) {
+	} else if (expr->term.type == AZO_TERM_CAST) {
 		*result = azo_compiler_resolve_cast(comp, expr, flags);
-	} else if (expr->term.type == EXPRESSION_FUNCTION_CALL) {
+	} else if (expr->term.type == AZO_TERM_FUNCTION_CALL) {
 		expr = azo_compiler_resolve_function_call (comp, expr, flags, result);
-	} else if ((expr->term.type == EXPRESSION_KEYWORD) && (expr->term.subtype == AZO_KEYWORD_NEW)) {
+	} else if ((expr->term.type == AZO_TERM_KEYWORD) && (expr->term.subtype == AZO_KEYWORD_NEW)) {
 		expr = azo_compiler_resolve_new (comp, expr, flags, result);
-	} else if (AZO_EXPRESSION_IS (expr, EXPRESSION_KEYWORD, AZO_KEYWORD_RETURN)) {
+	} else if (AZO_NODE_IS (expr, AZO_TERM_KEYWORD, AZO_KEYWORD_RETURN)) {
 		*result = resolve_return (comp, expr, flags);
-	} else if (expr->term.type == EXPRESSION_ASSIGN) {
+	} else if (expr->term.type == AZO_TERM_ASSIGN) {
 		*result = resolve_assign (comp, expr, flags);
-	} else if (expr->term.type == EXPRESSION_PREFIX) {
-		if ((expr->term.subtype == PREFIX_INCREMENT) || (expr->term.subtype == PREFIX_DECREMENT)) {
+	} else if (expr->term.type == AZO_TERM_PREFIX) {
+		if ((expr->term.subtype == AZO_TERM_PREFIX_INCREMENT) || (expr->term.subtype == AZO_TERM_PREFIX_DECREMENT)) {
 			*result = resolve_prefix_suffix (comp, expr, flags);
 		} else {
 			/* fixme: implement sub-expression resolve in prefix resolver */
 			resolve_children (comp, expr, flags);
 			azo_compiler_resolve_prefix (expr);
 		}
-	} else if (expr->term.type == EXPRESSION_SUFFIX) {
+	} else if (expr->term.type == AZO_TERM_SUFFIX) {
 		*result = resolve_prefix_suffix (comp, expr, flags);
 	} else {
 		resolve_children (comp, expr, flags);
-		if (expr->term.type == EXPRESSION_BINARY) {
+		if (expr->term.type == AZO_TERM_BINARY) {
 			/* fixme: implement sub-expression resolve in literal resolver */
 			azo_compiler_resolve_binary (expr);
-		} else if (expr->term.type == EXPRESSION_LITERAL_ARRAY) {
+		} else if (expr->term.type == AZO_TERM_LITERAL_ARRAY) {
 			azo_compiler_resolve_array_literal (expr);
 		}
 	}
 	return expr;
 }
 
-AZOExpression *
-azo_compiler_resolve_frame (AZOCompiler *comp, AZOExpression *expr)
+AZONode *
+azo_compiler_resolve_frame (AZOCompiler *comp, AZONode *expr)
 {
-	AZOExpression *child;
+	AZONode *child;
 	unsigned int result, ret_is_last = 0;
 	for (AZOVariable *var = comp->current->scope->variables; var; var = var->next) {
 		var->const_expr = NULL;
 	}
 	for (child = expr->children; child; child = child->next) {
-		if (AZO_EXPRESSION_IS (child, EXPRESSION_KEYWORD, AZO_KEYWORD_RETURN)) {
+		if (AZO_NODE_IS (child, AZO_TERM_KEYWORD, AZO_KEYWORD_RETURN)) {
 			result = resolve_return (comp, child, 0);
 			ret_is_last = 1;
 		} else {

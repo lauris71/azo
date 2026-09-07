@@ -7,7 +7,7 @@
 * Copyright (C) Lauris Kaplinski 2016-2026
 */
 
-#include <azo/expression.h>
+#include <azo/node.h>
 
 #ifdef __cplusplus
 extern "C" {

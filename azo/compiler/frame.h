@@ -7,7 +7,7 @@
  * Copyright (C) Lauris Kaplinski 2021
  */
 
-typedef struct _AZOExpression AZOExpression;
+typedef struct _AZONode AZONode;
 
 typedef struct _AZOFrame AZOFrame;
 

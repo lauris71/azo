@@ -7,7 +7,7 @@ set(AZO_HEADERS
 	debug.h
 	debugger.h
 	exception.h
-	expression.h
+	node.h
 	interpreter.h
 	keyword.h
 	namespace.h
@@ -30,7 +30,7 @@ set(AZO_SOURCES
 	debug.c
 	debugger.c
 	exception.c
-	expression.c
+	node.c
 	interpreter.c
 	keyword.c
 	namespace.c

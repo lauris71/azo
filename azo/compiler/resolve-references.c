@@ -16,7 +16,7 @@
 
 #include <az/classes/attrib-dict.h>
 #include <azo/compiler/compiler.h>
-#include <azo/expression.h>
+#include <azo/node.h>
 #include <azo/keyword.h>
 #include <azo/optimizer.h>
 
@@ -33,13 +33,13 @@ describe(FILE *ofs, const char *text, const AZString *name, const AZImplementati
 }
 
 static unsigned int
-resolve_member_class (AZOCompiler *comp, AZOExpression *member, const AZClass *klass, unsigned int flags)
+resolve_member_class (AZOCompiler *comp, AZONode *member, const AZClass *klass, unsigned int flags)
 {
 	return 0;
 }
 
 static unsigned int
-resolve_member_impl (AZOCompiler *comp, AZOExpression *member, const AZClass *klass, const AZImplementation *impl, unsigned int flags)
+resolve_member_impl (AZOCompiler *comp, AZONode *member, const AZClass *klass, const AZImplementation *impl, unsigned int flags)
 {
 	return 0;
 }
@@ -47,7 +47,7 @@ resolve_member_impl (AZOCompiler *comp, AZOExpression *member, const AZClass *kl
 #define noDEBUG_MEMBER_INST
 
 static unsigned int
-resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str, unsigned int flags)
+resolve_member_inst (AZOFrame *frame, AZONode *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str, unsigned int flags)
 {
 	const AZClass *def_class;
 	const AZImplementation *def_impl;
@@ -69,10 +69,10 @@ resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass,
 				fprintf (stderr, "resolve_member: Property %s is not readable\n", str->str);
 				return 1;
 			}
-			expr->term.type = EXPRESSION_CONSTANT;
+			expr->term.type = AZO_TERM_CONSTANT;
 			/* Final undefined value is not normal but we have to handle it */
 			expr->term.subtype = (expr->value.impl) ? AZ_IMPL_TYPE(expr->value.impl) : 0;
-			azo_expression_clear_children(expr);
+			azo_node_clear_children(expr);
 #ifdef noDEBUG_MEMBER_INST
 			describe(stderr, "resolve_member: Replaced final property %s with '%s'\n", str, expr->value.impl, &expr->value.v);
 #endif
@@ -92,7 +92,7 @@ resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass,
 		const AZImplementation *attr_impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, str, &attr_val.value, 64, &attr_flags);
 		if (attr_flags & AZ_ATTRIB_ARRAY_IS_FINAL) {
 			az_packed_value_set_from_impl_value (&expr->value, attr_impl, &attr_val.value);
-			expr->term.type = EXPRESSION_CONSTANT;
+			expr->term.type = AZO_TERM_CONSTANT;
 			if (attr_impl) {
 				expr->term.subtype = AZ_IMPL_TYPE(attr_impl);
 				az_value_clear (attr_impl, &attr_val.value);
@@ -100,7 +100,7 @@ resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass,
 				// Final undefined value, not normal but we have to handle it
 				expr->term.subtype = 0;
 			}
-			azo_expression_clear_children(expr);
+			azo_node_clear_children(expr);
 #ifdef noDEBUG_MEMBER_INST
 			describe(stderr, "resolve_member: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
 #endif
@@ -112,21 +112,21 @@ resolve_member_inst (AZOFrame *frame, AZOExpression *expr, const AZClass *klass,
 
 /*
  * MEMBER_REFERENCE
- *   REFERENCE_VARIABLE | REFERENCE_MEMBER | CONSTANT
- *   REFERENCE_PROPERTY
+ *   AZO_TERM_REFERENCE_VARIABLE | AZO_TERM_REFERENCE_MEMBER | CONSTANT
+ *   AZO_TERM_REFERENCE_PROPERTY
  */
 
 static unsigned int
-resolve_member (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
+resolve_member (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
-	AZOExpression *parent, *member;
+	AZONode *parent, *member;
 	unsigned int result;
 	parent = azo_compiler_resolve_expression (comp, expr->children, flags, &result);
 	if (result) return result;
 	member = azo_compiler_resolve_expression (comp, expr->children->next, flags, &result);
 	if (result) return result;
-	if (parent->term.type == EXPRESSION_CONSTANT) {
-		if (AZO_EXPRESSION_IS(member, EXPRESSION_REFERENCE, REFERENCE_PROPERTY)) {
+	if (parent->term.type == AZO_TERM_CONSTANT) {
+		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
 			void *inst;
 			const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
 			return resolve_member_inst (comp->current, expr, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
@@ -136,11 +136,11 @@ resolve_member (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 }
 
 /*
- * REFERENCE_VARIABLE
+ * AZO_TERM_REFERENCE_VARIABLE
  */
 
 static unsigned int
-resolve_this_reference (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
+resolve_this_reference (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
 	const AZClass *klass = AZ_CLASS_FROM_IMPL(comp->current->this_impl);
 	return resolve_member_inst (comp->current, expr, klass, comp->current->this_impl, comp->current->this_inst, expr->value.v.string, flags);
@@ -149,7 +149,7 @@ resolve_this_reference (AZOCompiler *comp, AZOExpression *expr, unsigned int fla
 #define noDEBUG_RESOLVE_VARIABLE
 
 static unsigned int
-resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
+resolve_variable (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
 	/*
 	 * Try global context
@@ -162,7 +162,7 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	assert (!expr->children);
 	expr->value.impl = azo_context_lookup (comp->ctx->globals, expr->value.v.string, &expr->value.v, 16);
 	if (expr->value.impl) {
-		expr->term.type = EXPRESSION_CONSTANT;
+		expr->term.type = AZO_TERM_CONSTANT;
 		expr->term.subtype = (expr->value.impl) ? AZ_PACKED_VALUE_TYPE(&expr->value) : 0;
 #ifdef DEBUG_RESOLVE_VARIABLE
 		/* If string resolved to global variable we can be sure it has at least reference left */
@@ -179,7 +179,7 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	AZOVariable *var = azo_frame_lookup_local_var (comp->current, expr->value.v.string);
 	if (var) {
 		if (!(flags & AZO_COMPILER_VAR_IS_LVALUE) && var->const_expr) {
-			expr->term.type = EXPRESSION_CONSTANT;
+			expr->term.type = AZO_TERM_CONSTANT;
 			expr->term.subtype = var->const_expr->term.subtype;
 			az_packed_value_copy (&expr->value, &var->const_expr->value);
 #ifdef noDEBUG_RESOLVE_VARIABLE
@@ -190,8 +190,8 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 #ifdef noDEBUG_RESOLVE_VARIABLE
 		fprintf (stderr, "resolve_variable: Local %s at pos %u\n", expr->value.v.string->str, var->pos);
 #endif
-		expr->term.type = EXPRESSION_VARIABLE;
-		expr->term.subtype = VARIABLE_LOCAL;
+		expr->term.type = AZO_TERM_VARIABLE;
+		expr->term.subtype = AZO_TERM_VARIABLE_LOCAL;
 		az_packed_value_clear (&expr->value);
 		expr->var_pos = var->pos;
 		return 0;
@@ -205,7 +205,7 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	var = azo_frame_lookup_parent_var (comp->current, expr->value.v.string);
 	if (var) {
 		if (!(flags & AZO_COMPILER_VAR_IS_LVALUE) && var->const_expr) {
-			expr->term.type = EXPRESSION_CONSTANT;
+			expr->term.type = AZO_TERM_CONSTANT;
 			expr->term.subtype = var->const_expr->term.subtype;
 			az_packed_value_copy (&expr->value, &var->const_expr->value);
 #ifdef noDEBUG_RESOLVE_VARIABLE
@@ -216,8 +216,8 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 #ifdef DEBUG_RESOLVE_VARIABLE
 		fprintf (stderr, "resolve_variable: Parent %s at pos %u\n", expr->value.v.string->str, var->pos);
 #endif
-		expr->term.type = EXPRESSION_VARIABLE;
-		expr->term.subtype = VARIABLE_PARENT;
+		expr->term.type = AZO_TERM_VARIABLE;
+		expr->term.subtype = AZO_TERM_VARIABLE_PARENT;
 		az_packed_value_clear (&expr->value);
 		expr->var_pos = var->pos;
 		return 0;
@@ -234,7 +234,7 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 			/* Parent */
 			var = azo_frame_ensure_variable (comp->current, expr->value.v.string);
 			if (!(flags & AZO_COMPILER_VAR_IS_LVALUE) && var->const_expr) {
-				expr->term.type = EXPRESSION_CONSTANT;
+				expr->term.type = AZO_TERM_CONSTANT;
 				expr->term.subtype = var->const_expr->term.subtype;
 				az_packed_value_copy (&expr->value, &var->const_expr->value);
 #ifdef noDEBUG_RESOLVE_VARIABLE
@@ -246,8 +246,8 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 #ifdef DEBUG_RESOLVE_VARIABLE
 			fprintf (stderr, "Created parent variable %s at pos %u\n", expr->value.v.string->str, var->pos);
 #endif
-			expr->term.type = EXPRESSION_VARIABLE;
-			expr->term.subtype = VARIABLE_PARENT;
+			expr->term.type = AZO_TERM_VARIABLE;
+			expr->term.subtype = AZO_TERM_VARIABLE_PARENT;
 			az_packed_value_clear (&expr->value);
 			expr->var_pos = var->pos;
 			return 0;
@@ -260,33 +260,33 @@ resolve_variable (AZOCompiler *comp, AZOExpression *expr, unsigned int flags)
 	return 0;
 }
 
-AZOExpression *
-azo_compiler_resolve_reference (AZOCompiler *comp, AZOExpression *expr, unsigned int flags, unsigned int *result)
+AZONode *
+azo_compiler_resolve_reference (AZOCompiler *comp, AZONode *expr, unsigned int flags, unsigned int *result)
 {
-	if (expr->term.subtype == REFERENCE_VARIABLE) {
+	if (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
 		*result = resolve_variable (comp, expr, flags);
-	} else if (expr->term.subtype == REFERENCE_MEMBER) {
+	} else if (expr->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
 		*result = resolve_member (comp, expr, flags);
 	}
 	return expr;
 }
 
-unsigned int resolve_call (AZOCompiler *comp, AZOExpression *expr, AZOExpression *ref, unsigned int n_args, unsigned int arg_types[], unsigned int flags)
+unsigned int resolve_call (AZOCompiler *comp, AZONode *expr, AZONode *ref, unsigned int n_args, unsigned int arg_types[], unsigned int flags)
 {
 	return 0;
 }
 
 #define noDEBUG_RESOLVE_FUNCTION_CALL
 
-AZOExpression *
-azo_compiler_resolve_function_call (AZOCompiler *comp, AZOExpression *expr, unsigned int flags, unsigned int *result)
+AZONode *
+azo_compiler_resolve_function_call (AZOCompiler *comp, AZONode *expr, unsigned int flags, unsigned int *result)
 {
-	AZOExpression *ref, *args, *child;
+	AZONode *ref, *args, *child;
 	ref = expr->children;
 	args = ref->next;
 	assert (!args->next);
 	*result = 0;
-	if (args->term.type != EXPRESSION_LIST) {
+	if (args->term.type != AZO_TERM_LIST) {
 		fprintf (stderr, "azo_compiler_resolve_function_call: arguments is not list\n");
 		*result = 1;
 		return expr;
@@ -298,12 +298,12 @@ azo_compiler_resolve_function_call (AZOCompiler *comp, AZOExpression *expr, unsi
 	if (*result) return expr;
 
 	/* If reference is already resolved to constant we have nothing to do */
-	if (ref->term.type != EXPRESSION_REFERENCE) return expr;
+	if (ref->term.type != AZO_TERM_REFERENCE) return expr;
 	/* Test if arguments list is constant */
 	unsigned int n_args = 0;
 	unsigned int arg_types[64];
 	for (child = args->children; child; child = child->next) {
-		if (child->term.type != EXPRESSION_CONSTANT) return expr;
+		if (child->term.type != AZO_TERM_CONSTANT) return expr;
 		arg_types[n_args] = child->term.subtype;
 		n_args += 1;
 		if (n_args >= 64) return expr;
@@ -313,17 +313,17 @@ azo_compiler_resolve_function_call (AZOCompiler *comp, AZOExpression *expr, unsi
 	const AZImplementation *impl;
 	void *inst;
 	AZString *str;
-	if (ref->term.subtype == REFERENCE_MEMBER) {
-		AZOExpression *parent, *member;
+	if (ref->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
+		AZONode *parent, *member;
 		parent = ref->children;
 		member = parent->next;
-		if (parent->term.type != EXPRESSION_CONSTANT) return expr;
-		if ((member->term.type != EXPRESSION_REFERENCE) || (member->term.subtype != REFERENCE_PROPERTY)) return expr;
+		if (parent->term.type != AZO_TERM_CONSTANT) return expr;
+		if ((member->term.type != AZO_TERM_REFERENCE) || (member->term.subtype != AZO_TERM_REFERENCE_PROPERTY)) return expr;
 		klass = az_type_get_class (parent->term.subtype);
 		impl = parent->value.impl;
 		inst = az_value_get_inst(parent->value.impl, &parent->value.v);
 		str = member->value.v.string;
-	} else if (ref->term.subtype == REFERENCE_VARIABLE) {
+	} else if (ref->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
 		if (!comp->current->this_impl) return expr;
 		klass = AZ_CLASS_FROM_IMPL(comp->current->this_impl);
 		impl = comp->current->this_impl;
@@ -352,7 +352,7 @@ azo_compiler_resolve_function_call (AZOCompiler *comp, AZOExpression *expr, unsi
 			}
 #if 1
 			az_packed_value_set_from_impl_value (&ref->value, prop_impl, &prop_val.value);
-			ref->term.type = EXPRESSION_CONSTANT;
+			ref->term.type = AZO_TERM_CONSTANT;
 			if (prop_impl) {
 				ref->term.subtype = AZ_IMPL_TYPE(prop_impl);
 				az_value_clear (prop_impl, &prop_val.value);
@@ -368,7 +368,7 @@ azo_compiler_resolve_function_call (AZOCompiler *comp, AZOExpression *expr, unsi
 			//while (ref->children) {
 			//	child = ref->children;
 			//	expr->children = child->next;
-			//	azo_expression_free_tree (child);
+			//	azo_node_free_tree (child);
 			//}
 #endif
 			return expr;
@@ -379,12 +379,12 @@ azo_compiler_resolve_function_call (AZOCompiler *comp, AZOExpression *expr, unsi
 
 #define noDEBUG_RESOLVE_NEW
 
-AZOExpression *
-azo_compiler_resolve_new (AZOCompiler *comp, AZOExpression *expr, unsigned int flags, unsigned int *result)
+AZONode *
+azo_compiler_resolve_new (AZOCompiler *comp, AZONode *expr, unsigned int flags, unsigned int *result)
 {
 	static AZString *new_str = NULL;
 	if (!new_str) new_str = az_string_new((const uint8_t *) "new");
-	AZOExpression *ref, *args, *child;
+	AZONode *ref, *args, *child;
 	ref = expr->children;
 	args = ref->next;
 	assert (!args->next);
@@ -394,12 +394,12 @@ azo_compiler_resolve_new (AZOCompiler *comp, AZOExpression *expr, unsigned int f
 	args = azo_compiler_resolve_expression (comp, args, flags, result);
 	if (*result) return expr;
 
-	if ((ref->term.type != EXPRESSION_CONSTANT) || (ref->term.subtype != AZ_TYPE_CLASS)) {
+	if ((ref->term.type != AZO_TERM_CONSTANT) || (ref->term.subtype != AZ_TYPE_CLASS)) {
 		fprintf (stderr, "azo_compiler_resolve_new: reference is not a class\n");
 		*result = 1;
 		return expr;
 	}
-	if (args->term.type != EXPRESSION_LIST) {
+	if (args->term.type != AZO_TERM_LIST) {
 		fprintf (stderr, "azo_compiler_resolve_new: arguments is not list\n");
 		*result = 1;
 		return expr;
@@ -409,7 +409,7 @@ azo_compiler_resolve_new (AZOCompiler *comp, AZOExpression *expr, unsigned int f
 	unsigned int n_args = 0;
 	unsigned int arg_types[64];
 	for (child = args->children; child; child = child->next) {
-		if (child->term.type != EXPRESSION_CONSTANT) return expr;
+		if (child->term.type != AZO_TERM_CONSTANT) return expr;
 		arg_types[n_args] = child->term.subtype;
 		n_args += 1;
 		if (n_args >= 64) return expr;
@@ -436,9 +436,9 @@ azo_compiler_resolve_new (AZOCompiler *comp, AZOExpression *expr, unsigned int f
 				return expr;
 			}
 			az_packed_value_set_from_impl_value (&ref->value, prop_impl, &prop_val.value);
-			expr->term.type = EXPRESSION_FUNCTION_CALL;
-			expr->term.subtype = EXPRESSION_GENERIC;
-			ref->term.type = EXPRESSION_CONSTANT;
+			expr->term.type = AZO_TERM_FUNCTION_CALL;
+			expr->term.subtype = AZO_TERM_GENERIC;
+			ref->term.type = AZO_TERM_CONSTANT;
 			if (prop_impl) {
 				ref->term.subtype = AZ_IMPL_TYPE(prop_impl);
 				az_value_clear (prop_impl, &prop_val.value);

@@ -19,7 +19,7 @@ typedef struct _AZOCompiledFunctionClass AZOCompiledFunctionClass;
 #include <az/function.h>
 #include <az/object.h>
 
-#include <azo/expression.h>
+#include <azo/node.h>
 #include <azo/interpreter.h>
 
 #ifdef __cplusplus
@@ -31,7 +31,7 @@ struct _AZOCompiledFunction {
 	AZFunctionSignature *signature;
 	unsigned int bound;
 	AZOContext *ctx;
-	AZOExpression *root;
+	AZONode *root;
 	/* Code */
 	AZOProgram *prog;
 };

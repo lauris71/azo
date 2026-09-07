@@ -40,6 +40,9 @@ endif()
 
 add_subdirectory(azo)
 
+# Defines BUILD_TESTING (ON by default) and enables ctest
+include(CTest)
+
 if(BUILD_TESTING)
   add_subdirectory(tests)
 endif()

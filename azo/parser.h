@@ -13,7 +13,7 @@ typedef struct _AZOParserScope AZOParserScope;
 
 #define AZO_TYPE_PARSER azo_parser_get_type ()
 
-#include <azo/expression.h>
+#include <azo/node.h>
 #include <azo/source.h>
 #include <azo/tokenizer.h>
 
@@ -30,7 +30,7 @@ struct _AZOParser {
 	 * @brief Current expression, sub-expressions are added as it's children
 	 * 
 	 */
-	AZOExpression *current;
+	AZONode *current;
 };
 
 struct _AZOParserClass {
@@ -42,7 +42,7 @@ unsigned int azo_parser_get_type (void);
 void azo_parser_setup (AZOParser *parser, AZOSource *src);
 void azo_parser_release (AZOParser *parser);
 
-AZOExpression *azo_parser_parse (AZOParser *parser);
+AZONode *azo_parser_parse (AZOParser *parser);
 
 #ifdef __cplusplus
 }

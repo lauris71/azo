@@ -28,7 +28,7 @@
 #include <az/function.h>
 #include <az/reference.h>
 #include <az/value.h>
-#include <az/classes/value-array-ref.h>
+#include <az/classes/value-array.h>
 
 #include <azo/bytecode.h>
 #include <azo/compiled-function.h>
@@ -1370,7 +1370,7 @@ interpret_NEW_ARRAY (AZOInterpreter *intr, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
 	unsigned int size;
-	AZValueArrayRef *varray;
+	AZValueArray *varray;
 	AZClass *varray_class;
 	if (*ip & AZO_TC_CHECK_ARGS) {
 		if (!convert_to_u32 (intr, &size, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0), ip)) {
@@ -1380,8 +1380,8 @@ interpret_NEW_ARRAY (AZOInterpreter *intr, const unsigned char *ip)
 		size = *((unsigned int *) azo_stack_value_bw (&intr->stack, 0));
 	}
 	azo_stack_pop (&intr->stack, 1);
-	varray = az_value_array_ref_new (size);
-	varray_class = az_type_get_class (AZ_TYPE_VALUE_ARRAY_REF);
+	varray = az_value_array_new (size);
+	varray_class = az_type_get_class (AZ_TYPE_VALUE_ARRAY);
 	azo_stack_push_instance (&intr->stack, &varray_class->impl, varray);
 	az_reference_unref ((AZReferenceClass *) varray_class, &varray->reference);
 	return ip + 1;
@@ -1434,29 +1434,29 @@ interpret_LOAD_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 static const unsigned char *
 interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 {
-	AZValueArrayRef *varray;
+	AZValueArray *varray;
 	unsigned int idx;
 	AZPackedValue val = { 0 };
 	if (*ip & AZO_TC_CHECK_ARGS) {
-		if (!az_type_is_a (azo_stack_type_bw (&intr->stack, 2), AZ_TYPE_VALUE_ARRAY_REF)) {
+		if (!az_type_is_a (azo_stack_type_bw (&intr->stack, 2), AZ_TYPE_VALUE_ARRAY)) {
 			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
 			return NULL;
 		}
-		varray = *((AZValueArrayRef **) azo_stack_value_bw (&intr->stack, 2));
+		varray = *((AZValueArray **) azo_stack_value_bw (&intr->stack, 2));
 		if (!convert_to_u32 (intr, &idx, azo_stack_impl_bw (&intr->stack, 1), azo_stack_value_bw (&intr->stack, 1), ip)) {
 			return NULL;
 		}
-		if (idx >= varray->varray.list.collection.size) {
+		if (idx >= varray->list.collection.size) {
 			azo_exception_set (&intr->exc, AZO_EXCEPTION_OUT_OF_BOUNDS, 1UL << AZO_EXCEPTION_OUT_OF_BOUNDS, ip);
 			return NULL;
 		}
 		az_packed_value_set_from_impl_value (&val, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0));
 	} else {
-		varray = *((AZValueArrayRef **) azo_stack_value_bw (&intr->stack, 2));
+		varray = *((AZValueArray **) azo_stack_value_bw (&intr->stack, 2));
 		idx = *((unsigned int *) azo_stack_value_bw (&intr->stack, 1));
 		az_packed_value_set_from_impl_value (&val, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0));
 	}
-	az_value_array_ref_set_element (varray, idx, val.impl, &val.v);
+	az_value_array_set_element_from_val (varray, idx, val.impl, &val.v);
 	az_packed_value_clear (&val);
 	azo_stack_pop (&intr->stack, 2);
 	return ip + 1;

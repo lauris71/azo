@@ -18,7 +18,7 @@
 #include <azo/program.h>
 
 AZOProgram *
-azo_program_new(AZOContext *ctx, AZOCode *code, AZOExpression *tree, AZOSource *src)
+azo_program_new(AZOContext *ctx, AZOCode *code, AZONode *tree, AZOSource *src)
 {
 	AZOProgram *prog = (AZOProgram *) malloc(sizeof(AZOProgram));
 	memset (prog, 0, sizeof (AZOProgram));
@@ -87,8 +87,8 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	AZOSource *src = azo_source_new_static(name, code, code_len);
 	AZOParser parser;
 	azo_parser_setup (&parser, src);
-	AZOExpression *expr = azo_parser_parse (&parser);
-	azo_expression_print_info(expr, stdout, src, 0);
+	AZONode *expr = azo_parser_parse (&parser);
+	//azo_node_print_info(expr, stdout, src, 0);
 	AZOProgram *prog = azo_compiler_compile (&comp, expr, 1, src);
 	azo_parser_release (&parser);
 	azo_source_unref(src);
