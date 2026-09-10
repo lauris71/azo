@@ -10,8 +10,12 @@
 
 /* The tokenizer matches operators greedily in table order (first match wins), so
  * longer operators have to be listed before their prefixes (e.g. "<<=" before "<<") */
+/* Smaller precedence number binds tighter; the parser continues while
+ * left_precedence > operator_precedence (strictly).
+ * DOT binds tighter than function call/array access (1), so a level-1 parse
+ * consumes a member reference path and stops at the first ( or [ */
 AZOOperator azo_operators[] = {
-	{ AZO_OPERATOR_DOT, ".", 2, 0, 1 },
+	{ AZO_OPERATOR_DOT, ".", 2, 0, 0 },
 	/* Not used currently, keep for C reference */
 	{ AZO_OPERATOR_ARROW, "->", 2, 0, 1 },
 	/* In current version comma is not an operator at all (is separator) but we keep it here for C reference */

@@ -1,4 +1,4 @@
-#define __AZO_EXPRESSION_C__
+#define __AZO_NODE_C__
 
 /*
 * A languge implementation based on AZ
@@ -6,9 +6,11 @@
 * Copyright (C) Lauris Kaplinski 2016-2021
 */
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include <arikkei/arikkei-strlib.h>
 
@@ -23,8 +25,32 @@ azo_node_new (unsigned int type, unsigned int subtype, unsigned int start, unsig
 {
 	AZONode *expr = (AZONode *) malloc (sizeof (AZONode));
 	memset (expr, 0, sizeof (AZONode));
-	expr->term = (AZOTerm) {type, subtype, start, end};
+	expr->term = (AZOTerm) {type, 0, subtype, start, end};
 	return expr;
+}
+
+AZONode *
+azo_node_new_with_children(unsigned int type, unsigned int subtype, unsigned int start, unsigned int end, unsigned int n_children, ...)
+{
+	AZONode *node = azo_node_new(type, subtype, start, end);
+	if (n_children > 0) {
+		AZONode *last = NULL;
+		va_list ap;
+		va_start (ap, n_children);
+		for (unsigned int i = 0; i < n_children; i++) {
+			AZONode *child = va_arg (ap, AZONode *);
+			/* Only the tail child may be NULL */
+			assert (child || (i == n_children - 1));
+			if (!last) {
+				node->children = child;
+			} else {
+				last->next = child;
+			}
+			last = child;
+		}
+		va_end (ap);
+	}
+	return node;
 }
 
 void
@@ -51,6 +77,24 @@ azo_node_clear_children (AZONode *expr)
 	}
 }
 
+static unsigned int
+node_flatten (AZONode *node, AZONode **nodes, unsigned int max_nodes, unsigned int pos)
+{
+	while (node) {
+		if (pos < max_nodes) nodes[pos] = node;
+		pos += 1;
+		if (node->children) pos = node_flatten (node->children, nodes, max_nodes, pos);
+		node = node->next;
+	}
+	return pos;
+}
+
+unsigned int
+azo_node_flatten (AZONode *node, AZONode **nodes, unsigned int max_nodes)
+{
+	return node_flatten (node, nodes, max_nodes, 0);
+}
+
 AZONode *
 azo_node_new_text (const AZOSource *src, const AZOToken *token)
 {
@@ -67,6 +111,119 @@ azo_node_new_reference (unsigned int subtype, const AZOSource *src, const AZOTok
 	AZString *str = az_string_new_length (src->cdata + token->start, token->end - token->start);
 	az_packed_value_transfer_string (&expr->value, str);
 	return expr;
+}
+int
+azo_token_get_prefix_term(const AZOToken *token)
+{
+	if (AZO_TOKEN_IS_OPERATOR (token)) {
+		switch (AZO_TOKEN_OPERATOR_CODE(token)) {
+			case AZO_OPERATOR_PLUSPLUS:
+				return AZO_TERM_PREFIX_INCREMENT;
+			case AZO_OPERATOR_MINUSMINUS:
+				return AZO_TERM_PREFIX_DECREMENT;
+			case AZO_OPERATOR_PLUS:
+				return AZO_TERM_PREFIX_PLUS;
+			case AZO_OPERATOR_MINUS:
+				return AZO_TERM_PREFIX_MINUS;
+			case AZO_OPERATOR_NOT:
+				return AZO_TERM_PREFIX_NOT;
+			case AZO_OPERATOR_TILDE:
+				return AZO_TERM_PREFIX_TILDE;
+			default:
+				break;
+		}
+	}
+	return -1;
+}
+
+int
+azo_token_get_assignment_term(const AZOToken *token)
+{
+	if (AZO_TOKEN_IS_OPERATOR (token)) {
+		switch (AZO_TOKEN_OPERATOR_CODE(token)) {
+			case AZO_OPERATOR_ASSIGN:
+				return AZO_TERM_ASSIGN_PLAIN;
+			case AZO_OPERATOR_PLUSASSIGN:
+				return AZO_TERM_ASSIGN_PLUS;
+			case AZO_OPERATOR_MINUSASSIGN:
+				return AZO_TERM_ASSIGN_MINUS;
+			case AZO_OPERATOR_SLASHASSIGN:
+				return AZO_TERM_ASSIGN_SLASH;
+			case AZO_OPERATOR_STARASSIGN:
+				return AZO_TERM_ASSIGN_STAR;
+			case AZO_OPERATOR_PERCENT_ASSIGN:
+				return AZO_TERM_ASSIGN_PERCENT;
+			case AZO_OPERATOR_SHIFT_LEFT_ASSIGN:
+				return AZO_TERM_ASSIGN_SHIFT_LEFT;
+			case AZO_OPERATOR_SHIFT_RIGHT_ASSIGN:
+				return AZO_TERM_ASSIGN_SHIFT_RIGHT;
+			case AZO_OPERATOR_AND_ASSIGN:
+				return AZO_TERM_ASSIGN_AND;
+			case AZO_OPERATOR_OR_ASSIGN:
+				return AZO_TERM_ASSIGN_OR;
+			case AZO_OPERATOR_CARET_ASSIGN:
+				return AZO_TERM_ASSIGN_XOR;
+			default:
+				break;
+		}
+	}
+	return -1;
+}
+
+int
+azo_token_get_comparison_term(const AZOToken *token)
+{
+	if (AZO_TOKEN_IS_OPERATOR(token)) {
+		switch (AZO_TOKEN_OPERATOR_CODE(token)) {
+			case AZO_OPERATOR_EQUAL:
+				return AZO_TERM_COMPARISON_E;
+			case AZO_OPERATOR_NE:
+				return AZO_TERM_COMPARISON_NE;
+			case AZO_OPERATOR_GE:
+				return AZO_TERM_COMPARISON_GE;
+			case AZO_OPERATOR_GT:
+				return AZO_TERM_COMPARISON_GT;
+			case AZO_OPERATOR_LE:
+				return AZO_TERM_COMPARISON_LE;
+			case AZO_OPERATOR_LT:
+				return AZO_TERM_COMPARISON_LT;
+		}
+	}
+	return -1;
+}
+
+int
+azo_token_get_binary_term(const AZOToken *token)
+{
+	if (AZO_TOKEN_IS_OPERATOR(token)) {
+		switch (AZO_TOKEN_OPERATOR_CODE(token)) {
+			case AZO_OPERATOR_PLUS:
+				return AZO_TERM_ARITHMETIC_PLUS;
+			case AZO_OPERATOR_MINUS:
+				return AZO_TERM_ARITHMETIC_MINUS;
+			case AZO_OPERATOR_SLASH:
+				return AZO_TERM_ARITHMETIC_SLASH;
+			case AZO_OPERATOR_STAR:
+				return AZO_TERM_ARITHMETIC_STAR;
+			case AZO_OPERATOR_PERCENT:
+				return AZO_TERM_ARITHMETIC_PERCENT;
+			case AZO_OPERATOR_SHIFT_LEFT:
+				return AZO_TERM_ARITHMETIC_SHIFT_LEFT;
+			case AZO_OPERATOR_SHIFT_RIGHT:
+				return AZO_TERM_ARITHMETIC_SHIFT_RIGHT;
+			case AZO_OPERATOR_ANDAND:
+				return AZO_TERM_ARITHMETIC_ANDAND;
+			case AZO_OPERATOR_AND:
+				return AZO_TERM_ARITHMETIC_AND;
+			case AZO_OPERATOR_OROR:
+				return AZO_TERM_ARITHMETIC_OROR;
+			case AZO_OPERATOR_OR:
+				return AZO_TERM_ARITHMETIC_OR;
+			case AZO_OPERATOR_CARET:
+				return AZO_TERM_ARITHMETIC_CARET;
+		}
+	}
+	return -1;
 }
 
 static void print_sentences (AZONode *expr, FILE *ofs);
@@ -97,6 +254,11 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		break;
 	case AZO_TERM_BLOCK:
 		fprintf (ofs, "{\n");
+		azo_node_print_list (expr->children, ofs, "\n");
+		fprintf (ofs, "}\n");
+		break;
+	case AZO_TERM_STATEMENT_GROUP:
+		fprintf (ofs, "statement_group {\n");
 		azo_node_print_list (expr->children, ofs, "\n");
 		fprintf (ofs, "}\n");
 		break;

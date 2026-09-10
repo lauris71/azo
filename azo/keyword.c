@@ -23,6 +23,7 @@ const char *azo_keywords[] = {
 	"this",
 	"for",
 	"while",
+	"do",
 	"new",
 	"if",
 	"else",
@@ -30,7 +31,25 @@ const char *azo_keywords[] = {
 	"return",
 	"is",
 	"implements",
-	"debug"
+	"as",
+	"boolean",
+	"int8",
+	"uint8",
+	"int16",
+	"uint16",
+	"int32",
+	"uint32",
+	"int64",
+	"uint64",
+	"float",
+	"double",
+	"complex",
+	"pointer",
+	"debug",
+	"break",
+	"continue",
+	"exact",
+	"rounded"
 };
 
 unsigned int
@@ -47,7 +66,7 @@ azo_keyword_lookup (const unsigned char *text, unsigned int len)
 }
 
 unsigned int
-azo_token_is_keyword (const AZOSource *src, const AZOToken *token, unsigned int keyword)
+azo_token_is_keyword (const AZOToken *token, unsigned int keyword, const AZOSource *src)
 {
 	unsigned int kwlen;
 	if (token->type != AZO_TOKEN_WORD) return 0;
@@ -56,6 +75,19 @@ azo_token_is_keyword (const AZOSource *src, const AZOToken *token, unsigned int 
 		if (!strncmp ((const char *) src->cdata + token->start, azo_keywords[keyword], kwlen)) return 1;
 	}
 	return 0;
+}
+
+unsigned int
+azo_token_get_keyword(const AZOToken *token, const AZOSource *src)
+{
+	if (token->type != AZO_TOKEN_WORD) return AZO_KEYWORD_NONE;
+	for (unsigned int keyword = 1; keyword < AZO_NUM_KEYWORDS; keyword++) {
+		unsigned int kwlen = (unsigned int) strlen (azo_keywords[keyword]);
+		if (kwlen == token->end - token->start) {
+			if (!strncmp ((const char *) src->cdata + token->start, azo_keywords[keyword], kwlen)) return keyword;
+		}
+	}
+	return AZO_KEYWORD_NONE;
 }
 
 void

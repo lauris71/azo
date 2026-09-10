@@ -61,8 +61,13 @@ typedef struct _AZOToken AZOToken;
 #define AZO_TOKEN_COMMA (AZO_TOKEN_OPERATOR | AZO_OPERATOR_COMMA)
 
 #define AZO_TOKEN_IS_NUMBER(t) (((t)->type & AZO_TOKEN_TYPE_MASK) == AZO_TOKEN_NUMBER)
-#define AZO_TOKEN_IS_INTEGER(t) (((t)->type == AZO_TOKEN_INTEGER) || ((t)->type == AZO_TOKEN_INTEGER_HEX) || ((t)->type == AZO_TOKEN_INTEGER_BIN))
+#define AZO_TOKEN_IS_TEXT(t) (((t)->type & AZO_TOKEN_TYPE_MASK) == AZO_TOKEN_TEXT)
+#define AZO_TOKEN_IS_WORD(t) (((t)->type & AZO_TOKEN_TYPE_MASK) == AZO_TOKEN_WORD)
+#define AZO_TOKEN_IS_SEMICOLON(t) (((t)->type & AZO_TOKEN_TYPE_MASK) == AZO_TOKEN_SEMICOLON)
 #define AZO_TOKEN_IS_OPERATOR(t) (((t)->type & AZO_TOKEN_TYPE_MASK) == AZO_TOKEN_OPERATOR)
+#define AZO_TOKEN_IS_BRACKET(t) (((t)->type & AZO_TOKEN_TYPE_MASK) == AZO_TOKEN_BRACKET)
+
+#define AZO_TOKEN_IS_INTEGER(t) (((t)->type == AZO_TOKEN_INTEGER) || ((t)->type == AZO_TOKEN_INTEGER_HEX) || ((t)->type == AZO_TOKEN_INTEGER_BIN))
 #define AZO_TOKEN_OPERATOR_CODE(t) ((t)->type & AZO_TOKEN_SUBTYPE_MASK)
 
 struct _AZOTokenizer {

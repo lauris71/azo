@@ -35,6 +35,8 @@ enum {
 	AZO_KEYWORD_FOR,
 	/* WHILE, CONDITION, STATEMENT */
 	AZO_KEYWORD_WHILE,
+	/* DO, STATEMENT, CONDITION */
+	AZO_KEYWORD_DO,
 	/* CLASS, LIST */
 	AZO_KEYWORD_NEW,
 	/* CONDITION, TRUE_STATEMENT, FALSE_STATEMENT */
@@ -48,12 +50,42 @@ enum {
 	AZO_KEYWORD_IS,
 	/* REFERENCE IMPLEMENTS REFERENCE */
 	AZO_KEYWORD_IMPLEMENTS,
+	/* REFERENCE AS REFERENCE (class/interface conversion - same precedence as is/implements) */
+	AZO_KEYWORD_AS,
+
+	/* PRIMITIVE TYPE NAMES (keep contiguous - the cast rule needs a range check) */
+	AZO_KEYWORD_BOOLEAN,
+	AZO_KEYWORD_INT8,
+	AZO_KEYWORD_UINT8,
+	AZO_KEYWORD_INT16,
+	AZO_KEYWORD_UINT16,
+	AZO_KEYWORD_INT32,
+	AZO_KEYWORD_UINT32,
+	AZO_KEYWORD_INT64,
+	AZO_KEYWORD_UINT64,
+	AZO_KEYWORD_FLOAT,
+	AZO_KEYWORD_DOUBLE,
+	/* complex float / complex double (two-word type names) */
+	AZO_KEYWORD_COMPLEX,
+	AZO_KEYWORD_POINTER,
+	AZO_KEYWORD_LAST_PRIMITIVE_TYPE = AZO_KEYWORD_POINTER,
 
 	/* DEBUG */
 	AZO_KEYWORD_DEBUG,
+	/* BREAK */
+	AZO_KEYWORD_BREAK,
+	/* CONTINUE */
+	AZO_KEYWORD_CONTINUE,
+
+	/* CAST QUALIFIERS */
+	AZO_KEYWORD_EXACT,
+	AZO_KEYWORD_ROUNDED,
 
 	AZO_NUM_KEYWORDS
 };
+
+/* Whether the keyword is a primitive type name (the target of a C-style cast) */
+#define AZO_KEYWORD_IS_PRIMITIVE_TYPE(kw) (((kw) >= AZO_KEYWORD_BOOLEAN) && ((kw) <= AZO_KEYWORD_LAST_PRIMITIVE_TYPE))
 
 #ifndef __AZO_KEYWORD_C__
 extern const char *azo_keywords[];
@@ -62,7 +94,15 @@ extern const char *azo_keywords[];
 unsigned int azo_keyword_lookup (const unsigned char *text, unsigned int len);
 
 /* Tests both token type and content */
-unsigned int azo_token_is_keyword (const AZOSource *src, const AZOToken *token, unsigned int keyword);
+unsigned int azo_token_is_keyword(const AZOToken *token, unsigned int keyword, const AZOSource *src);
+/**
+ * @brief Return the keyword code or AZO_KEYWORD_NONE if not a keyword
+ * 
+ * @param token The token to test
+ * @param src The source file
+ * @return The keyword code
+ */
+unsigned int azo_token_get_keyword(const AZOToken *token, const AZOSource *src);
 
 void azo_print_keyword (unsigned int keyword, FILE *ofs);
 

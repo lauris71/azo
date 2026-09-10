@@ -40,3 +40,20 @@ Rough edges:
    new value.function...
    These are not discoverable from value, but locally have this keyword and references are tried as value members
    For optimizer side it means, that they can be bound to specific value - i.e. all final members resolved to constants, interface and property accesses can be streamlined etc.
+13. No chained assignments: a = b = c = 0
+14. No exptions
+15. Typed null (class valid, instance NULL) - design notes (on hold, not implemented yet):
+    - Needed for overload picking: 'null as String' is our analogue of Java's '(String) null' -
+      the 'as' operator has to accept it (null is exempt from the instance check)
+    - No typed null for value types (dereferencing a value-typed member of null throws)
+    - No two typed nulls are ever equal (even to themselves) - typed null is a missing value,
+      not a special value (SQL NULL semantics); same for identity ('is' is always false on it)
+    - a == null is not a real comparison but isNull(a) (symmetric: null == a), so typed nulls
+      compare equal to untyped null
+    - As a consequence of non-reflexive equality: sorting and map keys (and anything
+      hash/identity-based) are notnull-only and throw on null
+    - Method calls on null: static methods are safe; instance methods run with this == null
+      but must explicitly opt in with a nullsafe flag (default: throw). Propagation is thus
+      controlled per-member at declaration site; UI trees can opt in, secure methods stay safe
+    - Untyped null is the 'none' value (a real value), typed null is an absence of value
+    - Open: syntax of the nullsafe flag; debug-mode logging of null derefs would help debugging

@@ -129,7 +129,35 @@ Statement_and_expression:
   Nonempty_silent_statement , Expression
 
 Cast_expression:
-  (Type) Expression
+  (Primitive_type) Expression
+  (Primitive_type exact) Expression
+  (Primitive_type rounded) Expression
+
+# Cast qualifiers (keywords):
+#   exact - the cast throws unless the result is exact (no rounding, no clamping)
+#   rounded - the cast allows rounding but throws on clamping
+#   (unqualified cast allows both rounding and clamping)
+# Reinterpretation (bit casts) is a separate construct, not a cast qualifier
+
+# Primitive types (the only valid cast targets - class/interface conversions use the 'as' operator)
+# primitive type names are keywords evaluating to their class, so a parenthesized primitive type
+# alone, e.g. (int32), is the class value, not a cast
+
+Primitive_type:
+  boolean
+  int8
+  uint8
+  int16
+  uint16
+  int32
+  uint32
+  int64
+  uint64
+  float
+  double
+  complex float
+  complex double
+  pointer
 
 Parenthesized_expression:
   (Expression)
@@ -185,7 +213,7 @@ Type_expression:
 # Assignments
 
 Assignment:
-  LValue = Expression
+  Chained_assignment
   LValue += Expression
   LValue -= Expression
   LValue *= Expression
@@ -196,6 +224,16 @@ Assignment:
   LValue &= Expression
   LValue |= Expression
   LValue ^= Expression
+
+# Plain = can be chained: every target except the last one has to be an LValue,
+# i.e. a = b = c = 0 assigns 0 to c, b and a (value is evaluated once, targets
+# are assigned right to left)
+# Note that assignment is a statement, not an expression - a = b is only valid
+# where a statement is expected
+
+Chained_assignment:
+  LValue = Expression
+  LValue = LValue [= LValue ...] = Expression
 
 # Functions and new
 
@@ -274,6 +312,10 @@ Logical_operation:
 Type_operation:
   Expression is Expression
   Expression implements Expression
+  Expression as Expression
+
+# is/implements are tests (the result is boolean)
+# as is a checked class/interface conversion (the result has the target type, fails at runtime if the object is not of that type)
 
 Selection:
   (Expression) ? Expression : Expression

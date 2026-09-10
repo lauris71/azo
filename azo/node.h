@@ -34,6 +34,8 @@ enum {
 	AZO_TERM_PROGRAM,
 	/* Block */
 	AZO_TERM_BLOCK,
+	/* Statement group - behaves like a block but does not create a new scope */
+	AZO_TERM_STATEMENT_GROUP,
 	/* Keywords */
 	AZO_TERM_KEYWORD,
 	/* TYPE DECLARATION[...]*/
@@ -168,25 +170,41 @@ enum {
 struct _AZOTerm {
 	/**
 	 * @brief Term main type
-	 * 
+	 *
 	 */
-	uint32_t type;
+	uint16_t type;
+	/**
+	 * @brief Term flags (AZO_TERM_FLAG_*)
+	 *
+	 */
+	uint16_t flags;
 	/**
 	 * @brief Term subtype
-	 * 
+	 *
 	 */
 	uint32_t subtype;
 
 	/**
 	 * @brief Term start in source code
-	 * 
+	 *
 	 */
 	unsigned int start;
 	/**
 	 * @brief Term end in source code
-	 * 
+	 *
 	 */
 	unsigned int end;
+};
+
+/* Term flags */
+enum {
+	/* Cast qualifiers ((int16 rounded) x - allow rounding, (int16 exact) x - throw unless exact) */
+	AZO_TERM_FLAG_EXACT = 1,
+	AZO_TERM_FLAG_ROUNDED = 2,
+	/* Declaration qualifiers */
+	AZO_TERM_FLAG_STATIC = 4,
+	AZO_TERM_FLAG_CONST = 8,
+	AZO_TERM_FLAG_FINAL = 16
 };
 
 struct _AZONode {
@@ -211,16 +229,86 @@ struct _AZONode {
 	AZPackedValue value;
 };
 
-AZONode *azo_node_new (unsigned int type, unsigned int subtype, unsigned int start, unsigned int end);
+AZONode *azo_node_new(unsigned int type, unsigned int subtype, unsigned int start, unsigned int end);
+/**
+ * @brief Create a new node with children
+ * 
+ * Creates a new node and links the given children into its child list in
+ * order. The next pointer of every child is written, so the list is always
+ * properly terminated.
+ * 
+ * The last (tail) child may be NULL, in which case the list is terminated
+ * at the previous child. Passing NULL for any child except the last is not
+ * allowed (it would break the chain).
+ * 
+ * @param type term type of the new node
+ * @param subtype term subtype of the new node
+ * @param start term start in source code
+ * @param end term end in source code
+ * @param n_children number of child arguments
+ * @param ... the children, in order
+ * @return the new node
+ */
+AZONode *azo_node_new_with_children(unsigned int type, unsigned int subtype, unsigned int start, unsigned int end, unsigned int n_children, ...);
+
 void azo_node_free (AZONode *expr);
 void azo_node_free_tree (AZONode *expr);
 void azo_node_clear_children (AZONode *expr);
+
+/**
+ * @brief Flatten a node tree into an array
+ * 
+ * Writes the nodes of the tree into the given array in pre-order (node first,
+ * then children recursively, then next sibling). The array contains pointers
+ * to the original nodes, so attached values (e.g. constants) are preserved.
+ * 
+ * At most max_nodes nodes are written. The return value is the total number
+ * of nodes in the tree, so if it exceeds max_nodes the array was truncated.
+ * 
+ * @param node the root node (its siblings are flattened too)
+ * @param nodes output array
+ * @param max_nodes capacity of the output array
+ * @return the total number of nodes
+ */
+unsigned int azo_node_flatten (AZONode *node, AZONode **nodes, unsigned int max_nodes);
 
 AZONode *azo_node_new_number (const AZOSource *src, const AZOToken *token);
 AZONode *azo_node_new_integer (const AZOSource *src, const AZOToken *token);
 AZONode *azo_node_new_floating_point (const AZOSource *src, const AZOToken *token);
 AZONode *azo_node_new_text (const AZOSource *src, const AZOToken *token);
 AZONode *azo_node_new_reference (unsigned int subtype, const AZOSource *src, const AZOToken *token);
+
+/**
+ * @brief Get prefix term subtype from token
+ * 
+ * @param token the token to check
+ * @return the subtype, or -1 if not a prefix operator
+ */
+int azo_token_get_prefix_term(const AZOToken *token);
+
+/**
+ * @brief Get assignment term subtype from token
+ * 
+ * @param token the token to check
+ * @return the subtype, or -1 if not an assignment operator
+ */
+int azo_token_get_assignment_term(const AZOToken *token);
+
+/**
+ * @brief Get comparison term subtype from token
+ * 
+ * @param token the token to check
+ * @return the subtype, or -1 if not a comparison operator
+ */
+int azo_token_get_comparison_term(const AZOToken *token);
+
+/**
+ * @brief Get binary (arithmetic/logical/bitwise) term subtype from token
+ * 
+ * @param token the token to check
+ * @return the subtype, or -1 if not a binary operator
+ */
+int azo_token_get_binary_term(const AZOToken *token);
 
 void azo_node_print (AZONode *expr, FILE *ofs);
 void azo_node_print_list (AZONode *expr, FILE *ofs, const char *separator);
