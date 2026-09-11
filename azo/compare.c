@@ -522,6 +522,10 @@ azo_compiler_compile_comparison (AZOCompiler *comp, const AZONode *lhs, const AZ
 {
 	if ((expr->term.subtype == AZO_TERM_COMPARISON_E) || (expr->term.subtype == AZO_TERM_COMPARISON_NE)) {
 		return azo_compiler_compile_comparison_eq (comp, lhs, rhs, expr, expr->term.subtype, src, reg);
+	} else if ((expr->term.subtype == AZO_TERM_COMPARISON_IDENTICAL) || (expr->term.subtype == AZO_TERM_COMPARISON_NOT_IDENTICAL)) {
+		/* fixme: implement identity comparison (=== !==) */
+		fprintf (stderr, "azo_compiler_compile_comparison: identity comparison is not implemented\n");
+		return 0;
 	} else {
 #if 0
 		if ((lhs->term.type != EXPRESSION_CONSTANT) && (rhs->term.type == EXPRESSION_CONSTANT)) {

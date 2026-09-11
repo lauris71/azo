@@ -365,6 +365,11 @@ azo_compiler_resolve_cast (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	AZONode *type = expr->children;
 	AZONode *val = type->next;
 	unsigned int result;
+	if (expr->term.subtype != AZO_TERM_CAST_CONVERT) {
+		/* fixme: implement checked class/interface conversion (as) */
+		fprintf (stderr, "azo_compiler_resolve_cast: only primitive conversion casts are implemented\n");
+		return 1;
+	}
 	type = azo_compiler_resolve_expression (comp, type, flags, &result);
 	if (result) return result;
 	if (type->term.type != AZO_TERM_CONSTANT) {

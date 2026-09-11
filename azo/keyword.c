@@ -27,7 +27,6 @@ const char *azo_keywords[] = {
 	"new",
 	"if",
 	"else",
-	"function",
 	"return",
 	"is",
 	"implements",
@@ -50,6 +49,10 @@ const char *azo_keywords[] = {
 	"continue",
 	"exact",
 	"rounded"
+#ifdef HAS_FUNCTION_KEYWORD
+	/* LEGACY - kept for old scripts, new code uses lambdas (=>) */
+	, "function"
+#endif
 };
 
 unsigned int

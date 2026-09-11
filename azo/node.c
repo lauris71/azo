@@ -179,6 +179,10 @@ azo_token_get_comparison_term(const AZOToken *token)
 				return AZO_TERM_COMPARISON_E;
 			case AZO_OPERATOR_NE:
 				return AZO_TERM_COMPARISON_NE;
+			case AZO_OPERATOR_IDENTICAL:
+				return AZO_TERM_COMPARISON_IDENTICAL;
+			case AZO_OPERATOR_NOT_IDENTICAL:
+				return AZO_TERM_COMPARISON_NOT_IDENTICAL;
 			case AZO_OPERATOR_GE:
 				return AZO_TERM_COMPARISON_GE;
 			case AZO_OPERATOR_GT:
@@ -233,10 +237,11 @@ void
 azo_node_print (AZONode *expr, FILE *ofs)
 {
 	static const char *suffixes[] = { "++", "--" };
-	static const char *prefixes[] = { "++", "--", "+", "-", "!" };
+	static const char *prefixes[] = { "++", "--", "+", "-", "!", "~" };
 	static const char *arithmetics[] = { "+", "-", "/", "*", "%", "<<", ">>", "&", "&&", "|", "||", "^" };
-	static const char *comparisons[] = { "==", "!=", "<", "<=", ">", ">=" };
-	static const char *assigns[] = { "=", "+=", "-=", "*=", "/=", "%=", "<<=", ">>=", "&=", "^=", "|=" };
+	static const char *comparisons[] = { "==", "!=", "<", "<=", ">", ">=", "===", "!==" };
+	static const char *assigns[] = { "=", "+=", "-=", "*=", "/=", "%=", "<<=", ">>=", "&=", "|=", "^=" };
+	static const char *tests[] = { "is", "implements" };
 	uint8_t b[1024];
 	AZClass *klass;
 	AZONode *child;
@@ -326,26 +331,31 @@ azo_node_print (AZONode *expr, FILE *ofs)
 			if (child->next) fprintf (ofs, ", ");
 		}
 		break;
+	case AZO_TERM_ARGUMENT_DECLARATION:
+		/* children: [type, name] - type is EMPTY for an untyped argument */
+		if (expr->children->term.type != AZO_TERM_EMPTY) {
+			azo_node_print (expr->children, ofs);
+		}
+		azo_node_print (expr->children->next, ofs);
+		break;
 	case AZO_TERM_FUNCTION:
+		/* Lambda - children: [return_type, args, body] (static) or [return_type, object, args, body] (member) */
 		if (expr->term.subtype == AZO_TERM_FUNCTION_MEMBER) {
-			azo_node_print (expr->children, ofs);
-			fprintf (ofs, ".function ");
 			azo_node_print (expr->children->next, ofs);
-			fprintf (ofs, "(");
+			fprintf (ofs, ".");
 			azo_node_print (expr->children->next->next, ofs);
-			fprintf (ofs, ") ");
-			if (expr->children->next->next->next) {
-				print_sentence (expr->children->next->next->next, ofs);
-			}
+			fprintf (ofs, " ");
+			if (expr->children->next->next->next) print_sentence (expr->children->next->next->next, ofs);
 		} else {
-			fprintf (ofs, "function ");
-			azo_node_print (expr->children, ofs);
 			fprintf (ofs, "(");
 			azo_node_print (expr->children->next, ofs);
 			fprintf (ofs, ") ");
-			if (expr->children->next->next) {
-				print_sentence (expr->children->next->next, ofs);
+			if (expr->children->term.type != AZO_TERM_EMPTY) {
+				azo_node_print (expr->children, ofs);
+				fprintf (ofs, " ");
 			}
+			fprintf (ofs, "=> ");
+			if (expr->children->next->next) print_sentence (expr->children->next->next, ofs);
 		}
 		break;
 	case AZO_TERM_FUNCTION_CALL:
@@ -369,6 +379,7 @@ azo_node_print (AZONode *expr, FILE *ofs)
 	case AZO_TERM_REFERENCE:
 		switch (expr->term.subtype) {
 		case AZO_TERM_REFERENCE_VARIABLE:
+		case AZO_TERM_REFERENCE_PROPERTY:
 			fprintf (ofs, "%s", expr->value.v.string->str);
 			fprintf (ofs, " ");
 			break;
@@ -389,6 +400,37 @@ azo_node_print (AZONode *expr, FILE *ofs)
 			if (child->next) fprintf (ofs, ", ");
 		}
 		fprintf (ofs, "}");
+		break;
+	case AZO_TERM_CAST:
+		/* children: [type, value] for both subtypes */
+		if (expr->term.subtype == AZO_TERM_CAST_AS) {
+			/* Checked class/interface conversion - value as type */
+			azo_node_print (expr->children->next, ofs);
+			fprintf (ofs, "as ");
+			azo_node_print (expr->children, ofs);
+		} else {
+			/* Primitive value conversion - (type) value */
+			fprintf (ofs, "(");
+			azo_node_print (expr->children, ofs);
+			if (expr->term.flags & AZO_TERM_FLAG_EXACT) fprintf (ofs, " exact");
+			if (expr->term.flags & AZO_TERM_FLAG_ROUNDED) fprintf (ofs, " rounded");
+			fprintf (ofs, ") ");
+			azo_node_print (expr->children->next, ofs);
+		}
+		break;
+	case AZO_TERM_TEST:
+		/* children: [value, type] */
+		azo_node_print (expr->children, ofs);
+		fprintf (ofs, "%s ", tests[expr->term.subtype]);
+		azo_node_print (expr->children->next, ofs);
+		break;
+	case AZO_TERM_SELECT:
+		/* children: [condition, iftrue, iffalse] */
+		azo_node_print (expr->children, ofs);
+		fprintf (ofs, "? ");
+		azo_node_print (expr->children->next, ofs);
+		fprintf (ofs, ": ");
+		azo_node_print (expr->children->next->next, ofs);
 		break;
 	case AZO_TERM_SUFFIX:
 		azo_node_print (expr->children, ofs);
@@ -485,7 +527,7 @@ print_sentence (AZONode *expr, FILE *ofs)
 			fprintf (ofs, "while (");
 			azo_node_print (expr->children, ofs);
 			fprintf (ofs, ") ");
-			azo_node_print (expr->children->next->next->next, ofs);
+			azo_node_print (expr->children->next, ofs);
 			fprintf (ofs, "\n");
 			break;
 		case AZO_KEYWORD_IF:
@@ -500,6 +542,10 @@ print_sentence (AZONode *expr, FILE *ofs)
 				fprintf (ofs, " }");
 			}
 			fprintf (ofs, "\n");
+			break;
+		default:
+			/* return, break, continue, do, ... */
+			print_line (expr, ofs);
 			break;
 		}
 		break;
@@ -534,6 +580,7 @@ const char *expr_names[] = {
 	"EMPTY",
 	"PROGRAM",
 	"BLOCK",
+	"STATEMENT_GROUP",
 	"KEYWORD",
 	"DECLARATION_LIST",
 	"DECLARATION",
@@ -550,9 +597,9 @@ const char *expr_names[] = {
 	"PREFIX",
 	"BINARY",
 	"COMPARISON",
-	"AZO_TERM_ASSIGN_PLAIN",
-	"COMMA",
+	"ASSIGN",
 	"TEST",
+	"SELECT",
 
 	"CONSTANT",
 	"VARIABLE",
@@ -567,7 +614,8 @@ azo_node_print_info(AZONode *expr, FILE *ofs, AZOSource *src, unsigned int inden
 	arikkei_utf8_strncpy_len_shorten(b, 255, src->cdata + expr->term.start, expr->term.end - expr->term.start);
 	b[255] = 0;
 	for (unsigned int i = 0; b[i]; i++) if (b[i] == '\n') b[i] = ' ';
-	fprintf (ofs, "{%s:%u [%s] [%u,%u]", expr_names[expr->term.type], expr->term.subtype, b, expr->term.start, expr->term.end);
+	const char *name = (expr->term.type < AZO_NUM_TERM_TYPES) ? expr_names[expr->term.type] : "?";
+	fprintf (ofs, "{%s:%u [%s] [%u,%u]", name, expr->term.subtype, b, expr->term.start, expr->term.end);
 	if (expr->children) {
 		fprintf(ofs, "\n");
 		for (AZONode *child = expr->children; child; child = child->next) {

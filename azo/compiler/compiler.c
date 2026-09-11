@@ -1080,6 +1080,11 @@ compile_cast (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 	AZONode *type = expr->children;
 	AZONode *val = type->next;
 
+	if (expr->term.subtype != AZO_TERM_CAST_CONVERT) {
+		/* fixme: implement checked class/interface conversion (as) */
+		fprintf (stderr, "compile_cast: only primitive conversion casts are implemented\n");
+		return 0;
+	}
 	if (!azo_compiler_compile_expression (comp, val, src)) return 0;
 	azo_code_write_ic_u32(&comp->current->code, AZO_TC_CONVERT_TYPE, type->term.subtype, expr);
 	return 1;

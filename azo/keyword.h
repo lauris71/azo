@@ -42,8 +42,6 @@ enum {
 	/* CONDITION, TRUE_STATEMENT, FALSE_STATEMENT */
 	AZO_KEYWORD_IF,
 	AZO_KEYWORD_ELSE,
-	/* [VALUE.] FUNCTION, [TYPE], LIST, STATEMENT */
-	AZO_KEYWORD_FUNCTION,
 	/* RETURN [VALUE] */
 	AZO_KEYWORD_RETURN,
 	/* REFERENCE IS REFERENCE */
@@ -80,6 +78,13 @@ enum {
 	/* CAST QUALIFIERS */
 	AZO_KEYWORD_EXACT,
 	AZO_KEYWORD_ROUNDED,
+
+#ifdef HAS_FUNCTION_KEYWORD
+	/* LEGACY - function definitions are written as lambdas (=>), the keyword is kept for old scripts */
+	/* Keep last - removing the guard must not shift other keyword values */
+	/* [VALUE.] FUNCTION, [TYPE], LIST, STATEMENT */
+	AZO_KEYWORD_FUNCTION,
+#endif
 
 	AZO_NUM_KEYWORDS
 };

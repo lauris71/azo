@@ -48,7 +48,9 @@ static unsigned int azo_parser_parse_naked_expression (AZOParser *parser, AZOTok
 static unsigned int azo_parser_continue_expression (AZOParser *parser, AZOToken *token, unsigned int left_precedence);
 static unsigned int azo_parser_parse_prefix_expression (AZOParser *parser, AZOToken *token);
 static unsigned int parse_assignment_statement (AZOParser *parser, AZOToken *token);
-static unsigned int azo_parser_parse_function_definition (AZOParser *parser, AZOToken *token, unsigned int has_return_type, unsigned int is_member);
+#ifdef HAS_FUNCTION_KEYWORD
+static unsigned int parse_function_definition (AZOParser *parser, AZOToken *token, unsigned int is_member);
+#endif
 
 static void parser_report_error (AZOParser *parser, const AZOToken *token, unsigned int errval);
 
@@ -282,6 +284,9 @@ static unsigned int parse_new (AZOParser *parser, AZOToken *token);
 static unsigned int parse_array_literal (AZOParser *parser, AZOToken *token);
 static unsigned int parse_array_element (AZOParser *parser, AZOToken *token);
 static unsigned int parse_multi_statement (AZOParser *parser, AZOToken *token, unsigned int terminator, unsigned int silent_only);
+static unsigned int parse_argument_definition (AZOParser *parser, AZOToken *token, unsigned int *has_type);
+static unsigned int continue_arguments_definition (AZOParser *parser, AZOToken *token, unsigned int *any_typed, unsigned int *any_untyped);
+static unsigned int parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, unsigned int start, unsigned int type_allowed);
 
 /*
  * Program:
@@ -669,19 +674,20 @@ azo_parser_parse_step_statement (AZOParser *parser, AZOToken *token)
 		parser_append (parser, expr);
 		return AZO_PARSER_ERROR_NONE;
 	}
+#ifdef HAS_FUNCTION_KEYWORD
 	if (azo_token_is_keyword (token, AZO_KEYWORD_FUNCTION, parser->src)) {
-		/* 'function' is a keyword but in declaration it is treated like a class name (declares a function type variable) */
+		/* LEGACY - 'function' used as a type name in a declaration (function f = ...) */
+		/* We create reference as it should be interpreted as type */
 		AZONode *expr = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
 		parser_append (parser, expr);
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 		if ((token->type != AZO_TOKEN_WORD) || (azo_token_get_keyword (token, parser->src) != AZO_KEYWORD_NONE)) return AZO_PARSER_ERROR_SYNTAX;
 		return azo_parser_parse_declaration (parser, token, flags);
-	} else {
-		/* Either Declaration or Silent Statement */
-		/* Both start with expression */
-		result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
-		if (result) return result;
 	}
+#endif
+	/* Either Declaration or Silent Statement - both start with expression */
+	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
+	if (result) return result;
 	/* If a naked word follows it is declaration (keywords cannot be variable names) */
 	if ((token->type == AZO_TOKEN_WORD) && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE)) {
 		return azo_parser_parse_declaration (parser, token, flags);
@@ -853,18 +859,28 @@ azo_parser_parse_expression (AZOParser *parser, AZOToken *token, unsigned int le
 }
 
 /*
-* Parenthesized_expression:
-*   (Primitive_type) Expression            (cast - primitive conversions only)
-*   (Primitive_type exact) Expression      (cast, throws unless the result is exact)
-*   (Primitive_type rounded) Expression    (cast, allows rounding, throws on clamping)
-*   (Expression)
+* Parenthesized group:
+*   (Expression)                                     (parenthesized expression)
+*   (Primitive_type) Expression                      (cast - primitive conversions only)
+*   (Primitive_type exact) Expression                (cast, throws unless the result is exact)
+*   (Primitive_type rounded) Expression              (cast, allows rounding, throws on clamping)
+*   (Arguments_definition) [Type] => Lambda_body     (lambda)
+*
+* The content is parsed with the full expression parser and reinterpreted once
+* the token after the expression is known:
+*   ')' followed by '=>'    - lambda with a single untyped argument
+*   ',' or NAME             - lambda argument list (continued as argument definitions)
+*   ')' followed by else    - parenthesized expression or primitive cast
+* An empty () is only legal as a lambda argument list
+* The return type may only be given if the argument list is empty or all
+* arguments are typed
 *
 * The exact cast rule: the parenthesized content is a single primitive type name
 * (optionally followed by a cast qualifier) and it is followed by an expression.
 * (Type) with a class type is not a cast - class/interface conversions use the 'as' operator
 *
 * Current token is the opening parenthesis
-* After completing token points past the closing parenthesis
+* After completing token points past the closing parenthesis (or the lambda body)
 */
 
 static unsigned int
@@ -872,17 +888,70 @@ azo_parser_parse_parenthesized_expression (AZOParser *parser, AZOToken *token, u
 {
 	unsigned int result;
 	unsigned int start = token->start;
+	unsigned int inner_keyword;
+	unsigned int primitive;
+	uint16_t flags = 0;
+	AZONode *expr;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	/* Remember whether the inner expression starts with a primitive type name */
-	unsigned int inner_keyword = azo_token_get_keyword (token, parser->src);
-	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
+	/* () is only legal as an (empty) lambda argument list */
+	if (token->type == AZO_TOKEN_RIGHT_PARENTHESIS) {
+		AZONode *list = azo_node_new (AZO_TERM_LIST, AZO_TERM_GENERIC, start, token->end);
+		parser_append (parser, list);
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		return parse_lambda (parser, token, left_precedence, start, 1);
+	}
+	/* Remember whether the content starts with a primitive type name (cast check) */
+	inner_keyword = azo_token_get_keyword (token, parser->src);
+	/* The first item is parsed as an expression - whether it is a parenthesized
+	 * expression or a lambda argument is decided by the following token */
+	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
 	if (result) return result;
-	AZONode *expr = parser_peek_last (parser);
-	/* The inner node is exactly the primitive type name (references are single words) */
-	unsigned int primitive = (expr->term.type == AZO_TERM_REFERENCE) && (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) &&
+	if ((token->type == AZO_TOKEN_COMMA) || ((token->type == AZO_TOKEN_WORD) && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE))) {
+		/* Lambda argument list */
+		AZONode *first, *decl, *list;
+		unsigned int any_typed = 0, any_untyped = 0;
+		/* The first expression becomes the first argument */
+		first = parser_detach_last (parser);
+		if (token->type == AZO_TOKEN_COMMA) {
+			/* Untyped argument */
+			decl = azo_node_new_with_children (AZO_TERM_ARGUMENT_DECLARATION, AZO_TERM_GENERIC, first->term.start, first->term.end, 2,
+				azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, first->term.start, first->term.start), first);
+			any_untyped = 1;
+		} else {
+			/* Typed argument - the expression is the type, the token is the argument name */
+			AZONode *name = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
+			decl = azo_node_new_with_children (AZO_TERM_ARGUMENT_DECLARATION, AZO_TERM_GENERIC, first->term.start, token->end, 2, first, name);
+			any_typed = 1;
+			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+				azo_node_free_tree (decl);
+				return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+			}
+		}
+		list = azo_node_new (AZO_TERM_LIST, AZO_TERM_GENERIC, start, token->end);
+		parser_push (parser, list);
+		parser_append (parser, decl);
+		result = continue_arguments_definition (parser, token, &any_typed, &any_untyped);
+		/* If any argument is typed all arguments have to be typed */
+		if (!result && (any_typed && any_untyped)) result = AZO_PARSER_ERROR_SYNTAX;
+		if (!result && (token->type == AZO_TOKEN_EOF)) result = AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		if (!result && (token->type != AZO_TOKEN_RIGHT_PARENTHESIS)) result = AZO_PARSER_ERROR_SYNTAX;
+		if (result) {
+			parser_pop (parser);
+			parser_detach_last (parser);
+			azo_node_free_tree (list);
+			return result;
+		}
+		list->term.end = token->end;
+		azo_tokenizer_get_next_token (&parser->tokenizer, token);
+		parser_pop (parser);
+		/* A multi-item or typed list is not an expression - it can only be a lambda argument list */
+		return parse_lambda (parser, token, left_precedence, start, any_typed);
+	}
+	expr = parser_peek_last (parser);
+	/* The content is exactly the primitive type name (references are single words) */
+	primitive = (expr->term.type == AZO_TERM_REFERENCE) && (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) &&
 		AZO_KEYWORD_IS_PRIMITIVE_TYPE (inner_keyword);
 	/* Cast qualifiers */
-	uint16_t flags = 0;
 	if (primitive) {
 		if (azo_token_is_keyword (token, AZO_KEYWORD_EXACT, parser->src)) {
 			flags |= AZO_TERM_FLAG_EXACT;
@@ -894,14 +963,26 @@ azo_parser_parse_parenthesized_expression (AZOParser *parser, AZOToken *token, u
 	}
 	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
+	unsigned int list_end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
+	if (AZO_TOKEN_IS_OPERATOR (token) && (AZO_TOKEN_OPERATOR_CODE (token) == AZO_OPERATOR_LAMBDA)) {
+		/* Lambda with a single untyped argument */
+		AZONode *arg, *decl, *list;
+		if (flags) return AZO_PARSER_ERROR_SYNTAX;
+		arg = parser_detach_last (parser);
+		decl = azo_node_new_with_children (AZO_TERM_ARGUMENT_DECLARATION, AZO_TERM_GENERIC, arg->term.start, arg->term.end, 2,
+			azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, arg->term.start, arg->term.start), arg);
+		list = azo_node_new_with_children (AZO_TERM_LIST, AZO_TERM_GENERIC, start, list_end, 1, decl);
+		parser_append (parser, list);
+		return parse_lambda (parser, token, left_precedence, start, 0);
+	}
 	if (primitive && token_can_start_expression (parser, token)) {
 		/* Primitive cast - (primitive [qualifier]) expression */
 		result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_CAST);
 		if (result) return result;
 		AZONode *right = parser_detach_last (parser);
 		AZONode *left = parser_detach_last (parser);
-		AZONode *cast_expr = azo_node_new_with_children(AZO_TERM_CAST, AZO_TERM_GENERIC, start, right->term.end, 2, left, right);
+		AZONode *cast_expr = azo_node_new_with_children(AZO_TERM_CAST, AZO_TERM_CAST_CONVERT, start, right->term.end, 2, left, right);
 		cast_expr->term.flags = flags;
 		parser_append (parser, cast_expr);
 	} else if (flags) {
@@ -912,10 +993,84 @@ azo_parser_parse_parenthesized_expression (AZOParser *parser, AZOToken *token, u
 }
 
 /*
- * Naked_expression:
- *   Literal
+ * Keyword_expression:
+ *   null
+ *   this
+ *   true
+ *   false
  *   new
  *   function
+ *   Primitive_type (evaluates to its class)
+ *
+ * Keywords that can start an expression
+ *
+ * Current token is the keyword
+ */
+
+static unsigned int
+parse_keyword_expression (AZOParser *parser, AZOToken *token, unsigned int keyword, unsigned int left_precedence)
+{
+	AZONode *expr;
+	unsigned int result;
+	/* Keywords with their own (self-appending) parse functions */
+	if (keyword == AZO_KEYWORD_NEW) {
+		result = parse_new (parser, token);
+		if (result) return result;
+		return azo_parser_continue_expression (parser, token, left_precedence);
+	}
+#ifdef HAS_FUNCTION_KEYWORD
+	if (keyword == AZO_KEYWORD_FUNCTION) {
+		/* LEGACY - function [TYPE] (ARGUMENTS) BLOCK or the bareword evaluating to the function class */
+		result = parse_function_definition (parser, token, 0);
+		if (result) return result;
+		return azo_parser_continue_expression (parser, token, left_precedence);
+	}
+#endif
+	/* Keywords producing a value node */
+	switch (keyword) {
+		case AZO_KEYWORD_NULL:
+			expr = azo_node_new (AZO_TERM_CONSTANT, AZ_TYPE_NONE, token->start, token->end);
+			break;
+		case AZO_KEYWORD_THIS:
+			expr = azo_node_new (AZO_TERM_KEYWORD, AZO_KEYWORD_THIS, token->start, token->end);
+			break;
+		case AZO_KEYWORD_TRUE:
+		case AZO_KEYWORD_FALSE:
+			expr = azo_node_new (AZO_TERM_CONSTANT, AZ_TYPE_BOOLEAN, token->start, token->end);
+			az_packed_value_set_boolean (&expr->value, keyword == AZO_KEYWORD_TRUE);
+			break;
+		case AZO_KEYWORD_COMPLEX: {
+			/* complex float / complex double are two-word type names */
+			unsigned int start = token->start;
+			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+			if (azo_token_is_keyword (token, AZO_KEYWORD_FLOAT, parser->src)) {
+				expr = new_named_reference (AZO_TERM_REFERENCE_VARIABLE, start, token->end, "complex float");
+			} else if (azo_token_is_keyword (token, AZO_KEYWORD_DOUBLE, parser->src)) {
+				expr = new_named_reference (AZO_TERM_REFERENCE_VARIABLE, start, token->end, "complex double");
+			} else {
+				/* Keep the offending token as anchor for error recovery */
+				return AZO_PARSER_ERROR_SYNTAX;
+			}
+			break;
+		}
+		default:
+			if (AZO_KEYWORD_IS_PRIMITIVE_TYPE (keyword)) {
+				/* Primitive type names evaluate to their class */
+				expr = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
+				break;
+			}
+			/* Keywords that cannot start an expression - keep the offending token as anchor */
+			return AZO_PARSER_ERROR_INVALID_START_OF_EXPRESSION;
+	}
+	parser_append (parser, expr);
+	azo_tokenizer_get_next_token (&parser->tokenizer, token);
+	return azo_parser_continue_expression (parser, token, left_precedence);
+}
+
+/*
+ * Naked_expression:
+ *   Literal
+ *   Keyword_expression
  *   Variable_reference
  *   Member_reference
  *   Array_reference
@@ -931,57 +1086,10 @@ azo_parser_parse_naked_expression (AZOParser *parser, AZOToken *token, unsigned 
 	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	if (AZO_TOKEN_IS_WORD(token)) {
 		unsigned int keyword = azo_token_get_keyword(token, parser->src);
-		if (keyword != AZO_KEYWORD_NONE) {
-			/* Known keyword */
-			switch (keyword) {
-				case AZO_KEYWORD_NULL:
-					expr = azo_node_new (AZO_TERM_CONSTANT, AZ_TYPE_NONE, token->start, token->end);
-					break;
-				case AZO_KEYWORD_THIS:
-					expr = azo_node_new (AZO_TERM_KEYWORD, AZO_KEYWORD_THIS, token->start, token->end);
-					break;
-				case AZO_KEYWORD_TRUE:
-				case AZO_KEYWORD_FALSE:
-					expr = azo_node_new (AZO_TERM_CONSTANT, AZ_TYPE_BOOLEAN, token->start, token->end);
-					az_packed_value_set_boolean (&expr->value, keyword == AZO_KEYWORD_TRUE);
-					break;
-				case AZO_KEYWORD_NEW:
-					result = parse_new (parser, token);
-					if (result) return result;
-					break;
-				case AZO_KEYWORD_FUNCTION:
-					result = azo_parser_parse_function_definition (parser, token, 0, 0);
-					if (result) return result;
-					break;
-				case AZO_KEYWORD_COMPLEX: {
-					/* complex float / complex double are two-word type names */
-					unsigned int start = token->start;
-					if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-					if (azo_token_is_keyword (token, AZO_KEYWORD_FLOAT, parser->src)) {
-						expr = new_named_reference (AZO_TERM_REFERENCE_VARIABLE, start, token->end, "complex float");
-					} else if (azo_token_is_keyword (token, AZO_KEYWORD_DOUBLE, parser->src)) {
-						expr = new_named_reference (AZO_TERM_REFERENCE_VARIABLE, start, token->end, "complex double");
-					} else {
-						/* Keep the offending token as anchor for error recovery */
-						return AZO_PARSER_ERROR_SYNTAX;
-					}
-					break;
-				}
-				default:
-					if (AZO_KEYWORD_IS_PRIMITIVE_TYPE (keyword)) {
-						/* Primitive type names evaluate to their class */
-						expr = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
-						break;
-					}
-					azo_tokenizer_get_next_token (&parser->tokenizer, token);
-					return AZO_PARSER_ERROR_INVALID_START_OF_EXPRESSION;
-			}
-		} else {
-			/* Bareword */
-			/* Variable reference */
-			expr = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
-			/* fixme: Allowed next - operator/function/array */
-		}
+		if (keyword != AZO_KEYWORD_NONE) return parse_keyword_expression (parser, token, keyword, left_precedence);
+		/* Bareword */
+		/* Variable reference */
+		expr = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
 	} else if (AZO_TOKEN_IS_NUMBER (token)) {
 		expr = azo_node_new_number (parser->src, token);
 	} else if (token->type == AZO_TOKEN_TEXT) {
@@ -991,12 +1099,11 @@ azo_parser_parse_naked_expression (AZOParser *parser, AZOToken *token, unsigned 
 		/* Array literal */
 		result = parse_array_literal (parser, token);
 		if (result) return result;
-		/* fixme: Allowed next - array */
 	} else if (AZO_TOKEN_IS_OPERATOR (token)) {
 		result = azo_parser_parse_prefix_expression (parser, token);
 		if (result) return result;
-		/* fixme: Allowed next - operator */
 	} else {
+		/* Everything else (separators, closing brackets, INVALID) cannot start an expression */
 		/* Keep the offending token as anchor for error recovery */
 		return AZO_PARSER_ERROR_INVALID_START_OF_EXPRESSION;
 	}
@@ -1009,12 +1116,14 @@ azo_parser_parse_naked_expression (AZOParser *parser, AZOToken *token, unsigned 
 
 /*
  * Member:
- *   function (declares member function with implicit this parameter)
  *   Variable_reference
  *   Member_reference
  *   Array_reference
  *   Function_call
  *   Operation
+ *
+ * If HAS_FUNCTION_KEYWORD is defined the legacy 'function' keyword is also
+ * accepted (declares a member function with implicit this parameter)
  */
 
 static unsigned int
@@ -1023,13 +1132,16 @@ azo_parser_parse_member (AZOParser *parser, AZOToken *token, unsigned int left_p
 	AZONode *expr = NULL;
 	unsigned int result;
 	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+#ifdef HAS_FUNCTION_KEYWORD
 	if (azo_token_is_keyword (token, AZO_KEYWORD_FUNCTION, parser->src)) {
-		/* function */
-		result = azo_parser_parse_function_definition (parser, token, 0, 1);
+		/* LEGACY - member function definition (the object reference is already on the stack) */
+		result = parse_function_definition (parser, token, 1);
 		if (result) return result;
-		/* fixme: Are operators allowed here? */
-	} else if ((token->type == AZO_TOKEN_WORD) && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE)) {
-		/* Variable reference (keywords except function cannot be references) */
+		return azo_parser_continue_expression (parser, token, left_precedence);
+	}
+#endif
+	if ((token->type == AZO_TOKEN_WORD) && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE)) {
+		/* Variable reference (keywords cannot be references) */
 		expr = azo_node_new_reference (AZO_TERM_REFERENCE_PROPERTY, parser->src, token);
 		/* fixme: Allowed next - operator/function/array */
 	} else {
@@ -1054,25 +1166,25 @@ azo_parser_continue_expression (AZOParser *parser, AZOToken *token, unsigned int
 			op = AZO_TOKEN_OPERATOR_CODE (token);
 			/* Assignment operators are not expression operators - they terminate the expression (handled at statement level) */
 			if (azo_operator_is_assignment (op)) break;
-			rightprecedence = azo_operator_get_precedence (op, 1);
-			if (left_precedence > rightprecedence) {
+			rightprecedence = azo_operator_get_left_precedence (op);
+			if (rightprecedence > left_precedence) {
 				error = parse_operator (parser, token);
 				if (error) return error;
 			} else {
 				break;
 			}
-		} else if (azo_token_is_keyword (token, AZO_KEYWORD_IS, parser->src) || azo_token_is_keyword (token, AZO_KEYWORD_IMPLEMENTS, parser->src)) {
-			if (left_precedence > AZO_PRECEDENCE_TYPE) {
+		} else if (azo_token_is_keyword (token, AZO_KEYWORD_IS, parser->src) || azo_token_is_keyword (token, AZO_KEYWORD_IMPLEMENTS, parser->src) || azo_token_is_keyword (token, AZO_KEYWORD_AS, parser->src)) {
+			if (left_precedence < AZO_PRECEDENCE_TYPE) {
 				error = parse_type_operator (parser, token);
 				if (error) return error;
 			} else {
 				break;
 			}
-		} else if ((token->type == AZO_TOKEN_LEFT_PARENTHESIS) && (left_precedence > AZO_PRECEDENCE_FUNCTION)) {
+		} else if ((token->type == AZO_TOKEN_LEFT_PARENTHESIS) && (left_precedence < AZO_PRECEDENCE_FUNCTION)) {
 			/* Function call */
 			error = parse_function_call (parser, token);
 			if (error) return error;
-		} else if ((token->type == AZO_TOKEN_LEFT_BRACKET) && (left_precedence > AZO_PRECEDENCE_ARRAY)) {
+		} else if ((token->type == AZO_TOKEN_LEFT_BRACKET) && (left_precedence < AZO_PRECEDENCE_ARRAY)) {
 			/* Array */
 			error = parse_array_element (parser, token);
 			if (error) return error;
@@ -1088,23 +1200,31 @@ static unsigned int
 azo_parser_parse_prefix_expression (AZOParser *parser, AZOToken *token)
 {
 	AZONode *expr, *right;
-	unsigned int start, op, error;
+	unsigned int start, error;
+	int subtype;
 	/* Unary prefix operators are processed here */
-	/* Parse next expression to stack */
-	int subtype = azo_token_get_prefix_term(token);
+	subtype = azo_token_get_prefix_term (token);
 	if (subtype < 0) {
 		/* Binary or tertiary operator at first position of expression */
 		/* Keep the offending token as anchor for error recovery */
-		return AZO_PARSER_ERROR_SYNTAX;
+		return AZO_PARSER_ERROR_INVALID_START_OF_EXPRESSION;
 	}
 	start = token->start;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_UNARY);
 	if (error) return error;
 	right = parser_detach_last (parser);
+	/* Prefix ++/-- of a postfix ++/-- (++a++) is rejected: the two are different
+	 * operations and the combination is ambiguous. Unary +/- of a postfix
+	 * (-a++) is legal */
+	if (((subtype == AZO_TERM_PREFIX_INCREMENT) || (subtype == AZO_TERM_PREFIX_DECREMENT)) &&
+		(right->term.type == AZO_TERM_SUFFIX) &&
+		((right->term.subtype == AZO_TERM_SUFFIX_INCREMENT) || (right->term.subtype == AZO_TERM_SUFFIX_DECREMENT))) {
+		azo_node_free_tree (right);
+		return AZO_PARSER_ERROR_SYNTAX;
+	}
 	expr = azo_node_new_with_children (AZO_TERM_PREFIX, subtype, start, right->term.end, 1, right);
 	parser_append (parser, expr);
-	/* fixme: Allowed next - operator */
 	return AZO_PARSER_ERROR_NONE;
 }
 
@@ -1205,27 +1325,29 @@ parse_assignment_statement (AZOParser *parser, AZOToken *token)
 static unsigned int
 parse_operator (AZOParser *parser, AZOToken *token)
 {
-	AZONode *left, *right, *expr, *tmp;
+	AZONode *left, *right, *expr;
 	int subtype, precendence;
 	unsigned int end, error;
 
 	subtype = AZO_TOKEN_OPERATOR_CODE (token);
-	precendence = azo_operator_get_precedence (subtype, 1);
+	precendence = azo_operator_get_right_precedence (subtype);
 	end = token->end;
 	/* Save the operator token for term resolution (token will advance past the expression) */
 	AZOToken optoken = *token;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 
-	switch (subtype) {
-	case AZO_OPERATOR_DOT:
+	if (subtype == AZO_OPERATOR_DOT) {
 		/* Member reference */
 		error = azo_parser_parse_member (parser, token, precendence);
 		if (error) return error;
 		right = parser_detach_last (parser);
+#ifdef HAS_FUNCTION_KEYWORD
 		if (right->term.type == AZO_TERM_FUNCTION) {
-			/* value.function construct, left is already consumed */
+			/* LEGACY - value.function construct (member function definition), left is already consumed */
 			parser_append (parser, right);
-		} else if (right->term.type == AZO_TERM_REFERENCE) {
+		} else
+#endif
+		if (right->term.type == AZO_TERM_REFERENCE) {
 			/* ref.ref construct */
 			left = parser_detach_last (parser);
 			expr = azo_node_new_with_children(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER, left->term.start, right->term.end, 2, left, right);
@@ -1234,43 +1356,18 @@ parse_operator (AZOParser *parser, AZOToken *token)
 			return AZO_PARSER_ERROR_SYNTAX;
 		}
 		return AZO_PARSER_ERROR_NONE;
-	case AZO_OPERATOR_ARROW:
-		/* No arrow at moment */
-		return AZO_PARSER_ERROR_SYNTAX;
-	case AZO_OPERATOR_EQUAL:
-	case AZO_OPERATOR_NE:
-	case AZO_OPERATOR_GE:
-	case AZO_OPERATOR_GT:
-	case AZO_OPERATOR_LE:
-	case AZO_OPERATOR_LT:
+	}
+	if (azo_operator_is_comparison (subtype)) {
 		error = azo_parser_parse_expression (parser, token, precendence);
 		if (error) return error;
 		right = parser_detach_last (parser);
 		left = parser_detach_last (parser);
 		subtype = azo_token_get_comparison_term(&optoken);
-		/* Normalize GE/GT to LE/LT by swapping operands */
-		if ((subtype == AZO_TERM_COMPARISON_GE) || (subtype == AZO_TERM_COMPARISON_GT)) {
-			subtype = (subtype == AZO_TERM_COMPARISON_GE) ? AZO_TERM_COMPARISON_LE : AZO_TERM_COMPARISON_LT;
-			tmp = left;
-			left = right;
-			right = tmp;
-		}
 		expr = azo_node_new_with_children(AZO_TERM_COMPARISON, subtype, left->term.start, right->term.end, 2, left, right);
 		parser_append (parser, expr);
 		return AZO_PARSER_ERROR_NONE;
-		/* Arithmetic */
-	case AZO_OPERATOR_PLUS:
-	case AZO_OPERATOR_MINUS:
-	case AZO_OPERATOR_SLASH:
-	case AZO_OPERATOR_STAR:
-	case AZO_OPERATOR_PERCENT:
-	case AZO_OPERATOR_SHIFT_LEFT:
-	case AZO_OPERATOR_SHIFT_RIGHT:
-	case AZO_OPERATOR_ANDAND:
-	case AZO_OPERATOR_AND:
-	case AZO_OPERATOR_OROR:
-	case AZO_OPERATOR_OR:
-	case AZO_OPERATOR_CARET:
+	}
+	if (azo_operator_is_arithmetic (subtype)) {
 		error = azo_parser_parse_expression (parser, token, precendence);
 		if (error) return error;
 		right = parser_detach_last (parser);
@@ -1279,45 +1376,86 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		expr = azo_node_new_with_children(AZO_TERM_BINARY, subtype, left->term.start, right->term.end, 2, left, right);
 		parser_append (parser, expr);
 		return AZO_PARSER_ERROR_NONE;
-		/* Suffix */
-	case AZO_OPERATOR_PLUSPLUS:
+	}
+	if (subtype == AZO_OPERATOR_PLUSPLUS) {
 		left = parser_detach_last (parser);
 		expr = azo_node_new_with_children (AZO_TERM_SUFFIX, AZO_TERM_SUFFIX_INCREMENT, left->term.start, end, 1, left);
 		parser_append (parser, expr);
 		return AZO_PARSER_ERROR_NONE;
-	case AZO_OPERATOR_MINUSMINUS:
+	}
+	if (subtype == AZO_OPERATOR_MINUSMINUS) {
 		left = parser_detach_last (parser);
 		expr = azo_node_new_with_children (AZO_TERM_SUFFIX, AZO_TERM_SUFFIX_DECREMENT, left->term.start, end, 1, left);
 		parser_append (parser, expr);
 		return AZO_PARSER_ERROR_NONE;
-	/* Question */
-	case AZO_OPERATOR_QUESTION:
-	case AZO_OPERATOR_COLON:
-		return AZO_PARSER_ERROR_SYNTAX;
-	// fixme: Actually maybe we should support assignment-as-expression for a = b = c constructs?
-	default:
-		break;
 	}
+	if (subtype == AZO_OPERATOR_QUESTION) {
+		/* Ternary selection - CONDITION ? TRUE_EXPRESSION : FALSE_EXPRESSION */
+		AZONode *cond, *iftrue, *iffalse;
+		unsigned int qend;
+		cond = parser_detach_last (parser);
+		/* True expression (stops at the colon - it is not an operator) */
+		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
+		if (error) {
+			azo_node_free_tree (cond);
+			return error;
+		}
+		iftrue = parser_detach_last (parser);
+		if (!AZO_TOKEN_IS_OPERATOR (token) || (AZO_TOKEN_OPERATOR_CODE (token) != AZO_OPERATOR_COLON)) {
+			azo_node_free_tree (iftrue);
+			azo_node_free_tree (cond);
+			return AZO_PARSER_ERROR_SYNTAX;
+		}
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+			azo_node_free_tree (iftrue);
+			azo_node_free_tree (cond);
+			return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		}
+		/* False expression (right-associative - a ? b : c ? d : e groups as a ? b : (c ? d : e)) */
+		error = azo_parser_parse_expression (parser, token, precendence);
+		if (error) {
+			azo_node_free_tree (iftrue);
+			azo_node_free_tree (cond);
+			return error;
+		}
+		iffalse = parser_detach_last (parser);
+		qend = iffalse->term.end;
+		expr = azo_node_new_with_children (AZO_TERM_SELECT, AZO_TERM_GENERIC, cond->term.start, qend, 3, cond, iftrue, iffalse);
+		parser_append (parser, expr);
+		return AZO_PARSER_ERROR_NONE;
+	}
+	/* Everything else (arrow, comma, ...) is not a valid expression operator */
 	return AZO_PARSER_ERROR_SYNTAX;
 }
 
 /*
-* Parse is|implements and append expression to parser
+* Parse a type operator and append the expression to parser
+*   Expression is Expression         (type test - boolean result)
+*   Expression implements Expression (interface test - boolean result)
+*   Expression as Expression         (checked class/interface conversion)
 *
-* Current token is operator
+* is/implements produce an AZO_TERM_TEST node, as produces AZO_TERM_CAST with
+* subtype CAST_AS (primitive conversions are the (type) expression cast, CAST_CONVERT)
+*
+* Current token is the operator keyword
 * After completing token points after the end of RHS expression
 */
 
 static unsigned int
 parse_type_operator (AZOParser *parser, AZOToken *token)
 {
-	unsigned int op_type, end, error;
+	unsigned int end, error;
 
-	unsigned int subtype;
+	unsigned int type, subtype;
 	if (azo_token_is_keyword (token, AZO_KEYWORD_IS, parser->src)) {
+		type = AZO_TERM_TEST;
 		subtype = AZO_TERM_TEST_IS;
 	} else if (azo_token_is_keyword (token, AZO_KEYWORD_IMPLEMENTS, parser->src)) {
+		type = AZO_TERM_TEST;
 		subtype = AZO_TERM_TEST_IMPLEMENTS;
+	} else if (azo_token_is_keyword (token, AZO_KEYWORD_AS, parser->src)) {
+		type = AZO_TERM_CAST;
+		subtype = AZO_TERM_CAST_AS;
 	} else {
 		return AZO_PARSER_ERROR_SYNTAX;
 	}
@@ -1327,22 +1465,52 @@ parse_type_operator (AZOParser *parser, AZOToken *token)
 	if (error) return error;
 	AZONode *right = parser_detach_last (parser);
 	AZONode *left = parser_detach_last (parser);
-	AZONode *expr = azo_node_new_with_children (AZO_TERM_TEST, subtype, left->term.start, right->term.end, 2, left, right);
+	AZONode *expr;
+	if (type == AZO_TERM_TEST) {
+		/* TEST children: [value, type] */
+		expr = azo_node_new_with_children (type, subtype, left->term.start, right->term.end, 2, left, right);
+	} else {
+		/* CAST children: [type, value] - the same layout as the primitive (type) cast */
+		expr = azo_node_new_with_children (type, subtype, left->term.start, right->term.end, 2, right, left);
+	}
 	parser_append (parser, expr);
 	return AZO_PARSER_ERROR_NONE;
 }
 
 /*
+ * Parse comma-separated expressions into the current node, until the terminator
+ * token (')' or '}') is reached
+ *
+ * Current token is at the first expression or the terminator
+ * After completing token is at the terminator (not consumed)
+ */
+
+static unsigned int
+parse_expression_list (AZOParser *parser, AZOToken *token, unsigned int terminator)
+{
+	unsigned int error;
+	if (token->type == terminator) return AZO_PARSER_ERROR_NONE;
+	while (1) {
+		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
+		if (error) return error;
+		if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		if (token->type == terminator) return AZO_PARSER_ERROR_NONE;
+		if (token->type != AZO_TOKEN_COMMA) return AZO_PARSER_ERROR_SYNTAX;
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	}
+}
+
+/*
 * Parse list of function arguments into LIST expression
-*   (AGUMENT[,ARGUMENT])
+*   ([ARGUMENT [, ARGUMENT ...]])
 *
-* Current token points to the opening brace
+* Current token points to the opening parenthesis
+* After completing token points past the closing parenthesis
 */
 
 static unsigned int
 parse_list (AZOParser *parser, AZOToken *token)
 {
-	unsigned int need_separator;
 	unsigned int start, error;
 	start = token->start;
 	/* ( */
@@ -1352,36 +1520,12 @@ parse_list (AZOParser *parser, AZOToken *token)
 
 	AZONode *expr = azo_node_new (AZO_TERM_LIST, AZO_TERM_GENERIC, start, token->end);
 	parser_push (parser, expr);
-	need_separator = 0;
-	while (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) {
-		if (need_separator) {
-			if (token->type != AZO_TOKEN_COMMA) {
-				parser_pop (parser);
-				parser_detach_last (parser);
-				azo_node_free_tree (expr);
-				return AZO_PARSER_ERROR_SYNTAX;
-			}
-			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
-				parser_pop (parser);
-				parser_detach_last (parser);
-				azo_node_free_tree (expr);
-				return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-			}
-		}
-		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
-		if (error) {
-			parser_pop (parser);
-			parser_detach_last (parser);
-			azo_node_free_tree (expr);
-			return error;
-		}
-		need_separator = 1;
-		if (token->type == AZO_TOKEN_EOF) {
-			parser_pop (parser);
-			parser_detach_last (parser);
-			azo_node_free_tree (expr);
-			return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-		}
+	error = parse_expression_list (parser, token, AZO_TOKEN_RIGHT_PARENTHESIS);
+	if (error) {
+		parser_pop (parser);
+		parser_detach_last (parser);
+		azo_node_free_tree (expr);
+		return error;
 	}
 	expr->term.end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
@@ -1391,9 +1535,11 @@ parse_list (AZOParser *parser, AZOToken *token)
 
 /*
 * Parse function call
-*   (ARGUMENTS)
+*   Expression(ARGUMENTS)
 *
-* Current token points to the opening brace
+* The callee expression is already parsed (last node on the stack)
+* Current token points to the opening parenthesis
+* After completing token points past the closing parenthesis
 */
 
 static unsigned int
@@ -1410,8 +1556,18 @@ parse_function_call (AZOParser *parser, AZOToken *token)
 	return AZO_PARSER_ERROR_NONE;
 }
 
+/*
+ * Parse a single argument definition
+ *   Type NAME    (typed)
+ *   NAME         (untyped)
+ *
+ * has_type is set to 1 if the argument has an explicit type, 0 otherwise
+ * (the typedness is needed by the lambda rule: arguments are either all
+ * typed or all untyped, and the return type requires typed arguments)
+ */
+
 static unsigned int
-parse_argument_definition (AZOParser *parser, AZOToken *token)
+parse_argument_definition (AZOParser *parser, AZOToken *token, unsigned int *has_type)
 {
 	AZONode *left, *right, *decl;
 	unsigned int result, start;
@@ -1426,19 +1582,54 @@ parse_argument_definition (AZOParser *parser, AZOToken *token)
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 		right = parser_detach_last (parser);
 		left = parser_detach_last (parser);
+		*has_type = 1;
 	} else {
 		left = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, start, start);
 		right = parser_detach_last (parser);
+		*has_type = 0;
 	}
 	decl = azo_node_new_with_children (AZO_TERM_ARGUMENT_DECLARATION, AZO_TERM_GENERIC, start, token->start, 2, left, right);
 	parser_append (parser, decl);
 	return AZO_PARSER_ERROR_NONE;
 }
 
+/*
+ * Parse the remaining argument definitions of an argument list - the first
+ * argument is already parsed and appended, token is at the comma or closing
+ * parenthesis following it
+ *
+ * The arguments are appended to the current node (the argument list)
+ * any_typed / any_untyped accumulate the typedness of the arguments
+ */
+
+static unsigned int
+continue_arguments_definition (AZOParser *parser, AZOToken *token, unsigned int *any_typed, unsigned int *any_untyped)
+{
+	while (token->type == AZO_TOKEN_COMMA) {
+		unsigned int is_typed, result;
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		result = parse_argument_definition (parser, token, &is_typed);
+		if (result) return result;
+		*any_typed |= is_typed;
+		*any_untyped |= !is_typed;
+	}
+	return AZO_PARSER_ERROR_NONE;
+}
+
+#ifdef HAS_FUNCTION_KEYWORD
+/*
+ * LEGACY - kept for old scripts, new code uses lambdas (=>)
+ *
+ * Parse a list of argument definitions into a LIST expression
+ *   ([ARGUMENT_DEFINITION [, ARGUMENT_DEFINITION ...]])
+ *
+ * Current token is the opening parenthesis
+ * After completing token points past the closing parenthesis
+ */
+
 static unsigned int
 parse_arguments_definition (AZOParser *parser, AZOToken *token)
 {
-	unsigned int need_separator;
 	unsigned int start, result;
 	start = token->start;
 	/* ( */
@@ -1449,30 +1640,23 @@ parse_arguments_definition (AZOParser *parser, AZOToken *token)
 	AZONode *expr = azo_node_new (AZO_TERM_LIST, AZO_TERM_GENERIC, start, token->end);
 	parser_push (parser, expr);
 
-	need_separator = 0;
-	while (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) {
-		if (need_separator) {
-			if (token->type != AZO_TOKEN_COMMA) {
-				parser_pop (parser);
-				parser_detach_last (parser);
-				azo_node_free_tree (expr);
-				return AZO_PARSER_ERROR_SYNTAX;
-			}
-			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
-				parser_pop (parser);
-				parser_detach_last (parser);
-				azo_node_free_tree (expr);
-				return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-			}
+	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) {
+		/* The typedness is not restricted by the legacy syntax */
+		unsigned int any_typed = 0, any_untyped = 0, is_typed;
+		result = parse_argument_definition (parser, token, &is_typed);
+		if (!result) {
+			any_typed |= is_typed;
+			any_untyped |= !is_typed;
+			result = continue_arguments_definition (parser, token, &any_typed, &any_untyped);
 		}
-		result = parse_argument_definition (parser, token);
+		if (!result && (token->type == AZO_TOKEN_EOF)) result = AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		if (!result && (token->type != AZO_TOKEN_RIGHT_PARENTHESIS)) result = AZO_PARSER_ERROR_SYNTAX;
 		if (result) {
 			parser_pop (parser);
 			parser_detach_last (parser);
 			azo_node_free_tree (expr);
 			return result;
 		}
-		need_separator = 1;
 	}
 	expr->term.end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
@@ -1481,118 +1665,179 @@ parse_arguments_definition (AZOParser *parser, AZOToken *token)
 }
 
 /*
- * RETURN_TYPE (ARGUMENTS)
+ * LEGACY - kept for old scripts, new code uses lambdas (=>)
  *
- * Current token points to return type
+ * Function_definition:
+ *   function [TYPE | VOID] (ARGUMENTS) BLOCK    (function definition)
+ *   function                                    (bareword - evaluates to the function class)
+ *
+ * Builds an AZO_TERM_FUNCTION node with children [return_type, arguments, body]
+ * ([return_type, object, arguments, body] for member functions), the same shape
+ * the resolver/compiler expect from a lambda
+ *
+ * Current token is the function keyword
+ * If member, the object reference is already on the stack
+ * After completing token points past the body
  */
+
 static unsigned int
-parse_signature_definition (AZOParser *parser, AZOToken *token, unsigned int *is_class)
+parse_function_definition (AZOParser *parser, AZOToken *token, unsigned int is_member)
 {
-	AZONode *expr;
-	unsigned int error;
+	AZONode *expr, *type, *args, *body;
+	unsigned int start, error;
+	start = token->start;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	/* Return type */
 	if (azo_token_is_keyword (token, AZO_KEYWORD_FUNCTION, parser->src)) {
-		/* function function (...) - i.e. function that returns a function */
+		/* function function (...) - i.e. a function returning a function */
 		/* We create reference as it should be interpreted as type */
-		expr = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
-		parser_append (parser, expr);
-		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		type = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+			azo_node_free (type);
+			return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		}
 	} else if (azo_token_is_keyword (token, AZO_KEYWORD_VOID, parser->src)) {
 		/* function void (...) */
-		expr = azo_node_new (AZO_TERM_KEYWORD, AZO_KEYWORD_VOID, token->start, token->end);
-		parser_append (parser, expr);
-		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		type = azo_node_new (AZO_TERM_KEYWORD, AZO_KEYWORD_VOID, token->start, token->end);
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+			azo_node_free (type);
+			return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		}
 	} else if (token->type == AZO_TOKEN_LEFT_PARENTHESIS) {
-		/* function (...) - void return type */
-		expr = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->end);
-		parser_append (parser, expr);
-	} else if (token->type == AZO_TOKEN_WORD) {
-		/* function type (...) - type is given as an expression */
-		/* fixme: We should exclude keywords here so function in 'function is any' construct is parsed as class */
+		/* function (...) - no return type */
+		type = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->start);
+	} else if (AZO_TOKEN_IS_WORD (token)) {
+		/* function type (...) - the return type is given as an expression (may be a type keyword, e.g. int32) */
 		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_FUNCTION);
 		if (error) return error;
-	} else if (token->type == AZO_TOKEN_RIGHT_PARENTHESIS) {
-		/* ... function) - means function class */
-		/* eg: if (a implements function) */
-		*is_class = 1;
-		return AZO_PARSER_ERROR_NONE;
-	} else if (token->type == AZO_TOKEN_RIGHT_BRACKET) {
-		/* ... function} - means function class */
-		/* E.g. {1, "text, function"} */
-		*is_class = 1;
-		return AZO_PARSER_ERROR_NONE;
-	} else if (token->type == AZO_TOKEN_OPERATOR) {
-		/* function OP ... - means function class */
-		/* E.g: function.name */
-		*is_class = 1;
+		type = parser_detach_last (parser);
+	} else if ((token->type == AZO_TOKEN_RIGHT_PARENTHESIS) || (token->type == AZO_TOKEN_RIGHT_BRACKET) ||
+		(token->type == AZO_TOKEN_SEMICOLON) || (token->type == AZO_TOKEN_COMMA) || (token->type == AZO_TOKEN_RIGHT_BRACE) ||
+		AZO_TOKEN_IS_OPERATOR (token)) {
+		/* The bareword evaluates to the function class (e.g. function.name, a implements function, function f) */
+		expr = new_named_reference (AZO_TERM_REFERENCE_VARIABLE, start, token->start, "function");
+		parser_append (parser, expr);
 		return AZO_PARSER_ERROR_NONE;
 	} else {
+		/* Keep the offending token as anchor for error recovery */
 		return AZO_PARSER_ERROR_SYNTAX;
 	}
 	/* Arguments */
-	if (token->type == AZO_TOKEN_LEFT_PARENTHESIS) {
-		error = parse_arguments_definition (parser, token);
-		if (error) return error;
-	} else {
+	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) {
+		azo_node_free (type);
+		/* Keep the offending token as anchor for error recovery */
 		return AZO_PARSER_ERROR_SYNTAX;
 	}
-	*is_class = 0;
-	return AZO_PARSER_ERROR_NONE;
-}
-
-/*
-* Parse function definition
-*   function [TYPE|VOID] (ARGUMENTS) STATEMENT
-*
-* Current token points to function keyword
-* If member, object reference is already pushed into stack
-*/
-
-static unsigned int
-azo_parser_parse_function_definition (AZOParser *parser, AZOToken *token, unsigned int has_return_type, unsigned int is_member)
-{
-	AZONode *expr;
-	unsigned int start, end, error, is_class;
-	start = token->start;
-	end = token->end;
-	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	error = parse_signature_definition (parser, token, &is_class);
-	if (error) return error;
-	if (is_class) {
-		/* function bareword */
-		/* fixme: */
-		expr = azo_node_new (AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE, start, end);
-		AZString *f = az_string_new ((const unsigned char *) "function");
-		az_packed_value_set_string (&expr->value, f);
-		parser_append (parser, expr);
-		//if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-		return AZO_PARSER_ERROR_NONE;
+	error = parse_arguments_definition (parser, token);
+	if (error) {
+		azo_node_free (type);
+		return error;
 	}
-	/* Statement/Block */
-	if (token->type == AZO_TOKEN_LEFT_BRACE) {
-		/* Definition */
-		error = azo_parser_parse_sentence (parser, token);
-		if (error) return error;
-	} else {
-		return AZO_PARSER_ERROR_SYNTAX;
-	}
-	AZONode *type, *args, *body;
-	body = parser_detach_last (parser);
 	args = parser_detach_last (parser);
-	type = parser_detach_last (parser);
+	/* Body - a function definition requires a block */
+	if (token->type != AZO_TOKEN_LEFT_BRACE) {
+		azo_node_free (args);
+		azo_node_free (type);
+		/* Keep the offending token as anchor for error recovery */
+		return AZO_PARSER_ERROR_SYNTAX;
+	}
+	error = azo_parser_parse_sentence (parser, token);
+	if (error) {
+		azo_node_free (args);
+		azo_node_free (type);
+		return error;
+	}
+	body = parser_detach_last (parser);
 	if (is_member) {
 		AZONode *obj = parser_detach_last (parser);
 		expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER, obj->term.start, body->term.end, 4, type, obj, args, body);
 	} else {
-		expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC, type->term.start, body->term.end, 3, type, args, body);
+		expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC, start, body->term.end, 3, type, args, body);
 	}
 	parser_append (parser, expr);
 	return AZO_PARSER_ERROR_NONE;
+}
+#endif
+
+/*
+ * Lambda:
+ *   (ARGUMENTS) => BODY
+ *   (ARGUMENTS) RETURN_TYPE => BODY
+ *
+ * BODY is a block or a single expression (the value is returned implicitly)
+ * The return type may only be given if the argument list is empty or all
+ * arguments are typed (type_allowed) - for untyped arguments it would be
+ * ambiguous with a call of the parenthesized argument
+ *
+ * Builds an AZO_TERM_FUNCTION node with children [return_type, arguments, body],
+ * the same shape the resolver/compiler expect from a function definition
+ *
+ * The argument list is already parsed and is the last node on the stack
+ * Current token is at => or at the return type (only words and void are legal)
+ * After completing token points past the body
+ */
+
+static unsigned int
+parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, unsigned int start, unsigned int type_allowed)
+{
+	AZONode *expr, *type, *args, *body;
+	unsigned int error;
+	/* Optional return type (stops at =>) */
+	if (AZO_TOKEN_IS_OPERATOR (token) && (AZO_TOKEN_OPERATOR_CODE (token) == AZO_OPERATOR_LAMBDA)) {
+		/* No return type */
+		type = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->start);
+	} else if (!type_allowed) {
+		/* Keep the offending token as anchor for error recovery */
+		return AZO_PARSER_ERROR_SYNTAX;
+	} else if (azo_token_is_keyword (token, AZO_KEYWORD_VOID, parser->src)) {
+		/* void return type */
+		type = azo_node_new (AZO_TERM_KEYWORD, AZO_KEYWORD_VOID, token->start, token->end);
+		azo_tokenizer_get_next_token (&parser->tokenizer, token);
+	} else if (AZO_TOKEN_IS_WORD (token)) {
+		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
+		if (error) return error;
+		type = parser_detach_last (parser);
+	} else {
+		/* Keep the offending token as anchor for error recovery */
+		return AZO_PARSER_ERROR_SYNTAX;
+	}
+	args = parser_detach_last (parser);
+	/* => */
+	if (!AZO_TOKEN_IS_OPERATOR (token) || (AZO_TOKEN_OPERATOR_CODE (token) != AZO_OPERATOR_LAMBDA)) {
+		azo_node_free (type);
+		azo_node_free_tree (args);
+		/* Keep the offending token as anchor for error recovery */
+		return AZO_PARSER_ERROR_SYNTAX;
+	}
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+		azo_node_free (type);
+		azo_node_free_tree (args);
+		return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	}
+	/* Body: block or a single expression */
+	if (token->type == AZO_TOKEN_LEFT_BRACE) {
+		error = azo_parser_parse_sentence (parser, token);
+	} else {
+		/* Expression body - the value is returned implicitly */
+		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
+	}
+	if (error) {
+		azo_node_free (type);
+		azo_node_free_tree (args);
+		return error;
+	}
+	body = parser_detach_last (parser);
+	expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC, start, body->term.end, 3, type, args, body);
+	parser_append (parser, expr);
+	return azo_parser_continue_expression (parser, token, left_precedence);
 }
 
 /*
 * Parse array element
 *   [EXPRESSION]
+*
+* The empty index ([]) is not supported - array type declarations and new-array
+* expressions are a separate construct, not an empty subscript
 *
 * Current token is at opening bracket
 * Array reference is last element in stack
@@ -1606,16 +1851,17 @@ parse_array_element (AZOParser *parser, AZOToken *token)
 	unsigned int start, end, error;
 	start = token->start;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	if (token->type == AZO_TOKEN_RIGHT_BRACKET) {
-		/* Empty element - i.e. declaration */
-		right = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->start);
-	} else {
-		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
-		if (error) return error;
-		right = parser_detach_last (parser);
+	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
+	if (error) return error;
+	right = parser_detach_last (parser);
+	if (token->type == AZO_TOKEN_EOF) {
+		azo_node_free_tree (right);
+		return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	}
-	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	if (token->type != AZO_TOKEN_RIGHT_BRACKET) return AZO_PARSER_ERROR_SYNTAX;
+	if (token->type != AZO_TOKEN_RIGHT_BRACKET) {
+		azo_node_free_tree (right);
+		return AZO_PARSER_ERROR_SYNTAX;
+	}
 	end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	left = parser_detach_last (parser);
@@ -1640,57 +1886,18 @@ parse_array_literal (AZOParser *parser, AZOToken *token)
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	expr = azo_node_new (AZO_TERM_LITERAL_ARRAY, AZO_TERM_GENERIC, token->start, token->end);
 	parser_push (parser, expr);
-	while (token->type != AZO_TOKEN_RIGHT_BRACE) {
-		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
-		if (error) {
-			parser_pop (parser);
-			parser_detach_last (parser);
-			azo_node_free_tree (expr);
-			return error;
-		}
-		if (token->type == AZO_TOKEN_EOF) {
-			parser_pop (parser);
-			parser_detach_last (parser);
-			azo_node_free_tree (expr);
-			return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-		}
-		if (token->type == AZO_TOKEN_COMMA) {
-			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
-				parser_pop (parser);
-				parser_detach_last (parser);
-				azo_node_free_tree (expr);
-				return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-			}
-		} else if (token->type != AZO_TOKEN_RIGHT_BRACE) {
-			parser_pop (parser);
-			parser_detach_last (parser);
-			azo_node_free_tree (expr);
-			return AZO_PARSER_ERROR_SYNTAX;
-		}
+	error = parse_expression_list (parser, token, AZO_TOKEN_RIGHT_BRACE);
+	if (error) {
+		parser_pop (parser);
+		parser_detach_last (parser);
+		azo_node_free_tree (expr);
+		return error;
 	}
 	expr->term.end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	parser_pop (parser);
 	return AZO_PARSER_ERROR_NONE;
 }
-
-/*
-* Parse constructor
-*   new EXPRESSION(ARGUMENTS)
-*
-* Current token is at keyword "new"
-*/
-
-/*
-* Parse constructor
-*   new EXPRESSION(ARGUMENTS)
-*
-* The class expression stops before the constructor argument list, so
-* new MyObject().someMethod() constructs the object and then calls the method
-*
-* Current token is at keyword "new"
-* After completing token points past the closing parenthesis
-*/
 
 /*
 * Parse constructor

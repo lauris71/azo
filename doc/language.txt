@@ -116,7 +116,6 @@ Declaration_initialization:
 
 Type:
   Type_expression
-  function
 
 # Expressions
 
@@ -188,7 +187,7 @@ RValue:
   this
   Literal
   New
-  Function_definition
+  Lambda
   Function_call
   Unary_operation
   Binary_operation
@@ -239,23 +238,29 @@ Chained_assignment:
 
 New:
   new Expression Arguments
-  new Function_definition
 
 Arguments:
   ([Expression [, Expression ...]])
 
-Function_definition:
-  function Signature_definition Block
+# Function definitions are lambdas - (arguments) [return_type] => body
+# The body is either a block (explicit return) or a single expression (implicit return)
+# Argument types are optional but either all arguments are typed or all are untyped;
+# the return type may only be given if the argument list is empty or all arguments
+# are typed (for untyped arguments it would be ambiguous with a call of the
+# parenthesized argument)
 
-Signature_definition:
-  void Arguments_definition
-  Type Arguments_definition
+Lambda:
+  (Arguments_definition) => Block
+  (Arguments_definition) => Expression
+  (Arguments_definition) Type => Block
+  (Arguments_definition) Type => Expression
 
 Arguments_definition:
   ([Argument_definition [, Argument_definition ...]])
 
 Argument_definition:
   Type NAME
+  NAME
 
 Function_call:
   Expression Arguments
@@ -304,6 +309,12 @@ Comparison:
   Expression <= Expression
   Expression > Expression
   Expression >= Expression
+  Expression === Expression
+  Expression !== Expression
+
+# == / != compare values (with the usual type coercion)
+# === / !== are identity comparisons - same reference (or identical value), no coercion;
+# they are the only valid comparisons for values of different types
 
 Logical_operation:
   Expression && Expression

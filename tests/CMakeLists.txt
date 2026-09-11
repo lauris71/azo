@@ -10,6 +10,8 @@ find_library(MATH_LIBRARY m)
 add_executable(azo_test
     unity/unity.c
     test.c
+    test_tokenizer.c
+    test_parser.c
 )
 
 target_compile_definitions(azo_test PRIVATE UNITY_INCLUDE_DOUBLE)
@@ -25,6 +27,7 @@ endif()
 
 add_test(NAME compile COMMAND azo_test compile)
 add_test(NAME assign COMMAND azo_test assign)
+add_test(NAME comparison COMMAND azo_test comparison)
 add_test(NAME function COMMAND azo_test function)
 add_test(NAME tokenizer COMMAND azo_test tokenizer)
 add_test(NAME parser COMMAND azo_test parser)

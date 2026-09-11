@@ -66,6 +66,8 @@ enum {
 	AZO_TERM_ASSIGN,
 	/* Type_operator */
 	AZO_TERM_TEST,
+	/* Selection (ternary) - CONDITION, TRUE_EXPRESSION, FALSE_EXPRESSION */
+	AZO_TERM_SELECT,
 
 	/* Resolved expressions */
 	/* Subtype is value type (or 0), value is set */
@@ -144,7 +146,10 @@ enum {
 	AZO_TERM_COMPARISON_LT,
 	AZO_TERM_COMPARISON_LE,
 	AZO_TERM_COMPARISON_GT,
-	AZO_TERM_COMPARISON_GE
+	AZO_TERM_COMPARISON_GE,
+	/* Identity (reference/value identity, no coercion) */
+	AZO_TERM_COMPARISON_IDENTICAL,
+	AZO_TERM_COMPARISON_NOT_IDENTICAL
 };
 
 /* Assign subtypes (priority 16) */
@@ -165,6 +170,14 @@ enum {
 enum {
 	AZO_TERM_TEST_IS,
 	AZO_TERM_TEST_IMPLEMENTS
+};
+
+/* CAST subtypes */
+enum {
+	/* Primitive value conversion - (type) expression, flags EXACT/ROUNDED */
+	AZO_TERM_CAST_CONVERT,
+	/* Checked class/interface conversion - expression as Type */
+	AZO_TERM_CAST_AS
 };
 
 struct _AZOTerm {
