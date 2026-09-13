@@ -21,6 +21,13 @@ target_include_directories(azo_test PRIVATE ${CMAKE_SOURCE_DIR} ..)
 # library location, name (libarikkei/libarikkeid. libaz/libazd) and per-config subdirectory
 target_link_libraries(azo_test PRIVATE az azo arikkei)
 
+add_executable(azo_console
+    azo-console.c
+)
+
+target_include_directories(azo_console PRIVATE ${CMAKE_SOURCE_DIR} ..)
+target_link_libraries(azo_console PRIVATE az azo arikkei)
+
 if(MATH_LIBRARY)
     target_link_libraries(azo_test PRIVATE ${MATH_LIBRARY})
 endif()

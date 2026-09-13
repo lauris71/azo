@@ -67,7 +67,20 @@ struct _AZOCompiler {
 void azo_compiler_init (AZOCompiler *compiler, AZOCompilerContext *ctx);
 void azo_compiler_finalize (AZOCompiler *compiler);
 
-AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZONode *root, unsigned int need_resolve, AZOSource *src);
+/**
+ * @brief Resolves references and types in parsed tree
+ * 
+ * Argumets must be already declared as variables
+ * 
+ * References are replaced with either VARIABLE or CONSTANT nodes
+ * All type expressions must resolve to constants
+ * 
+ * @param comp A compiler
+ * @param root The root node of the parsed tree
+ * @return AZONode* The resolved root node
+ */
+AZONode *azo_compiler_resolve (AZOCompiler *comp, AZONode *root);
+AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src);
 
 /**
  * @brief Start new current frame, preserving link to parent

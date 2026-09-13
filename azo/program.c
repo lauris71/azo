@@ -89,7 +89,8 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	azo_parser_setup (&parser, src);
 	AZONode *expr = azo_parser_parse (&parser);
 	//azo_node_print_info(expr, stdout, src, 0);
-	AZOProgram *prog = azo_compiler_compile (&comp, expr, 1, src);
+	azo_compiler_resolve(&comp, expr);
+	AZOProgram *prog = azo_compiler_compile (&comp, expr, src);
 	azo_parser_release (&parser);
 	azo_source_unref(src);
 	azo_compiler_finalize(&comp);

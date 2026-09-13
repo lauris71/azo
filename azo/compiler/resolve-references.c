@@ -121,9 +121,9 @@ resolve_member (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
 	AZONode *parent, *member;
 	unsigned int result;
-	parent = azo_compiler_resolve_expression (comp, expr->children, flags, &result);
+	parent = azo_compiler_resolve_node (comp, expr->children, flags, &result);
 	if (result) return result;
-	member = azo_compiler_resolve_expression (comp, expr->children->next, flags, &result);
+	member = azo_compiler_resolve_node (comp, expr->children->next, flags, &result);
 	if (result) return result;
 	if (parent->term.type == AZO_TERM_CONSTANT) {
 		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
@@ -263,12 +263,35 @@ resolve_variable (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 AZONode *
 azo_compiler_resolve_reference (AZOCompiler *comp, AZONode *expr, unsigned int flags, unsigned int *result)
 {
+	assert(expr->term.type == AZO_TERM_REFERENCE);
 	if (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
 		*result = resolve_variable (comp, expr, flags);
 	} else if (expr->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
 		*result = resolve_member (comp, expr, flags);
+	} else if (expr->term.subtype == AZO_TERM_REFERENCE_PROPERTY) {
+		/* No-op */
+	} else {
+		fprintf(stderr, "resolve_reference: Unknown reference subtype %u\n", expr->term.subtype);
+		*result = 1;
 	}
 	return expr;
+}
+
+unsigned int
+azo_compiler_resolve_node_to_class(AZOCompiler *comp, AZONode *expr, unsigned int flags)
+{
+	unsigned int result;
+	expr = azo_compiler_resolve_node (comp, expr, flags, &result);
+	if (result) return result;
+	if (expr->term.type != AZO_TERM_CONSTANT) {
+		fprintf (stderr, "azo_compiler_resolve_node_to_class: reference is not a constant\n");
+		return 1;
+	}
+	if (expr->term.subtype != AZ_TYPE_CLASS) {
+		fprintf (stderr, "azo_compiler_resolve_node_to_class: reference is not a class\n");
+		return 1;
+	}
+	return 0;
 }
 
 unsigned int resolve_call (AZOCompiler *comp, AZONode *expr, AZONode *ref, unsigned int n_args, unsigned int arg_types[], unsigned int flags)
@@ -294,7 +317,7 @@ azo_compiler_resolve_function_call (AZOCompiler *comp, AZONode *expr, unsigned i
 
 	ref = azo_compiler_resolve_reference (comp, ref, flags, result);
 	if (*result) return expr;
-	args = azo_compiler_resolve_expression (comp, args, flags, result);
+	args = azo_compiler_resolve_node (comp, args, flags, result);
 	if (*result) return expr;
 
 	/* If reference is already resolved to constant we have nothing to do */
@@ -388,22 +411,10 @@ azo_compiler_resolve_new (AZOCompiler *comp, AZONode *expr, unsigned int flags, 
 	ref = expr->children;
 	args = ref->next;
 	assert (!args->next);
-	*result = 0;
-	ref = azo_compiler_resolve_reference (comp, ref, flags, result);
+	*result = azo_compiler_resolve_node_to_class(comp, ref, flags);
 	if (*result) return expr;
-	args = azo_compiler_resolve_expression (comp, args, flags, result);
+	args = azo_compiler_resolve_node (comp, args, flags, result);
 	if (*result) return expr;
-
-	if ((ref->term.type != AZO_TERM_CONSTANT) || (ref->term.subtype != AZ_TYPE_CLASS)) {
-		fprintf (stderr, "azo_compiler_resolve_new: reference is not a class\n");
-		*result = 1;
-		return expr;
-	}
-	if (args->term.type != AZO_TERM_LIST) {
-		fprintf (stderr, "azo_compiler_resolve_new: arguments is not list\n");
-		*result = 1;
-		return expr;
-	}
 
 	/* Test if arguments list is constant */
 	unsigned int n_args = 0;

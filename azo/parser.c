@@ -1848,8 +1848,7 @@ static unsigned int
 parse_array_element (AZOParser *parser, AZOToken *token)
 {
 	AZONode *expr, *left, *right;
-	unsigned int start, end, error;
-	start = token->start;
+	unsigned int error;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
 	if (error) return error;
@@ -1862,10 +1861,9 @@ parse_array_element (AZOParser *parser, AZOToken *token)
 		azo_node_free_tree (right);
 		return AZO_PARSER_ERROR_SYNTAX;
 	}
-	end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	left = parser_detach_last (parser);
-	expr = azo_node_new_with_children (AZO_TERM_ARRAY_ELEMENT, AZO_TERM_GENERIC, start, end, 2, left, right);
+	expr = azo_node_new_with_children (AZO_TERM_ARRAY_ELEMENT, AZO_TERM_GENERIC, left->term.start, right->term.end, 2, left, right);
 	parser_append (parser, expr);
 	return AZO_PARSER_ERROR_NONE;
 }

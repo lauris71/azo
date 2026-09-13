@@ -975,7 +975,7 @@ compile_function (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 	AZOFrame *prev_frame = azo_compiler_set_frame(comp, func_frame);
 
 	/* Compile function body in it's own resolved frame */
-	prog = azo_compiler_compile (comp, body, 0, src);
+	prog = azo_compiler_compile (comp, body, src);
 	if (!prog) {
 		fprintf (stderr, "compile_function: error compiling function\n");
 		/* Restore the previous frame */
@@ -1503,14 +1503,9 @@ compile_program (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 }
 
 AZOProgram *
-azo_compiler_compile (AZOCompiler *comp, AZONode *root, unsigned int need_resolve, AZOSource *src)
+azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src)
 {
 	AZOProgram *prog;
-
-	if (need_resolve) {
-		root = azo_compiler_resolve_frame (comp, root);
-		//azo_node_print_info(root, stdout, src, 0);
-	}
 
 	/* Have to reserve closure before compilation */
 	/* fixme: Here we probably do not have parent vars */

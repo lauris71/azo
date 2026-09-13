@@ -84,9 +84,18 @@ enum {
 
 /* Reference subtypes */
 enum {
-	/* Simple variable name */
+	/**
+	 * @brief Single variable name
+	 * 
+	 */
 	AZO_TERM_REFERENCE_VARIABLE,
-	/* Member object (dot operator) */
+	/**
+	 * @brief Member object (dot operator)
+	 * 
+	 * REFERENCE_MEMBER
+	 *   REFERENCE/ARRAY_ELEMENT/FUNCTION_CALL
+	 *   REFERENCE_PROPERTY
+	 */
 	AZO_TERM_REFERENCE_MEMBER,
 	/**
 	 * @brief Second component (after the dot) of member reference
