@@ -123,12 +123,12 @@ parser_report_error (AZOParser *parser, const AZOToken *token, unsigned int errv
 			azo_tokenizer_print_token (&parser->tokenizer, token, stderr);
 			fprintf (stderr, "\n");
 			/* fixme: Keep track of the last processed token */
-			azo_source_print_lines (parser->src, first, last + 1);
+			azo_source_print_lines (parser->src, first, last + 1, stderr);
 		}
 	} else {
 		fprintf (stderr, "near EOF\n");
 		azo_source_ensure_lines(parser->src);
-		azo_source_print_lines (parser->src, parser->src->n_lines - 1, parser->src->n_lines);
+		azo_source_print_lines (parser->src, parser->src->n_lines - 1, parser->src->n_lines, stderr);
 	}
 }
 

@@ -27,35 +27,134 @@ extern "C" {
 /* Term types */
 enum {
 	/* Special */
+	/**
+	 * @brief Invalid term
+	 * 
+	 * Inserted into parse tree to allow continuing parsing after an error
+	 */
 	AZO_TERM_INVALID,
+	/**
+	 * @brief Empty or missing term
+	 * 
+	 * Marks an allowed missing value, e.g. missing 'else' block of if statement
+	 */
 	AZO_TERM_EMPTY,
 
-	/* Program */
+	/**
+	 * @brief Full program
+	 * 
+	 * PROGRAM
+	 *   [SENTENCE ...]
+	 */
 	AZO_TERM_PROGRAM,
-	/* Block */
+	/**
+	 * @brief Block
+	 * 
+	 * BLOCK
+	 *   [SENTENCE ...]
+	 */
 	AZO_TERM_BLOCK,
-	/* Statement group - behaves like a block but does not create a new scope */
+	/**
+	 * @brief Statement group
+	 * 
+	 * Statement group - behaves like a block but does not create a new scope
+	 *
+	 * STATEMENT_GROUP
+	 *   [STATEMENT ...]
+	 */
 	AZO_TERM_STATEMENT_GROUP,
-	/* Keywords */
+	/**
+	 * @brief Single keyword
+	 * 
+	 * return, break, continue, this, void, new, if, for, do
+	 * 
+	 */
 	AZO_TERM_KEYWORD,
-	/* TYPE DECLARATION[...]*/
+	/**
+	 * @brief Declaration list
+	 * 
+	 * DECLARATION_LIST
+	 *   EXPRESSION
+	 *   DECLARATION, [DECLARATION ...]
+	 */
 	AZO_TERM_DECLARATION_LIST,
-	/* NAME [= VALUE] */
+	/**
+	 * @brief Variable declaration
+	 * 
+	 * DECLARATION
+	 *   REFERENCE_VARIABLE
+	 *   [EXPRESSION]
+	 */
 	AZO_TERM_DECLARATION,
-	/* TYPE NAME */
+	/**
+	 * @brief Argument declaration
+	 * 
+	 * ARGUMENT_DECLARATION
+	 *   EXPRESSION | EMPTY
+	 *   REFERENCE_VARIABLE
+	 */
 	AZO_TERM_ARGUMENT_DECLARATION,
-	/* [REFERENCE.]function [REFERENCE] (LIST) STATEMENT */
+	/**
+	 * @brief Function definition
+	 * 
+	 * FUNCTION - MEMBER
+	 *   EXPRESSION | EMPTY
+	 *   EXPRESSION
+	 *   ARGUMENT_DECLARATION
+	 *   SENTENCE
+	 * FUNCTION - STATIC
+	 *   EXPRESSION | EMPTY
+	 *   ARGUMENT_DECLARATION
+	 *   SENTENCE
+	 */
 	AZO_TERM_FUNCTION,
-	/* REFERENCE, LIST */
+	/**
+	 * @brief Function call
+	 * 
+	 * FUNCTION_CALL
+	 *   EXPRESSION
+	 *   LIST
+	 */
 	AZO_TERM_FUNCTION_CALL,
+	/**
+	 * @brief Array element
+	 * 
+	 * ARRAY_ELEMENT
+	 *   EXPRESSION
+	 *   EXPRESSION
+	 */
 	AZO_TERM_ARRAY_ELEMENT,
-	/* List of expressions (for example function arguments) */
+	/**
+	 * @brief List of expressions
+	 * 
+	 * LIST
+	 *   [EXPRESSION ...]
+	 */
 	AZO_TERM_LIST,
-	/* Variable reference */
+	/**
+	 * @brief Variable reference
+	 * 
+	 * REFERENCE - VARIABLE/PROPERTY
+	 * REFERENCE - MEMBER
+	 *   EXPRESSION
+	 *   REFERENCE
+	 * 
+	 */
 	AZO_TERM_REFERENCE,
-	/* Literal array */
+	/**
+	 * @brief Literal array
+	 * 
+	 * LITERAL_ARRAY
+	 *   [EXPRESSION ...]
+	 */
 	AZO_TERM_LITERAL_ARRAY,
-	/* Cast */
+	/**
+	 * @brief Cast (either c-style or 'as')
+	 * 
+	 * CAST
+	 *   EXPRESSION
+	 *   EXPRESSION
+	 */
 	AZO_TERM_CAST,
 
 	/* Operators */

@@ -206,7 +206,8 @@ Structured_literal:
   {[Expression [, Expression ...]] }
 
 Type_expression:
-  LValue
+  Variable_reference
+  Array_reference
   Function_call
 
 # Assignments

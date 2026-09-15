@@ -2,7 +2,7 @@ SET(SOURCES
     arithmetic.c arithmetic.h
     compiler.c compiler.h
     frame.c frame.h
-    resolve-constants.c
+    calculate-constants.c
     resolve-frames.c
     resolve-references.c
     scope.c scope.h

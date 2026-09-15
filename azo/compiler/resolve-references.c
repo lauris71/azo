@@ -46,7 +46,7 @@ resolve_member_impl (AZOCompiler *comp, AZONode *member, const AZClass *klass, c
 
 #define noDEBUG_MEMBER_INST
 
-static unsigned int
+static int
 resolve_member_inst (AZOFrame *frame, AZONode *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str, unsigned int flags)
 {
 	const AZClass *def_class;
@@ -142,8 +142,20 @@ resolve_member (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 static unsigned int
 resolve_this_reference (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
+	assert(!expr->children);
 	const AZClass *klass = AZ_CLASS_FROM_IMPL(comp->current->this_impl);
-	return resolve_member_inst (comp->current, expr, klass, comp->current->this_impl, comp->current->this_inst, expr->value.v.string, flags);
+	int result = resolve_member_inst (comp->current, expr, klass, comp->current->this_impl, comp->current->this_inst, expr->value.v.string, flags);
+	if (result) return result;
+	if (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
+		/* Did not resolve to constant, replace with this reference */
+		AZONode *this_node = azo_node_new(AZO_TERM_KEYWORD, AZO_KEYWORD_THIS, expr->term.start, expr->term.end);
+		AZONode *prop_node = azo_node_new(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY, expr->term.start, expr->term.end);
+		az_packed_value_set_string(&prop_node->value, expr->value.v.string);
+		expr->term.subtype = AZO_TERM_REFERENCE_MEMBER;
+		expr->children = this_node;
+		this_node->next = prop_node;
+	}
+	return 0;
 }
 
 #define noDEBUG_RESOLVE_VARIABLE
@@ -257,24 +269,30 @@ resolve_variable (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	if (comp->current->this_impl) {
 		return resolve_this_reference (comp, expr, flags);
 	}
-	return 0;
+	fprintf(stderr, "ERROR: resolve_variable: Not resolved: ");
+	azo_source_print_token(comp->src, expr->term.start, expr->term.end, stderr);
+	fprintf(stderr, "\n");
+	azo_source_print_lines_of_token(comp->src, expr->term.start, expr->term.end, stderr);
+	return 1;
 }
 
-AZONode *
-azo_compiler_resolve_reference (AZOCompiler *comp, AZONode *expr, unsigned int flags, unsigned int *result)
+int
+azo_compiler_resolve_reference (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
 	assert(expr->term.type == AZO_TERM_REFERENCE);
+	//fprintf(stderr, "Resolving: ");
+	//azo_source_print_token(comp->src, expr->term.start, expr->term.end, stderr);
+	//fprintf(stderr, "\n");
 	if (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
-		*result = resolve_variable (comp, expr, flags);
+		return resolve_variable (comp, expr, flags);
 	} else if (expr->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
-		*result = resolve_member (comp, expr, flags);
+		return resolve_member (comp, expr, flags);
 	} else if (expr->term.subtype == AZO_TERM_REFERENCE_PROPERTY) {
 		/* No-op */
-	} else {
-		fprintf(stderr, "resolve_reference: Unknown reference subtype %u\n", expr->term.subtype);
-		*result = 1;
+		return 0;
 	}
-	return expr;
+	assert(0);
+	return 1;
 }
 
 unsigned int
@@ -284,11 +302,11 @@ azo_compiler_resolve_node_to_class(AZOCompiler *comp, AZONode *expr, unsigned in
 	expr = azo_compiler_resolve_node (comp, expr, flags, &result);
 	if (result) return result;
 	if (expr->term.type != AZO_TERM_CONSTANT) {
-		fprintf (stderr, "azo_compiler_resolve_node_to_class: reference is not a constant\n");
+		fprintf (stderr, "ERROR: azo_compiler_resolve_node_to_class: reference is not a constant\n");
 		return 1;
 	}
 	if (expr->term.subtype != AZ_TYPE_CLASS) {
-		fprintf (stderr, "azo_compiler_resolve_node_to_class: reference is not a class\n");
+		fprintf (stderr, "ERROR: azo_compiler_resolve_node_to_class: reference is not a class\n");
 		return 1;
 	}
 	return 0;
@@ -315,7 +333,7 @@ azo_compiler_resolve_function_call (AZOCompiler *comp, AZONode *expr, unsigned i
 		return expr;
 	}
 
-	ref = azo_compiler_resolve_reference (comp, ref, flags, result);
+	*result = azo_compiler_resolve_reference (comp, ref, flags);
 	if (*result) return expr;
 	args = azo_compiler_resolve_node (comp, args, flags, result);
 	if (*result) return expr;

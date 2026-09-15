@@ -7,7 +7,7 @@
 */
 
 
-#define debug 0
+#define debug_optimizer 0
 #define debug_literals 0
 #define debug_calculate 0
 #define debug_references 0
@@ -18,6 +18,7 @@ typedef struct _AZOOptimizer AZOOptimizer;
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include <arikkei/arikkei-strlib.h>
 
@@ -29,106 +30,312 @@ typedef struct _AZOOptimizer AZOOptimizer;
 
 #include <azo/keyword.h>
 #include <azo/optimizer.h>
+#include <azo/compiler/compiler.h>
 
-struct _AZOOptimizer {
-	const AZOSource *src;
-};
+static int optimize_node(AZOOptimizer *opt, AZONode *node, unsigned int flags);
 
-static unsigned int
-token_is_equal (AZOOptimizer *opt, AZONode *expr, const char *word, const unsigned char *cdata)
+static int
+optimize_children(AZOOptimizer *opt, AZONode *children, unsigned int flags)
 {
-	unsigned int i;
-	for (i = expr->term.start; i < expr->term.end; i++) {
-		if (opt->src->cdata[i] != word[i]) return 0;
+	for (AZONode *child = children; child; child = child->next) {
+		int result = optimize_node(opt, child, flags);
+		if (result) return result;
 	}
-	return 1;
+	return 0;
 }
 
-#if 0
-static AZONode *
-resolve_member_reference (AZOOptimizer *opt, AZONode *expr)
+static int
+optimize_program(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	AZONode *lhs, *rhs;
-	AZPackedValue val;
-
-	lhs = expr->children;
-	rhs = lhs->next;
-	lhs = resolve (opt, lhs);
-	rhs = resolve (opt, rhs);
-	if (lhs->type != EXPRESSION_CONSTANT) return expr;
-	if ((rhs->type != EXPRESSION_REFERENCE) || (rhs->subtype != AZO_TERM_REFERENCE_VARIABLE)) {
-		fprintf (stderr, "resolve_member_reference: Invalid rhs type %u/%u\n", rhs->type, rhs->subtype);
-		expr->type = EXPRESSION_INVALID;
-		return expr;
-	}
-	if (!az_instance_get_property (lhs->value.impl, az_instance_from_value (lhs->value.impl, &lhs->value.v), rhs->value.v.string->str, &val)) {
-		AZClass *klass = az_type_get_class (lhs->value.impl->type);
-		fprintf (stderr, "resolve_member_reference: Invalid member %s of constant value of type %s\n", rhs->value.v.string->str, klass->name);
-		expr->type = EXPRESSION_INVALID;
-		return expr;
-	}
-	az_packed_value_set_from_impl_value (&expr->value, val.impl, &val.v);
-	expr->type = EXPRESSION_CONSTANT;
-	expr->subtype = val.impl->type;
-	az_packed_value_clear (&val);
-	expr->children = NULL;
-	azo_node_free (lhs);
-	azo_node_free (rhs);
-	return expr;
+	return optimize_children(opt, node->children, flags);
 }
 
-static unsigned int
-resolve_references (AZOOptimizer *opt, AZONode *expr, AZPackedValue *thisval, const unsigned char *cdata)
+static int
+optimize_block(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	AZONode *child;
-	unsigned int result;
-	result = 0;
-	for (child = expr->children; child; child = child->next) {
-		result = result || resolve_references (opt, child, thisval, cdata);
-	}
-	if (expr->type == EXPRESSION_REFERENCE) {
-		if (expr->subtype == AZO_TERM_REFERENCE_VARIABLE) {
-			/* fixme: Look for variables */
-			const unsigned char *word = opt->src->cdata + expr->start;
-			unsigned int len = expr->end - expr->start;
-			if (thisval->impl && thisval->impl->type && (len < 1024)) {
-				AZClass *this_klass;
-				void *this_inst;
-				AZImplementation *prop_impl;
-				void *prop_inst;
-				AZField *prop;
-				unsigned char c[1024];
-				int idx;
-
-				memcpy (c, word, len);
-				c[len] = 0;
-
-				this_klass = az_type_get_class (thisval->impl->type);
-				this_inst = az_packed_value_get_instance (thisval);
-				idx = az_lookup_property (this_klass, &this_klass->implementation, this_inst, c, &prop_impl, &prop_inst, &prop);
-				if ((idx >= 0) && prop->is_final) {
-					AZPackedValue propval[4] = { 0 };
-					if (prop->read == AZ_FIELD_READ_NONE) {
-						fprintf (stderr, "resolve_references: Property %s is not readable\n", c);
-						return 0;
-					}
-					if (az_instance_get_property_by_id (prop_impl, prop_inst, idx, &propval[0].impl, &propval[0].v, NULL)) {
-#if 0
-						expr->is_const = 1;
-#endif
-						az_packed_value_copy (&expr->value, &propval[0]);
-						if (debug_references) {
-							AZClass *kl = az_type_get_class (propval[0].impl->type);
-							fprintf (stderr, "resolve_references: Resolved literal string %s to %s\n", c, kl->name);
-						}
-					}
-				}
-				/* fixme: If not final we can still detect type */
-			}
-		} else if (expr->subtype == AZO_TERM_REFERENCE_MEMBER) {
-		}
-	}
-	return result;
+	return optimize_children(opt, node->children, flags);
 }
-#endif
 
+static int
+optimize_group(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	return optimize_children(opt, node->children, flags);
+}
+
+static int
+optimize_keyword(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	return 0;
+}
+
+static int
+optimize_declaration_list(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	int result = optimize_node(opt, node->children, flags);
+	if (result) return result;
+	return optimize_children(opt, node->children->next, flags);
+}
+
+static int
+optimize_declaration(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	AZONode *name = node->children;
+	assert(name->term.subtype == AZO_TERM_REFERENCE_VARIABLE);
+	if (name->next) {
+		int result = optimize_node(opt, name->next, flags);
+		if (result) return result;
+	}
+	return 0;
+}
+
+static int
+optimize_argument_declaration(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	AZONode *type = node->children;
+	AZONode *name = type->next;
+	int result = optimize_node(opt, type, flags);
+	if (result) return result;
+	assert(AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE));
+	return 0;
+}
+
+static int
+optimize_function(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	if (node->term.subtype == AZO_TERM_FUNCTION_MEMBER) {
+		AZONode *type = node->children;
+		int result = optimize_node(opt, type, flags);
+		if (result) return result;
+		AZONode *obj = type->next;
+		result = optimize_node(opt, obj, flags);
+		if (result) return result;
+		AZONode *args = obj->next;
+		result = optimize_node(opt, args, flags);
+		if (result) return result;
+		AZONode *body = args->next;
+		result = optimize_node(opt, body, flags);
+		if (result) return result;
+	} else {
+		AZONode *type = node->children;
+		int result = optimize_node(opt, type, flags);
+		if (result) return result;
+		AZONode *args = type->next;
+		result = optimize_node(opt, args, flags);
+		if (result) return result;
+		AZONode *body = args->next;
+		result = optimize_node(opt, body, flags);
+		if (result) return result;
+	}
+	return 0;
+}
+
+static int
+optimize_function_call(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	AZONode *ref = node->children;
+	assert (ref != NULL);
+	int result = optimize_node(opt, ref, flags);
+	if (result) return result;
+	AZONode *args = ref->next;
+	assert(args != NULL);
+	result = optimize_node(opt, args, flags);
+	if (result) return result;
+	return 0;
+}
+
+static int
+optimize_array_element(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	AZONode *ref = node->children;
+	assert(ref != NULL);
+	int result = optimize_node(opt, ref, flags);
+	if (result) return result;
+	AZONode *idx = ref->next;
+	assert(idx != NULL);
+	result = optimize_node(opt, idx, flags);
+	if (result) return result;
+	return 0;
+}
+
+static int
+optimize_list(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	return optimize_children(opt, node->children, flags);
+}
+
+static int
+optimize_reference(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	/* Variable references have to be resolved to either CONSTANT or MEMBER */
+	assert(node->term.subtype == AZO_TERM_REFERENCE_MEMBER);
+	AZONode *expr = node->children;
+	int result = optimize_node(opt, expr, flags);
+	if (result) return result;
+	return 0;
+}
+
+static int
+optimize_literal_array(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	return optimize_children(opt, node->children, flags);
+}
+
+static int
+optimize_cast(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	assert(node->children);
+	assert(node->children->term.type == AZO_TERM_TYPE);
+	AZONode *expr = node->children->next;
+	int result = optimize_node(opt, expr, flags);
+	if (result) return result;
+	return 0;
+}
+
+static int
+optimize_suffix(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	/* fixme: */
+	return 0;
+}
+
+static int
+optimize_prefix(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	/* fixme: */
+	return 0;
+}
+
+static int
+optimize_binary(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	AZONode *lhs = node->children;
+	assert(lhs);
+	AZONode *rhs = lhs->next;
+	assert(rhs);
+	int result = optimize_node(opt, lhs, flags);
+	if (result) return result;
+	result = optimize_node(opt, rhs, flags);
+	if (result) return result;
+	if ((lhs->term.type == AZO_TERM_CONSTANT) && (rhs->term.type == AZO_TERM_CONSTANT)) {
+		return azo_compiler_optimize_constant_binary(opt, node);
+	}
+	return 0;
+}
+
+static int
+optimize_comparison(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	/* fixme: */
+	return 0;
+}
+
+static int
+optimize_assign(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	/* fixme: */
+	return 0;
+}
+
+static int
+optimize_test(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	/* fixme: */
+	return 0;
+}
+
+static int
+optimize_select(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	/* fixme: */
+	return 0;
+}
+
+static int
+optimize_constant(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	/* fixme: */
+	return 0;
+}
+
+static int
+optimize_variable(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	/* fixme: */
+	return 0;
+}
+
+static int
+optimize_type(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	/* fixme: */
+	return 0;
+}
+
+static int
+optimize_node(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	switch (node->term.type) {
+		case AZO_TERM_INVALID:
+			fprintf(stderr, "optimize_node: type = INVALID\n");
+			return 1;
+		case AZO_TERM_EMPTY:
+			return 0;
+		case AZO_TERM_PROGRAM:
+			return optimize_program(opt, node, flags);
+		case AZO_TERM_BLOCK:
+			return optimize_block(opt, node, flags);
+		case AZO_TERM_STATEMENT_GROUP:
+			return optimize_group(opt, node, flags);
+		case AZO_TERM_KEYWORD:
+			return optimize_keyword(opt, node, flags);
+		case AZO_TERM_DECLARATION_LIST:
+			return optimize_declaration_list(opt, node, flags);
+		case AZO_TERM_DECLARATION:
+			return optimize_declaration(opt, node, flags);
+		case AZO_TERM_ARGUMENT_DECLARATION:
+			return optimize_argument_declaration(opt, node, flags);
+		case AZO_TERM_FUNCTION:
+			return optimize_function(opt, node, flags);
+		case AZO_TERM_FUNCTION_CALL:
+			return optimize_function_call(opt, node, flags);
+		case AZO_TERM_ARRAY_ELEMENT:
+			return optimize_array_element(opt, node, flags);
+		case AZO_TERM_LIST:
+			return optimize_list(opt, node, flags);
+		case AZO_TERM_REFERENCE:
+			return optimize_reference(opt, node, flags);
+		case AZO_TERM_LITERAL_ARRAY:
+			return optimize_literal_array(opt, node, flags);
+		case AZO_TERM_CAST:
+			return optimize_cast(opt, node, flags);
+		case AZO_TERM_SUFFIX:
+			return optimize_suffix(opt, node, flags);
+		case AZO_TERM_PREFIX:
+			return optimize_prefix(opt, node, flags);
+		case AZO_TERM_BINARY:
+			return optimize_binary(opt, node, flags);
+		case AZO_TERM_COMPARISON:
+			return optimize_comparison(opt, node, flags);
+		case AZO_TERM_ASSIGN:
+			return optimize_assign(opt, node, flags);
+		case AZO_TERM_TEST:
+			return optimize_test(opt, node, flags);
+		case AZO_TERM_SELECT:
+			return optimize_select(opt, node, flags);
+		case  AZO_TERM_CONSTANT:
+			return optimize_constant(opt, node, flags);
+		case AZO_TERM_VARIABLE:
+			return optimize_variable(opt, node, flags);
+		case AZO_TERM_TYPE:
+			return optimize_type(opt, node, flags);
+		default:
+			return 1;
+	}
+	return 0;
+}
+
+int
+azo_compiler_optimize (AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	return optimize_node(opt, node, flags);
+}

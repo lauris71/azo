@@ -57,16 +57,19 @@ struct _LValue {
 };
 
 void
-azo_compiler_init(AZOCompiler *compiler, AZOCompilerContext *ctx)
+azo_compiler_setup(AZOCompiler *compiler, AZOCompilerContext *ctx, AZOSource *src)
 {
 	memset (compiler, 0, sizeof (AZOCompiler));
 	compiler->ctx = ctx;
+	compiler->src = src;
+	az_object_ref((AZObject *) src);
 	compiler->check_args = 1;
 }
 
 void
-azo_compiler_finalize(AZOCompiler *compiler)
+azo_compiler_release(AZOCompiler *compiler)
 {
+	if (compiler->src) az_object_unref((AZObject *) compiler->src);
 	if (compiler->current) azo_frame_delete_tree(compiler->current);
 }
 
@@ -1347,6 +1350,7 @@ compile_block (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 {
 	unsigned int result;
 	result = compile_sentences (comp, expr->children, src);
+	/* Clear scope */
 	azo_compiler_write_POP (comp, expr->scope_size, NULL);
 	return result;
 }

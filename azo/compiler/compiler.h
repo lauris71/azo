@@ -41,10 +41,18 @@ struct _AZOCompilerContext {
 };
 
 struct _AZOCompiler {
-	/** Context
+	/**
+	 * @brief Compiler context
+	 * 
+	 * Defines this object, argument types and return type
 	 * 
 	 */
 	AZOCompilerContext *ctx;
+	/**
+	 * @brief Link to source
+	 * 
+	 */
+	AZOSource *src;
 	/**
 	 * @brief Force typecode argument checking
 	 * 
@@ -64,8 +72,8 @@ struct _AZOCompiler {
 	AZOFrame *current;
 };
 
-void azo_compiler_init (AZOCompiler *compiler, AZOCompilerContext *ctx);
-void azo_compiler_finalize (AZOCompiler *compiler);
+void azo_compiler_setup (AZOCompiler *compiler, AZOCompilerContext *ctx, AZOSource *src);
+void azo_compiler_release (AZOCompiler *compiler);
 
 /**
  * @brief Resolves references and types in parsed tree
@@ -77,9 +85,9 @@ void azo_compiler_finalize (AZOCompiler *compiler);
  * 
  * @param comp A compiler
  * @param root The root node of the parsed tree
- * @return AZONode* The resolved root node
+ * @return 0 if successful, non-zero otherwise
  */
-AZONode *azo_compiler_resolve (AZOCompiler *comp, AZONode *root);
+int azo_compiler_resolve (AZOCompiler *comp, AZONode *node);
 AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src);
 
 /**

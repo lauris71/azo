@@ -40,8 +40,8 @@ Rough edges:
    new value.function...
    These are not discoverable from value, but locally have this keyword and references are tried as value members
    For optimizer side it means, that they can be bound to specific value - i.e. all final members resolved to constants, interface and property accesses can be streamlined etc.
-13. No chained assignments: a = b = c = 0
-14. No exptions
+13. *SOLVED* No chained assignments: a = b = c = 0
+14. No exceptions
 15. Typed null (class valid, instance NULL) - design notes (on hold, not implemented yet):
     - Needed for overload picking: 'null as String' is our analogue of Java's '(String) null' -
       the 'as' operator has to accept it (null is exempt from the instance check)
@@ -57,3 +57,39 @@ Rough edges:
       controlled per-member at declaration site; UI trees can opt in, secure methods stay safe
     - Untyped null is the 'none' value (a real value), typed null is an absence of value
     - Open: syntax of the nullsafe flag; debug-mode logging of null derefs would help debugging
+
+16. Argument promotion rules for constant folding (binary arithmetic, calculate-constants.c):
+
+    The common type of a binary arithmetic expression is chosen by the first matching rule
+    (operands are then converted to it, and the operation is evaluated in that type):
+
+      1. complex double - if either operand is complex double, OR one is complex float and
+         the other is double or a 64-bit integer (int64/uint64)
+      2. complex float - if either operand is complex float
+      3. double - if either operand is double, OR one is float and the other is a 64-bit integer
+      4. float - if either operand is float
+      5. int64 - if either operand is int64, OR one operand is signed and the other is
+         uint32 or uint64 (the wider signed type can represent all uint32 values; a signed/uint64
+         mix goes to int64 because there is no wider signed type)
+      6. uint64 - if either operand is uint64 (both are unsigned at this point)
+      7. int32 - if either operand is signed (any signed type, or a signed/small-unsigned mix)
+      8. uint32 - otherwise (both operands are unsigned and at most 32 bits)
+
+    Notes / rationale:
+    - float combined with a 64-bit integer promotes to double (float cannot represent all
+      int64/uint64 values exactly); the same rule lifts complex float to complex double
+    - Small integers (int8..int16, uint8..uint16) promote to int32/uint32 - sub-32-bit
+      arithmetic is always done at machine width, matching C integer promotion
+    - Mixed signed/unsigned where the unsigned type is narrower than the signed result is
+      still exact (uint32 always fits in int64); uint64 mixed with signed also goes to int64
+      (may clamp large uint64 values - this is reported as a conversion warning)
+    - Constant folding reports an ERROR on: integer division/modulo by zero, integer overflow
+      (signed and unsigned + - *), and non-arithmetic operands. It reports a WARNING (but still
+      folds, producing the result) when an operand conversion is rounded or clamped.
+      Floating-point division by zero is allowed (produces inf/NaN per IEEE 754); a WARNING is
+      emitted when both operands are finite but the result overflows to infinity or is NaN
+      (e.g. 1e38 * 1e38, 0.0 / 0.0) - operands that were already infinite/NaN do not warn.
+    - Shifts (<< >>) require integral operands; the shift count is read as int32 regardless of
+      the left operand width, and the result type follows the (promoted) left operand.
+    - Logical && || require boolean operands and are folded separately (calculate_logic);
+      they are not arithmetic promotions.

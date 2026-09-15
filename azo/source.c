@@ -119,16 +119,44 @@ azo_source_find_line_range (AZOSource *src, unsigned int start, unsigned int end
 	return 0;
 }
 
+unsigned int
+azo_source_token_equals(const AZOSource *src, unsigned int t_start, unsigned int t_end, const uint8_t *str)
+{
+	unsigned int str_len = strlen((const char *) str);
+	if (t_end - t_start != str_len) return 0;
+	for (unsigned int i = 0; i < str_len; i++) {
+		if (src->cdata[t_start + i] != str[i]) return 0;
+	}
+	return 1;
+}
+
 void
-azo_source_print_lines (AZOSource *src, unsigned int start, unsigned int end)
+azo_source_print_token(const AZOSource *src, unsigned int t_start, unsigned int t_end, FILE *ofs)
+{
+	for (unsigned int i = t_start; i < t_end; i++) {
+		fputc(src->cdata[i], ofs);
+	}
+}
+
+void
+azo_source_print_lines (AZOSource *src, unsigned int start, unsigned int end, FILE *ofs)
 {
 	azo_source_ensure_lines(src);
 	for (unsigned int l = start; l < end; l++) {
 		unsigned int s = src->lines[l];
 		unsigned int e = ((l + 1) < src->n_lines) ? src->lines[l + 1] : src->csize;
 		for (unsigned int c = s; c < e; c++) {
-			fprintf (stderr, "%c", src->cdata[c]);
+			fputc(src->cdata[c], ofs);
 		}
-		if (l == (src->n_lines - 1)) fprintf (stderr, "\n");
+		if (l == (src->n_lines - 1)) fputc('\n', ofs);
+	}
+}
+
+void
+azo_source_print_lines_of_token (AZOSource *src, unsigned int t_start, unsigned int t_end, FILE *ofs)
+{
+	unsigned int first, last;
+	if (azo_source_find_line_range (src, t_start, t_end, &first, &last)) {
+		azo_source_print_lines (src, first, last + 1, ofs);
 	}
 }

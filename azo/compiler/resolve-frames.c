@@ -114,7 +114,8 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 		n_args += 1;
 	}
 
-	azo_compiler_resolve (comp, body);
+	int lresult = azo_compiler_resolve(comp, body);
+	if (lresult) result = 1;
 
 	if (comp->current->n_parent_vars) {
 		/* Reverse list */
@@ -130,7 +131,7 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	}
 
 	expr->frame = azo_compiler_pop_frame (comp);
-	return 0;
+	return result;
 }
 
 static unsigned int
@@ -407,7 +408,7 @@ azo_compiler_resolve_node (AZOCompiler *comp, AZONode *expr, unsigned int flags,
 	} else if (expr->term.type == AZO_TERM_DECLARATION_LIST) {
 		*result = resolve_declaration_list (comp, expr, flags);
 	} else if (expr->term.type == AZO_TERM_REFERENCE) {
-		expr = azo_compiler_resolve_reference (comp, expr, flags, result);
+		*result = azo_compiler_resolve_reference (comp, expr, flags);
 	} else if (expr->term.type == AZO_TERM_CAST) {
 		*result = azo_compiler_resolve_cast(comp, expr, flags);
 	} else if (expr->term.type == AZO_TERM_FUNCTION_CALL) {
@@ -432,7 +433,7 @@ azo_compiler_resolve_node (AZOCompiler *comp, AZONode *expr, unsigned int flags,
 		resolve_children (comp, expr, flags);
 		if (expr->term.type == AZO_TERM_BINARY) {
 			/* fixme: implement sub-expression resolve in literal resolver */
-			azo_compiler_resolve_binary (expr);
+			//azo_compiler_resolve_binary (expr);
 		} else if (expr->term.type == AZO_TERM_LITERAL_ARRAY) {
 			azo_compiler_resolve_array_literal (expr);
 		}
@@ -440,13 +441,12 @@ azo_compiler_resolve_node (AZOCompiler *comp, AZONode *expr, unsigned int flags,
 	return expr;
 }
 
-AZONode *
-azo_compiler_resolve (AZOCompiler *comp, AZONode *expr)
+int
+azo_compiler_resolve(AZOCompiler *comp, AZONode *node)
 {
-
+	unsigned int result = 0;
 	unsigned int ret_is_last = 0;
-	for (AZONode *child = expr->children; child; child = child->next) {
-		unsigned int result;
+	for (AZONode *child = node->children; child; child = child->next) {
 		if (AZO_NODE_IS (child, AZO_TERM_KEYWORD, AZO_KEYWORD_RETURN)) {
 			result = resolve_return (comp, child, 0);
 			ret_is_last = 1;
@@ -457,7 +457,8 @@ azo_compiler_resolve (AZOCompiler *comp, AZONode *expr)
 		if (result) break;
 	}
 	if (comp->current->ret_type && !ret_is_last) {
-		fprintf (stderr, "azo_compiler_resolve_frame: Missing return statement\n");
+		fprintf (stderr, "azo_compiler_resolve: Missing return statement\n");
+		return 1;
 	}
-	return expr;
+	return result;
 }

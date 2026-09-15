@@ -14,6 +14,7 @@
 #include <azo/debugger.h>
 #include <azo/parser.h>
 #include <azo/compiler/compiler.h>
+#include <azo/optimizer.h>
 
 #include <azo/program.h>
 
@@ -68,6 +69,12 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[],
 	const uint8_t *code, unsigned int code_len)
 {
+	AZOSource *src = azo_source_new_static(name, code, code_len);
+	AZOParser parser;
+	azo_parser_setup (&parser, src);
+	AZONode *expr = azo_parser_parse (&parser);
+	//azo_node_print_info(expr, stdout, src, 0);
+
 	AZOCompilerContext comp_ctx = {
 		.globals = ctx,
 		.this_impl = this_impl,
@@ -78,22 +85,32 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 		.arg_types = arg_types
 	};
 	AZOCompiler comp;
-	azo_compiler_init(&comp, &comp_ctx);
+	azo_compiler_setup(&comp, &comp_ctx, src);
 	comp.debug = 1;
 	azo_compiler_push_frame(&comp, this_impl, this_inst, ret_type);
 	for (unsigned int i = 0; i < n_args; i++) {
 		azo_compiler_declare_variable (&comp, arg_names[i], arg_types[i]);
 	}
-	AZOSource *src = azo_source_new_static(name, code, code_len);
-	AZOParser parser;
-	azo_parser_setup (&parser, src);
-	AZONode *expr = azo_parser_parse (&parser);
-	//azo_node_print_info(expr, stdout, src, 0);
-	azo_compiler_resolve(&comp, expr);
+	int result = azo_compiler_resolve(&comp, expr);
+	if (result != 0) {
+		azo_parser_release (&parser);
+		azo_source_unref(src);
+		azo_compiler_release(&comp);
+		return NULL;
+	}
+	AZOOptimizer opt = {.comp = &comp};
+	result = azo_compiler_optimize(&opt, expr, AZO_OPTIMIZER_FLAG_ALL);
+	if (result != 0) {
+		azo_parser_release (&parser);
+		azo_source_unref(src);
+		azo_compiler_release(&comp);
+		return NULL;
+	}
+
 	AZOProgram *prog = azo_compiler_compile (&comp, expr, src);
 	azo_parser_release (&parser);
 	azo_source_unref(src);
-	azo_compiler_finalize(&comp);
+	azo_compiler_release(&comp);
 	return prog;
 }
 
