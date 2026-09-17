@@ -39,11 +39,7 @@ azo_frame_delete (AZOFrame *frame)
 		azo_frame_pop_scope (frame);
 	}
 	azo_code_clear(&frame->code);
-	while (frame->parent_vars) {
-		AZOVariable *var = frame->parent_vars;
-		frame->parent_vars = var->next;
-		azo_variable_delete (var);
-	}
+	azo_var_list_free(frame->parent_vars);
 	free (frame);
 }
 
@@ -77,9 +73,8 @@ azo_frame_lookup_local_var (AZOFrame *frame, AZString *name)
 AZOVariable *
 azo_frame_lookup_parent_var (AZOFrame *frame, AZString *name)
 {
-	AZOVariable *var;
-	for (var = frame->parent_vars; var; var = var->next) if (var->name == name) return var;
-	return NULL;
+	AZOVariableList *list = azo_var_list_find(frame->parent_vars, name);
+	return (list) ? &list->var : NULL;
 }
 
 AZOVariable *
@@ -147,9 +142,9 @@ azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, 
 		*result = AZO_FRAME_VARIABLE_DEFINED;
 		return NULL;
 	}
-	frame->scope->variables = azo_variable_new_stack(name, frame->scope->variables, frame->scope->next_var_pos++);
+	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, name, frame->scope->next_var_pos++);
 	*result = AZO_FRAME_NO_ERROR;
-	return frame->scope->variables;
+	return &frame->scope->variables->var;
 }
 
 AZOVariable *
@@ -162,9 +157,10 @@ azo_frame_ensure_variable (AZOFrame *frame, AZString *name)
 	if (frame->parent) {
 		AZOVariable *prev = azo_frame_ensure_variable (frame->parent, name);
 		if (!prev) return NULL;
-		var = azo_variable_new_data(name, frame->parent_vars, frame->n_parent_vars++, prev);
-		frame->parent_vars = var;
-		return var;
+		AZOVariableList *list = azo_var_list_prepend(frame->parent_vars, name, frame->n_parent_vars++);
+		list->var.parent = prev;
+		frame->parent_vars = list;
+		return &list->var;
 	}
 	return NULL;
 }

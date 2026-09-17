@@ -24,7 +24,6 @@ static const int debug = 0;
 #include <az/field.h>
 
 #include <azo/parser.h>
-#include <azo/optimizer.h>
 #include <azo/compiled-function.h>
 /* Bytecodes */
 #include <azo/bytecode.h>
@@ -1000,13 +999,13 @@ compile_function (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 	bound = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
 	/* Function */
 	/* Bind function - i.e. assign the values to all inherited variables */
-	for (AZOVariable *var = func_frame->parent_vars; var; var = var->next) {
-		if (var->parent->parent) {
+	for (AZOVariableList *var = func_frame->parent_vars; var; var = var->next) {
+		if (var->var.parent->parent) {
 			/* Variable is inherited from grandparent so present in current frame as value */
-			azo_compiler_write_PUSH_VALUE (comp, var->parent->pos);
+			azo_compiler_write_PUSH_VALUE (comp, var->var.parent->pos);
 		} else {
 			/* Local variable in current frame (present in stack) */
-			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, var->parent->pos, expr);
+			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, var->var.parent->pos, expr);
 		}
 	}
 	write_tc_u32 (comp, AZO_TC_BIND, expr->frame->n_parent_vars, NULL);

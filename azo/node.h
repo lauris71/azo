@@ -135,6 +135,7 @@ enum {
 	 * @brief Variable reference
 	 * 
 	 * REFERENCE - VARIABLE/PROPERTY
+	 *   val contains variable name
 	 * REFERENCE - MEMBER
 	 *   EXPRESSION
 	 *   REFERENCE
@@ -158,7 +159,19 @@ enum {
 	AZO_TERM_CAST,
 
 	/* Operators */
+	/**
+	 * @brief Suffix ++ and --
+	 * 
+	 * SUFFIX
+	 *   EXPRESSION
+	 */
 	AZO_TERM_SUFFIX,
+	/**
+	 * @brief Prefix operators
+	 * 
+	 * PREFIX
+	 *   EXPRESSION
+	 */
 	AZO_TERM_PREFIX,
 	AZO_TERM_BINARY,
 	AZO_TERM_COMPARISON,
@@ -340,7 +353,12 @@ struct _AZONode {
 	union {
 		/* Function frame */
 		AZOFrame *frame;
-		/* Variable location */
+		/**
+		 * @brief Variable position
+		 * 
+		 * AZO_TERM_VARIABLE
+		 *   - position of the variable in the current frame stack (local) or datablock (parent)
+		 */
 		unsigned int var_pos;
 		/* Size of scope */
 		unsigned int scope_size;

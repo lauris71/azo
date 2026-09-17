@@ -12,7 +12,6 @@ set(AZO_HEADERS
 	keyword.h
 	namespace.h
 	operator.h
-	optimizer.h
 	parser.h
 	private.h
 	program.h
@@ -36,7 +35,6 @@ set(AZO_SOURCES
 	namespace.c
 	number.c
 	operator.c
-	optimizer.c
 	parser.c
 	private.c
 	program.c

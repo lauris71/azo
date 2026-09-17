@@ -14,7 +14,7 @@
 #include <azo/debugger.h>
 #include <azo/parser.h>
 #include <azo/compiler/compiler.h>
-#include <azo/optimizer.h>
+#include <azo/compiler/optimizer.h>
 
 #include <azo/program.h>
 
@@ -98,8 +98,10 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 		azo_compiler_release(&comp);
 		return NULL;
 	}
-	AZOOptimizer opt = {.comp = &comp};
+	AZOOptimizer opt;
+	azo_optimizer_setup(&opt, &comp);
 	result = azo_compiler_optimize(&opt, expr, AZO_OPTIMIZER_FLAG_ALL);
+	azo_optimizer_release(&opt);
 	if (result != 0) {
 		azo_parser_release (&parser);
 		azo_source_unref(src);

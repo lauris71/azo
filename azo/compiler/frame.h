@@ -60,7 +60,7 @@ struct _AZOFrame {
 	 * The actual values are filled by binding during the execution of the code that defines the function.
 	 */
 	unsigned int n_parent_vars;
-	AZOVariable *parent_vars;
+	AZOVariableList *parent_vars;
 	/* Compiled bytecode */
 	AZOCode code;
 };
