@@ -42,7 +42,7 @@ resolve_children (AZOCompiler *comp, AZONode *node, unsigned int flags)
 }
 
 static unsigned int
-resolve_for (AZOCompiler *comp, AZONode *expr)
+resolve_for (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
 	unsigned int result = 0;
 	AZONode *init = expr->children;
@@ -51,7 +51,7 @@ resolve_for (AZOCompiler *comp, AZONode *expr)
 	AZONode *content = step->next;
 	/* for: create new scope */
 	azo_frame_push_scope (comp->current);
-	unsigned int lresult = azo_compiler_resolve_node (comp, init, AZO_COMPILER_NO_CONST_ASSIGN);
+	unsigned int lresult = azo_compiler_resolve_node (comp, init, flags);
 	if (lresult) result = 1;
 	lresult = azo_compiler_resolve_node (comp, test, 0);
 	if (lresult) result = 1;
@@ -81,6 +81,7 @@ resolve_new (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	result = azo_compiler_resolve_node (comp, args, flags);
 	if (result) return result;
 
+	/* fixme: Optimizer thing */
 	/* Test if arguments list is constant */
 	unsigned int n_args = 0;
 	unsigned int arg_types[64];
@@ -191,7 +192,7 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	unsigned int ret_type;
 	result = azo_compiler_resolve_node (comp, type, flags);
 	if (result) return result;
-	if ((type->term.type == AZO_TERM_EMPTY) || ((type->term.type == AZO_TERM_KEYWORD) && (type->term.subtype == AZO_KEYWORD_VOID))) {
+	if (type->term.type == AZO_TERM_EMPTY) {
 		/* Replace void with type none */
 		type->term.type = AZO_TERM_TYPE;
 		type->term.subtype = AZ_TYPE_NONE;
@@ -289,83 +290,6 @@ azo_compiler_resolve_function_call (AZOCompiler *comp, AZONode *expr, unsigned i
 	result = azo_compiler_resolve_node (comp, args, flags);
 	if (result) return result;
 
-	/* If reference is already resolved to constant we have nothing to do */
-	if (ref->term.type != AZO_TERM_REFERENCE) return 0;
-
-	/* fixme: The following is optimizer thing */
-	/* Test if arguments list is constant */
-	unsigned int n_args = 0;
-	unsigned int arg_types[64];
-	for (AZONode *child = args->children; child; child = child->next) {
-		if (child->term.type != AZO_TERM_CONSTANT) return 0;
-		arg_types[n_args] = child->term.subtype;
-		n_args += 1;
-		if (n_args >= 64) return 0;
-	}
-	/* All arguments are constants */
-	const AZClass *klass;
-	const AZImplementation *impl;
-	void *inst;
-	AZString *str;
-	if (ref->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
-		AZONode *parent, *member;
-		parent = ref->children;
-		member = parent->next;
-		if (parent->term.type != AZO_TERM_CONSTANT) return 0;
-		if ((member->term.type != AZO_TERM_REFERENCE) || (member->term.subtype != AZO_TERM_REFERENCE_PROPERTY)) return 0;
-		klass = az_type_get_class (parent->term.subtype);
-		impl = parent->value.impl;
-		inst = az_value_get_inst(parent->value.impl, &parent->value.v);
-		str = member->value.v.string;
-	} else if (ref->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
-		if (!comp->current->this_impl) return 0;
-		klass = AZ_CLASS_FROM_IMPL(comp->current->this_impl);
-		impl = comp->current->this_impl;
-		inst = comp->current->this_inst;
-		str = ref->value.v.string;
-	} else {
-		fprintf (stderr, "azo_compiler_resolve_function_call: unknown reference subtype\n");
-		return 1;
-	}
-	AZFunctionSignature *sig = az_function_signature_new(AZ_CLASS_TYPE(klass), AZ_TYPE_ANY, n_args, arg_types);
-	const AZClass *def_class;
-	const AZImplementation *def_impl;
-	void *def_inst;
-	int idx = az_class_lookup_function (klass, impl, inst, str, sig, &def_class, &def_impl, &def_inst);
-	az_function_signature_delete (sig);
-	if (idx >= 0) {
-		AZField *field = &def_class->props_self[idx];
-		if (AZ_FIELD_IS_FINAL(field) && AZ_FIELD_IS_FUNCTION(field)) {
-			const AZImplementation *prop_impl;
-			AZValue64 prop_val;
-			if (!az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &prop_impl, &prop_val.value, 64, NULL)) {
-				fprintf (stderr, "azo_compiler_resolve_function_call: Property %s is not readable\n", str->str);
-				return 1;
-			}
-#if 1
-			az_packed_value_set_from_impl_value (&ref->value, prop_impl, &prop_val.value);
-			ref->term.type = AZO_TERM_CONSTANT;
-			if (prop_impl) {
-				ref->term.subtype = AZ_IMPL_TYPE(prop_impl);
-				az_value_clear (prop_impl, &prop_val.value);
-			} else {
-				// Missing final function, this is not normal
-				ref->term.subtype = 0;
-			}
-#ifdef DEBUG_RESOLVE_FUNCTION_CALL
-			fprintf (stderr, "azo_compiler_resolve_function_call: Replaced final function %s with constant\n", str->str);
-#endif
-			// fixme: This is not nice but we keep parent for now as this implementation for call
-
-			//while (ref->children) {
-			//	child = ref->children;
-			//	expr->children = child->next;
-			//	azo_node_free_tree (child);
-			//}
-#endif
-			return 0;
-		}
-	}
 	return 0;
 }
 
@@ -537,7 +461,7 @@ azo_compiler_resolve_node (AZOCompiler *comp, AZONode *node, unsigned int flags)
 			return resolve_children(comp, node, flags);
 		case AZO_TERM_KEYWORD:
 			if (node->term.subtype == AZO_KEYWORD_FOR) {
-				return resolve_for(comp, node);
+				return resolve_for(comp, node, flags);
 			} else if (node->term.subtype == AZO_KEYWORD_DO) {
 				/* fixme: Scope */
 				return resolve_children(comp, node, flags);

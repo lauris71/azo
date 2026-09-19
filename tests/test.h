@@ -21,6 +21,7 @@ void free_parse(AZOParser *parser, AZOSource *src, AZONode *tree);
 void test_compile(void);
 void test_assign(void);
 void test_comparison(void);
+void test_cycles(void);
 void test_function(void);
 #ifdef HAS_FUNCTION_KEYWORD
 void test_legacy_function(void);

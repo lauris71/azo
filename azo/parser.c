@@ -296,15 +296,15 @@ static unsigned int parse_lambda (AZOParser *parser, AZOToken *token, unsigned i
 static unsigned int
 parse_program (AZOParser *parser, AZOToken *token)
 {
-	AZONode *expr = azo_node_new (AZO_TERM_PROGRAM, AZO_TERM_GENERIC, token->start, token->end);
-	parser->current = expr;
+	AZONode *node = azo_node_new (AZO_TERM_PROGRAM, AZO_TERM_GENERIC, token->start, token->end);
+	parser->current = node;
 	unsigned int result = azo_parser_parse_sentences (parser, token);
-	expr->term.end = token->start;
+	node->term.end = token->start;
 	if (result) return result;
 	if (token->type != AZO_TOKEN_EOF) {
 		return AZO_PARSER_ERROR_SYNTAX;
 	}
-	if (parser->current != expr) {
+	if (parser->current != node) {
 		fprintf(stderr, "parse_program: Internal error\n");
 	}
 	return result;
@@ -1698,7 +1698,7 @@ parse_function_definition (AZOParser *parser, AZOToken *token, unsigned int is_m
 		}
 	} else if (azo_token_is_keyword (token, AZO_KEYWORD_VOID, parser->src)) {
 		/* function void (...) */
-		type = azo_node_new (AZO_TERM_KEYWORD, AZO_KEYWORD_VOID, token->start, token->end);
+		type = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->end);
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
 			azo_node_free (type);
 			return AZO_PARSER_ERROR_UNEXPECTED_EOF;
@@ -1791,7 +1791,7 @@ parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, 
 		return AZO_PARSER_ERROR_SYNTAX;
 	} else if (azo_token_is_keyword (token, AZO_KEYWORD_VOID, parser->src)) {
 		/* void return type */
-		type = azo_node_new (AZO_TERM_KEYWORD, AZO_KEYWORD_VOID, token->start, token->end);
+		type = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->end);
 		azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	} else if (AZO_TOKEN_IS_WORD (token)) {
 		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
@@ -1940,7 +1940,6 @@ parse_new (AZOParser *parser, AZOToken *token)
 static unsigned int
 parse_while (AZOParser *parser, AZOToken *token)
 {
-	AZONode *expr, *left, *middle, *right, *block;
 	unsigned int start, error;
 	/* ( */
 	start = token->start;
@@ -1957,12 +1956,13 @@ parse_while (AZOParser *parser, AZOToken *token)
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	error = azo_parser_parse_sentence (parser, token);
 	if (error) return error;
-	block = parser_detach_last (parser);
-	middle = parser_detach_last (parser);
-	left = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, middle->term.start, middle->term.start);
-	right = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, middle->term.start, middle->term.start);
-	expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_FOR, start, block->term.end, 4, left, middle, right, block);
-	parser_append (parser, expr);
+	AZONode *block = parser_detach_last (parser);
+	AZONode *cond = parser_detach_last (parser);
+	//AZONode *left = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, cond->term.start, cond->term.start);
+	//AZONode *right = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, cond->term.start, cond->term.start);
+	//AZONode *node = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_FOR, start, block->term.end, 4, left, cond, right, block);
+	AZONode *node = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_WHILE, start, block->term.end, 2, cond, block);
+	parser_append (parser, node);
 	return AZO_PARSER_ERROR_NONE;
 }
 

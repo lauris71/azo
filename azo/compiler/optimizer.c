@@ -25,6 +25,7 @@ typedef struct _AZOOptimizer AZOOptimizer;
 #include <az/class.h>
 #include <az/complex.h>
 #include <az/field.h>
+#include <az/function.h>
 #include <az/string.h>
 #include <az/primitives.h>
 #include <az/classes/value-array.h>
@@ -145,19 +146,39 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				vars = azo_var_list_remove_all(vars, trashed);
 				azo_var_list_free(trashed);
 #endif
-			} else if (node->term.subtype == AZO_KEYWORD_DO) {
+			} else if (node->term.subtype == AZO_KEYWORD_WHILE) {
 #if 1
-				AZONode *body = node->children;
-				AZONode *cond = body->next;
-				
-				AZOVariableList *trashed = tag_assigns(opt, body, NULL);
-				trashed = tag_assigns(opt, cond, trashed);
+				AZONode *cond = node->children;
+				AZONode *body = cond->next;
+
+				/* Changed list of cond and body */
+				AZOVariableList *trashed = tag_assigns(opt, cond, NULL);
+				trashed = tag_assigns(opt, body, trashed);
 
 				/* Remove trashed from vars */
 				vars = azo_var_list_remove_all(vars, trashed);
 
 				/* Process body for local const-ness */
 				vars = optimize_const_assign(opt, body, vars);
+				/* fixme: In theory step can contain local const-ness but it is really a corner-case */
+
+				/* Remove again in case they were added */
+				vars = azo_var_list_remove_all(vars, trashed);
+				azo_var_list_free(trashed);
+#endif
+			} else if (node->term.subtype == AZO_KEYWORD_DO) {
+#if 1
+				AZONode *block = node->children;
+				AZONode *cond = block->next;
+				
+				AZOVariableList *trashed = tag_assigns(opt, block, NULL);
+				trashed = tag_assigns(opt, cond, trashed);
+
+				/* Remove trashed from vars */
+				vars = azo_var_list_remove_all(vars, trashed);
+
+				/* Process body for local const-ness */
+				vars = optimize_const_assign(opt, block, vars);
 				/* fixme: In theory step can contain local const-ness but it is really a corner-case */
 
 				/* Remove again in case they were added */
@@ -408,12 +429,93 @@ optimize_function_call(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
 	AZONode *ref = node->children;
 	assert (ref != NULL);
-	int result = optimize_node(opt, ref, flags);
-	if (result) return result;
 	AZONode *args = ref->next;
 	assert(args != NULL);
+	int result = optimize_node(opt, ref, flags);
+	if (result) return result;
 	result = optimize_node(opt, args, flags);
 	if (result) return result;
+
+	/* If reference is already constant we have nothing to do */
+	if (ref->term.type == AZO_TERM_CONSTANT) return 0;
+	/* If reference is variable we cannot optimize */
+	if (ref->term.type == AZO_TERM_VARIABLE) return 0;
+
+	/* Test if arguments list is constant */
+	unsigned int n_args = 0;
+	unsigned int arg_types[32];
+	for (AZONode *child = args->children; child; child = child->next) {
+		if (child->term.type != AZO_TERM_CONSTANT) return 0;
+		arg_types[n_args] = child->term.subtype;
+		n_args += 1;
+		if (n_args >= 32) return 0;
+	}
+	/* All arguments are constants */
+	/* Find klass/impl/inst */
+	const AZClass *klass;
+	const AZImplementation *impl;
+	void *inst;
+	AZString *str;
+	if (ref->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
+		AZONode *parent, *member;
+		parent = ref->children;
+		member = parent->next;
+		if (parent->term.type != AZO_TERM_CONSTANT) return 0;
+		assert(AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY));
+		klass = az_type_get_class (parent->term.subtype);
+		impl = parent->value.impl;
+		inst = az_value_get_inst(parent->value.impl, &parent->value.v);
+		str = member->value.v.string;
+	} else if (ref->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
+		if (!opt->comp->current->this_impl) return 0;
+		klass = AZ_CLASS_FROM_IMPL(opt->comp->current->this_impl);
+		impl = opt->comp->current->this_impl;
+		inst = opt->comp->current->this_inst;
+		str = ref->value.v.string;
+	} else {
+		fprintf (stderr, "azo_compiler_resolve_function_call: unknown reference subtype\n");
+		return 1;
+	}
+	/* Lookup function */
+	AZFunctionSignature *sig = az_function_signature_new(AZ_CLASS_TYPE(klass), AZ_TYPE_ANY, n_args, arg_types);
+	const AZClass *def_class;
+	const AZImplementation *def_impl;
+	void *def_inst;
+	int idx = az_class_lookup_function (klass, impl, inst, str, sig, &def_class, &def_impl, &def_inst);
+	az_function_signature_delete (sig);
+	if (idx < 0) return 0;
+	AZField *field = &def_class->props_self[idx];
+	if (!AZ_FIELD_IS_FINAL(field)) return 0;
+	assert(AZ_FIELD_IS_FUNCTION(field));
+	/* Found a final function with proper signature */
+	const AZImplementation *prop_impl;
+	AZValue64 prop_val;
+	if (!az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &prop_impl, &prop_val.value, 64, NULL)) {
+		fprintf (stderr, "azo_compiler_resolve_function_call: Property %s is not readable\n", str->str);
+		return 1;
+	}
+	if (prop_impl == NULL) {
+		fprintf(stderr, "optimize_function_call: Property %s is final but missing implementation\n", str->str);
+		return 1;
+	}
+#if 1
+	az_packed_value_set_from_impl_value (&ref->value, prop_impl, &prop_val.value);
+	ref->term.type = AZO_TERM_CONSTANT;
+	ref->term.subtype = AZ_IMPL_TYPE(prop_impl);
+	az_value_clear (prop_impl, &prop_val.value);
+#ifdef DEBUG_RESOLVE_FUNCTION_CALL
+	fprintf (stderr, "azo_compiler_resolve_function_call: Replaced final function %s with constant\n", str->str);
+#endif
+	// fixme: This is not nice but we keep parent for now as this implementation for call
+
+	//while (ref->children) {
+	//	child = ref->children;
+	//	expr->children = child->next;
+	//	azo_node_free_tree (child);
+	//}
+#endif
+	return 0;
+
 	return 0;
 }
 
@@ -495,7 +597,9 @@ static int
 optimize_prefix(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
 	if ((node->term.subtype != AZO_TERM_PREFIX_INCREMENT) && (node->term.subtype != AZO_TERM_PREFIX_DECREMENT)) {
-		return azo_compiler_calculate_rvalue_prefix(opt, node);
+		if ((node->term.type == AZO_TERM_CONSTANT) && (flags & AZO_OPTIMIZER_FLAG_CALC_CONST_EXPRESSIONS)) {
+			return azo_compiler_calculate_rvalue_prefix(opt, node);
+		}
 	}
 	return 0;
 }
@@ -543,7 +647,33 @@ optimize_test(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 static int
 optimize_select(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	/* fixme: */
+	int result = optimize_children(opt, node, flags);
+	if (result) return result;
+	AZONode *cond = node->children;
+	AZONode *if_true = cond->next;
+	AZONode *if_false = if_true->next;
+	assert(cond && if_true && if_false);
+	assert(!if_false->next);
+	if ((cond->term.type == AZO_TERM_CONSTANT) && (flags & AZO_OPTIMIZER_FLAG_CALC_CONST_EXPRESSIONS)) {
+		if (cond->value.impl && (AZ_IMPL_TYPE(cond->value.impl) == AZ_TYPE_BOOLEAN)) {
+			az_packed_value_clear(&node->value);
+			if (cond->value.v.boolean_v) {
+				*node = *if_true;
+				azo_node_free(if_true);
+				azo_node_free_tree(if_false);
+			} else {
+				*node = *if_false;
+				azo_node_free(if_false);
+				azo_node_free_tree(if_true);
+			}
+			azo_node_free_tree(cond);
+			opt->n_const_subst += 1;
+			return 0;
+		} else {
+			fprintf(stderr, "optimize_select: condition is not a constant boolean\n");
+			return 1;
+		}
+	}
 	return 0;
 }
 

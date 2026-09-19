@@ -14,8 +14,7 @@
 extern "C" {
 #endif
 
-#define AZO_COMPILER_NO_CONST_ASSIGN 1
-#define AZO_COMPILER_VAR_IS_LVALUE 2
+#define AZO_COMPILER_VAR_IS_LVALUE 1
 
 unsigned int azo_compiler_resolve_node (AZOCompiler *comp, AZONode *expr, unsigned int flags);
 

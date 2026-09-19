@@ -1257,6 +1257,10 @@ compile_silent_statement (AZOCompiler *comp, const AZONode *expr, AZOSource *src
 	switch (expr->term.type) {
 	case AZO_TERM_EMPTY:
 		break;
+	case AZO_TERM_STATEMENT_GROUP:
+		// fixme: Should we be more pedantic here?
+		if (!compile_sentences (comp, expr->children, src)) return 0;
+		break;
 	case AZO_TERM_ASSIGN:
 		if (!compile_assign (comp, expr->children, expr->children->next, src)) return 0;
 		break;
@@ -1358,27 +1362,36 @@ compile_block (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 
 static unsigned int
 compile_cycle (AZOCompiler *comp, const AZONode *expr,
-	const AZONode *init, const AZONode *test, const AZONode *step, const AZONode *content,
+	const AZONode *init, const AZONode *test_at_begin, const AZONode *test_at_end, const AZONode *step, const AZONode *content,
 	AZOSource *src)
 {
-	unsigned int test_condition, end_cycle;
+	unsigned int cycle_begin, cycle_end;
 
 	/* Initialization */
 	if (init) compile_step_statement (comp, init, src);
+	/* Cycle star */
+	cycle_begin = azo_frame_get_current_ip (comp->current);
 	/* Test condition */
-	test_condition = azo_frame_get_current_ip (comp->current);
-	if (test) {
-		compile_expression_boolean (comp, test, src);
+	if (test_at_begin) {
+		compile_expression_boolean (comp, test_at_begin, src);
 		/* Jump out of cycle if condition was FALSE */
-		end_cycle = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
+		cycle_end = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
 	}
 	/* Cycle content */
 	compile_sentence (comp, content, src);
 	/* Step */
 	if (step) compile_silent_statement (comp, step, src);
-	/* Go back to condition testing */
-	azo_compiler_write_JMP_32 (comp, JMP_32, test_condition, NULL);
-	azo_compiler_update_JMP_32 (comp, end_cycle);
+	if (test_at_end) {
+		compile_expression_boolean (comp, test_at_end, src);
+		/* Jump back if condition is true */
+		azo_compiler_write_JMP_32 (comp, JMP_32_IF, cycle_begin, NULL);
+	} else {
+		/* Unconditionally jump back */
+		azo_compiler_write_JMP_32 (comp, JMP_32, cycle_begin, NULL);
+	}
+	if (test_at_begin) {
+		azo_compiler_update_JMP_32 (comp, cycle_end);
+	}
 
 	azo_compiler_write_POP (comp, expr->scope_size, NULL);
 	return 1;
@@ -1393,14 +1406,14 @@ compile_cycle (AZOCompiler *comp, const AZONode *expr,
  */
 
 static unsigned int
-compile_for (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
+compile_for(AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 {
 	AZONode *init, *test, *step, *content;
 	init = expr->children;
 	test = init->next;
 	step = test->next;
 	content = step->next;
-	return compile_cycle(comp, expr, init, test, step, content, src);
+	return compile_cycle(comp, expr, init, test, NULL, step, content, src);
 }
 
 /*
@@ -1410,12 +1423,26 @@ compile_for (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
  */
 
 static unsigned int
-compile_while (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
+compile_while(AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 {
 	AZONode *test, *content;
 	test = expr->children;
 	content = test->next;
-	return compile_cycle(comp, expr, NULL, test, NULL, content, src);
+	return compile_cycle(comp, expr, NULL, test, NULL, NULL, content, src);
+}
+
+/*
+ * DO
+ *  + condition
+ *  + content
+ */
+
+static unsigned int
+compile_do(AZOCompiler *comp, const AZONode *expr, AZOSource *src)
+{
+	AZONode *block = expr->children;
+	AZONode *cond = block->next;
+	return compile_cycle(comp, expr, NULL, NULL, cond, NULL, block, src);
 }
 
 /*
@@ -1469,6 +1496,8 @@ compile_sentence (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 		if (!compile_for (comp, expr, src)) return 0;
 	} else if (AZO_NODE_IS(expr, AZO_TERM_KEYWORD, AZO_KEYWORD_WHILE)) {
 		if (!compile_while (comp, expr, src)) return 0;
+	} else if (AZO_NODE_IS(expr, AZO_TERM_KEYWORD, AZO_KEYWORD_DO)) {
+		if (!compile_do (comp, expr, src)) return 0;
 	} else if (AZO_NODE_IS(expr, AZO_TERM_KEYWORD, AZO_KEYWORD_IF)) {
 		if (!compile_if (comp, expr, src)) return 0;
 	} else {

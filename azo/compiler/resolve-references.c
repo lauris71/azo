@@ -293,9 +293,3 @@ azo_compiler_resolve_node_to_class(AZOCompiler *comp, AZONode *expr, unsigned in
 	}
 	return 0;
 }
-
-unsigned int resolve_call (AZOCompiler *comp, AZONode *expr, AZONode *ref, unsigned int n_args, unsigned int arg_types[], unsigned int flags)
-{
-	return 0;
-}
-

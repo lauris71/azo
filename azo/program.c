@@ -73,7 +73,7 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	AZOParser parser;
 	azo_parser_setup (&parser, src);
 	AZONode *expr = azo_parser_parse (&parser);
-	//azo_node_print_info(expr, stdout, src, 0);
+	//azo_node_print_info(expr, stderr, src, 0);
 
 	AZOCompilerContext comp_ctx = {
 		.globals = ctx,
@@ -98,6 +98,7 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 		azo_compiler_release(&comp);
 		return NULL;
 	}
+	//azo_node_print_info(expr, stderr, src, 0);
 	AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
 	result = azo_compiler_optimize(&opt, expr, AZO_OPTIMIZER_FLAG_ALL);
