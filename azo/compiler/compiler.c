@@ -40,7 +40,9 @@ enum {
 	/* Stack variable, left is relative position */
 	LVALUE_STACK,
 	/* Property or attribute, stack(1) is object, stack(0) is property name */
-	LVALUE_MEMBER,
+	LVALUE_PROPERTY,
+	/* Attribute (arrow operator), stack(1) is object, stack(0) is attribute name */
+	LVALUE_ATTRIBUTE,
 	/* Array element, stack(1) is array, stack(0) is index */
 	LVALUE_ELEMENT,
 	/* Constant */
@@ -344,6 +346,7 @@ static unsigned int compile_assign (AZOCompiler *comp, const AZONode *left, cons
 static unsigned int compile_variable_reference (AZOCompiler *comp, const AZONode *expr, unsigned int type, AZOSource *src);
 static unsigned int compile_singular_reference (AZOCompiler *comp, const AZONode *expr);
 static unsigned int compile_member_reference (AZOCompiler *comp, const AZONode *expr, AZOSource *src);
+static unsigned int compile_attribute_reference (AZOCompiler *comp, const AZONode *expr, AZOSource *src);
 static unsigned int compile_array_reference (AZOCompiler *comp, const AZONode *aref, const AZONode *index, AZOSource *src);
 static unsigned int compile_array_literal (AZOCompiler *comp, const AZONode *expr, AZOSource *src);
 
@@ -382,7 +385,7 @@ azo_compiler_compile_constant (AZOCompiler *comp, const AZONode *expr, AZOSource
 /**
  * @brief Assign top of stack to already compiled lvalue
  * 
- * Only LVALUE_STACK, LVALUE_MEMBER and LVALUE_ELEMENT allowed
+ * Only LVALUE_STACK, LVALUE_PROPERTY, LVALUE_ATTRIBUTE and LVALUE_ELEMENT allowed
  * 
  */
 
@@ -395,7 +398,7 @@ compile_assign_to_lvalue (AZOCompiler *comp, LValue *lval, const AZONode *expr)
 		/* [..., value, ..., prev] */
 		azo_compiler_write_POP (comp, 1, expr);
 		/* [..., value, ...] */
-	} else if (lval->type == LVALUE_MEMBER) {
+	} else if (lval->type == LVALUE_PROPERTY) {
 		/* [instance, key, value] */
 		azo_compiler_write_ic (comp, AZO_TC_SET_PROPERTY, expr);
 		/* [true] */
@@ -405,6 +408,10 @@ compile_assign_to_lvalue (AZOCompiler *comp, LValue *lval, const AZONode *expr)
 		azo_compiler_write_ic (comp, AZO_TC_SET_ATTRIBUTE, expr);
 		/* [] */
 		azo_compiler_update_JMP_32 (comp, finished);
+	} else if (lval->type == LVALUE_ATTRIBUTE) {
+		/* [instance, key, value] */
+		azo_compiler_write_ic (comp, AZO_TC_SET_ATTRIBUTE, expr);
+		/* [] */
 	} else if (lval->type == LVALUE_ELEMENT) {
 		/* [array, index, value] */
 		azo_compiler_write_ic (comp, WRITE_ARRAY_ELEMENT, expr);
@@ -455,13 +462,20 @@ compile_lvalue (AZOCompiler *comp, const AZONode *expr, AZOSource *src, LValue *
 		if (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
 			/* Did not resolve to stack variable */
 			/* Interpret as this member */
-			lvalue->type = LVALUE_MEMBER;
+			lvalue->type = LVALUE_PROPERTY;
 			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, 0, expr);
 			compile_PUSH_VALUE_string (comp, expr->value.v.string);
 			lvalue->n_elements = 2;
 			return 1;
-		} else if (expr->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
-			lvalue->type = LVALUE_MEMBER;
+		} else if (expr->term.subtype == AZO_TERM_REFERENCE_PROPERTY) {
+			lvalue->type = LVALUE_PROPERTY;
+			AZONode *left = expr->children;
+			AZONode *right = left->next;
+			if (!azo_compiler_compile_expression (comp, left, src)) return 0;
+			compile_PUSH_VALUE_string (comp, right->value.v.string);
+			lvalue->n_elements = 2;
+		} else if (expr->term.subtype == AZO_TERM_REFERENCE_ATTRIBUTE) {
+			lvalue->type = LVALUE_ATTRIBUTE;
 			AZONode *left = expr->children;
 			AZONode *right = left->next;
 			if (!azo_compiler_compile_expression (comp, left, src)) return 0;
@@ -579,7 +593,7 @@ compile_IS_NONE (AZOCompiler *comp, unsigned int *jmp_if, unsigned int *jmp_if_n
 }
 
 static unsigned int
-compile_call_member (AZOCompiler *comp, const AZONode *func, const AZONode *list, AZOSource *src)
+compile_call_property (AZOCompiler *comp, const AZONode *func, const AZONode *list, AZOSource *src)
 {
 	unsigned int is_member_function, is_class, not_active_obj, no_static_function, invalid_type, finished, finished_2, finished_3;
 
@@ -655,8 +669,51 @@ compile_call_member (AZOCompiler *comp, const AZONode *func, const AZONode *list
 	azo_compiler_update_JMP_32 (comp, finished_2);
 	azo_compiler_update_JMP_32 (comp, finished_3);
 	return 1;
+}
 
+/*
+ * compile_call_attribute - call a function stored as an attribute
+ *
+ * Stack after completion: [result]
+ *
+ */
+static unsigned int
+compile_call_attribute (AZOCompiler *comp, const AZONode *func, const AZONode *list, AZOSource *src)
+{
+	unsigned int not_active_obj, invalid_type, finished;
 
+	/* Instance, Key */
+	azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE, 1, func);
+	/* Instance, Key, Instance */
+	unsigned int n_args = 1;
+	for (const AZONode *child = list->children; child; child = child->next) {
+		azo_compiler_compile_expression (comp, child, src);
+		n_args += 1;
+	}
+	/* Instance, Key, Arguments */
+	compile_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, n_args + 1, AZ_TYPE_ATTRIBUTE_DICT, NULL, &not_active_obj, func);
+	/* AttribDict, String, Arguments */
+	azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE, n_args + 1, func);
+	azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE, n_args + 1, func);
+	/* AttribDict, String, Arguments, AttribDict, String */
+	azo_compiler_write_ic (comp, GET_ATTRIBUTE, func);
+	/* AttribDict, String, Arguments, Value|null */
+	compile_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, NULL, &invalid_type, func);
+	/* AttribDict, String, Arguments, Function */
+
+	azo_code_write_ic_u32(&comp->current->code, AZO_TC_EXCHANGE, n_args + 1, func);
+	/* Instance, Function, Arguments, String */
+	azo_compiler_write_POP (comp, 1, func);
+	/* Instance, Function, Arguments */
+	compile_call_inst_func_args (comp, n_args, func);
+	/* Retval */
+	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, func);
+	azo_compiler_update_JMP_32 (comp, not_active_obj);
+	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_PROPERTY, func);
+	azo_compiler_update_JMP_32 (comp, invalid_type);
+	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, func);
+	azo_compiler_update_JMP_32 (comp, finished);
+	return 1;
 }
 
 #define noDEBUG_NEW
@@ -899,9 +956,13 @@ compile_function_call (AZOCompiler *comp, const AZONode *func, const AZONode *li
 		result = compile_call (comp, func, list, src, 0, 1);
 		if (result) return 0;
 		break;
-	case LVALUE_MEMBER:
+	case LVALUE_PROPERTY:
 		/* Instance, Key */
-		compile_call_member (comp, func, list, src);
+		compile_call_property (comp, func, list, src);
+		break;
+	case LVALUE_ATTRIBUTE:
+		/* Instance, Key - attribute lookup + call */
+		compile_call_attribute (comp, func, list, src);
 		break;
 	case LVALUE_ELEMENT:
 		/* Array, Index */
@@ -1179,6 +1240,18 @@ compile_member_reference (AZOCompiler *comp, const AZONode *expr, AZOSource *src
 }
 
 static unsigned int
+compile_attribute_reference (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
+{
+	AZONode *left, *right;
+	left = expr->children;
+	right = left->next;
+	azo_compiler_compile_expression (comp, left, src);
+	compile_PUSH_VALUE_string (comp, right->value.v.string);
+	azo_compiler_write_ic (comp, GET_ATTRIBUTE, expr);
+	return 1;
+}
+
+static unsigned int
 compile_singular_reference (AZOCompiler *comp, const AZONode *expr)
 {
 	AZOVariable *var = azo_frame_lookup_local_var (comp->current, expr->value.v.string);
@@ -1197,8 +1270,10 @@ compile_variable_reference (AZOCompiler *comp, const AZONode *expr, unsigned int
 {
 	if (type == AZO_TERM_REFERENCE_VARIABLE) {
 		if (!compile_singular_reference (comp, expr)) return 0;
-	} else if (type == AZO_TERM_REFERENCE_MEMBER) {
+	} else if (type == AZO_TERM_REFERENCE_PROPERTY) {
 		if (!compile_member_reference (comp, expr, src)) return 0;
+	} else if (type == AZO_TERM_REFERENCE_ATTRIBUTE) {
+		if (!compile_attribute_reference (comp, expr, src)) return 0;
 	} else {
 		fprintf (stderr, "azo_compiler_compile_expression: Unknown reference subtype %u\n", expr->term.subtype);
 		return 0;

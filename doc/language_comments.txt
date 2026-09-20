@@ -66,14 +66,18 @@
 9. There should be separate function... and new function... variants for creating a function
    function - creates shared closure, capturing variable values from the first run
    new function - creates fresh closure, capturing current variable values
-10. ActiveObject attributes specific syntax, either
+10. *PARTIALLY SOLVED* ActiveObject attributes specific syntax, either
    a. object.attribute
    b. object["attribute"]
    c. object{"attribute"}
    d. object->attribute
    Variant a mixes members and attributes. Variant b confuses array and attribute access (if attribute is a variable (any) it has to be resolved runtime)
    Variant c adds confusing syntax (not all {} are blocks), d adds new operator for one specific case.
-   Maybe we can add -> as a generic lookUp method (for all map-like objects?) Should it then also resolve interfaces (a->Map gives a as map)?.
+
+   Currently -> performs lookup at instances that implement AttributeDict, e.g. AZActiveObject.
+   a->b() calls attribute 'b' as a *member* funtion. There should be a way to distinguish member/static calls.
+
+   10.1 Maybe we can add -> as a generic lookUp method (for all map-like objects?) Should it then also resolve interfaces (a->Map gives a as map)?.
 11. Need array casts (type[]) for array literals
 12. There should be a way to create ad-hoc member functions:
    The old syntax:

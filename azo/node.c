@@ -379,13 +379,18 @@ azo_node_print (AZONode *expr, FILE *ofs)
 	case AZO_TERM_REFERENCE:
 		switch (expr->term.subtype) {
 		case AZO_TERM_REFERENCE_VARIABLE:
-		case AZO_TERM_REFERENCE_PROPERTY:
+		case AZO_TERM_REFERENCE_MEMBER:
 			fprintf (ofs, "%s", expr->value.v.string->str);
 			fprintf (ofs, " ");
 			break;
-		case AZO_TERM_REFERENCE_MEMBER:
+		case AZO_TERM_REFERENCE_PROPERTY:
 			azo_node_print (expr->children, ofs);
 			fprintf (ofs, ".");
+			azo_node_print (expr->children->next, ofs);
+			break;
+		case AZO_TERM_REFERENCE_ATTRIBUTE:
+			azo_node_print (expr->children, ofs);
+			fprintf (ofs, "->");
 			azo_node_print (expr->children->next, ofs);
 			break;
 		default:

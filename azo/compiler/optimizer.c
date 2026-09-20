@@ -456,12 +456,12 @@ optimize_function_call(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 	const AZImplementation *impl;
 	void *inst;
 	AZString *str;
-	if (ref->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
+	if (ref->term.subtype == AZO_TERM_REFERENCE_PROPERTY) {
 		AZONode *parent, *member;
 		parent = ref->children;
 		member = parent->next;
 		if (parent->term.type != AZO_TERM_CONSTANT) return 0;
-		assert(AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY));
+		assert(AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER));
 		klass = az_type_get_class (parent->term.subtype);
 		impl = parent->value.impl;
 		inst = az_value_get_inst(parent->value.impl, &parent->value.v);
@@ -542,8 +542,9 @@ optimize_list(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 static int
 optimize_reference(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	/* Variable references have to be resolved to either CONSTANT or MEMBER */
-	assert(node->term.subtype == AZO_TERM_REFERENCE_MEMBER);
+	/* REFERENCE_VARIBLE has to be resolved to CONSTANT, VARIABLE, REFERENCE_PROPERTY or REFERENCE_ATTRIBUTE */
+	/* REFERENCE_MEMBER is never seen alone */
+	assert((node->term.subtype == AZO_TERM_REFERENCE_PROPERTY) || (node->term.subtype == AZO_TERM_REFERENCE_ATTRIBUTE));
 	AZONode *expr = node->children;
 	int result = optimize_node(opt, expr, flags);
 	if (result) return result;

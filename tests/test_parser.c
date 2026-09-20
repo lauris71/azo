@@ -659,7 +659,7 @@ test_parser(void)
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[3]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_MEMBER, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[4]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -740,7 +740,7 @@ test_parser(void)
         for (unsigned int i = 0; i < n; i++) {
             if (nodes[i]->term.type == AZO_TERM_CAST) has_cast = 1;
             if (nodes[i]->term.type == AZO_TERM_FUNCTION) has_lambda = 1;
-            if ((nodes[i]->term.type == AZO_TERM_REFERENCE) && (nodes[i]->term.subtype == AZO_TERM_REFERENCE_MEMBER)) has_member = 1;
+            if ((nodes[i]->term.type == AZO_TERM_REFERENCE) && (nodes[i]->term.subtype == AZO_TERM_REFERENCE_PROPERTY)) has_member = 1;
         }
         TEST_ASSERT_TRUE(has_cast);
         TEST_ASSERT_TRUE(has_lambda);
@@ -1177,7 +1177,7 @@ test_parser(void)
         TEST_ASSERT_EQUAL_UINT(8, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL, nodes[1]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_MEMBER, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[2]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[3]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_NEW, nodes[3]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
@@ -1212,7 +1212,7 @@ test_parser(void)
         TEST_ASSERT_EQUAL_UINT(9, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_MEMBER, nodes[3]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[3]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[4]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
@@ -1274,5 +1274,42 @@ test_parser(void)
             TEST_ASSERT_EQUAL_UINT_MESSAGE(0, parser.n_errors, cases[i].src);
             free_parse(&parser, src, tree);
         }
+    }
+    /* Attribute reference (->) parses like dot but with REFERENCE_ATTRIBUTE */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("any c = a->b;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *nodes[16];
+        unsigned int n = azo_node_flatten(tree, nodes, 16);
+        TEST_ASSERT_EQUAL_UINT(8, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_ATTRIBUTE, nodes[5]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_MEMBER, nodes[7]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Attribute call: a->b(c) */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("any c = a->b(1);", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        azo_node_print_info(tree, stderr, src, 0);
+        AZONode *nodes[16];
+        unsigned int n = azo_node_flatten(tree, nodes, 16);
+        TEST_ASSERT_EQUAL_UINT(11, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_ATTRIBUTE, nodes[6]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
     }
 }

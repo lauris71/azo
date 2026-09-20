@@ -18,7 +18,6 @@
  * AZO_PRECEDENCE_FUNCTION consumes a member reference path and stops at the first ( */
 AZOOperator azo_operators[] = {
 	{ AZO_OPERATOR_DOT, ".", 2, { AZO_PRECEDENCE_MEMBER, AZO_PRECEDENCE_MEMBER }, 0 },
-	/* Not used currently, keep for C reference */
 	{ AZO_OPERATOR_ARROW, "->", 2, { AZO_PRECEDENCE_MEMBER, AZO_PRECEDENCE_MEMBER }, 0 },
 	/* Structural (lambda), not an expression operator */
 	{ AZO_OPERATOR_LAMBDA, "=>", 0, { 0, 0 }, 0 },

@@ -111,9 +111,63 @@ resolve_member_inst (AZOFrame *frame, AZONode *expr, const AZClass *klass, const
 }
 
 /*
- * MEMBER_REFERENCE
- *   AZO_TERM_REFERENCE_VARIABLE | AZO_TERM_REFERENCE_MEMBER | CONSTANT
- *   AZO_TERM_REFERENCE_PROPERTY
+ * REFERENCE_PROPERTY
+ *   AZO_TERM_REFERENCE_VARIABLE | AZO_TERM_REFERENCE_PROPERTY | CONSTANT
+ *   AZO_TERM_REFERENCE_MEMBER
+ */
+
+static int
+resolve_attribute (AZOFrame *frame, AZONode *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str, unsigned int flags)
+{
+	if (inst && az_type_implements(AZ_IMPL_TYPE(impl), AZ_TYPE_ATTRIBUTE_DICT)) {
+		void *attrd_inst;
+		const AZAttribDictImplementation *attrd_impl = (AZAttribDictImplementation *) az_instance_get_interface (impl, inst, AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
+		AZValue64 attr_val;
+		unsigned int attr_flags;
+		const AZImplementation *attr_impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, str, &attr_val.value, 64, &attr_flags);
+		if (attr_flags & AZ_ATTRIB_ARRAY_IS_FINAL) {
+			az_packed_value_set_from_impl_value (&expr->value, attr_impl, &attr_val.value);
+			expr->term.type = AZO_TERM_CONSTANT;
+			if (attr_impl) {
+				expr->term.subtype = AZ_IMPL_TYPE(attr_impl);
+				az_value_clear (attr_impl, &attr_val.value);
+			} else {
+				expr->term.subtype = 0;
+			}
+			azo_node_clear_children(expr);
+#ifdef noDEBUG_MEMBER_INST
+			describe(stderr, "resolve_attribute: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
+#endif
+			return 0;
+		}
+	}
+	return 0;
+}
+
+static unsigned int
+resolve_attribute_reference (AZOCompiler *comp, AZONode *expr, unsigned int flags)
+{
+	AZONode *parent, *member;
+	parent = expr->children;
+	unsigned int result = azo_compiler_resolve_node (comp, parent, flags);
+	if (result) return result;
+	member = parent->next;
+	result = azo_compiler_resolve_node (comp, member, flags);
+	if (result) return result;
+	if (parent->term.type == AZO_TERM_CONSTANT) {
+		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER)) {
+			void *inst;
+			const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
+			return resolve_attribute (comp->current, expr, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
+		}
+	}
+	return 0;
+}
+
+/*
+ * REFERENCE_PROPERTY
+ *   AZO_TERM_REFERENCE_VARIABLE | AZO_TERM_REFERENCE_PROPERTY | CONSTANT
+ *   AZO_TERM_REFERENCE_MEMBER
  */
 
 static unsigned int
@@ -127,7 +181,7 @@ resolve_member (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	result = azo_compiler_resolve_node (comp, member, flags);
 	if (result) return result;
 	if (parent->term.type == AZO_TERM_CONSTANT) {
-		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
+		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER)) {
 			void *inst;
 			const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
 			return resolve_member_inst (comp->current, expr, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
@@ -150,9 +204,9 @@ resolve_this_reference (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	if (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
 		/* Did not resolve to constant, replace with this reference */
 		AZONode *this_node = azo_node_new(AZO_TERM_KEYWORD, AZO_KEYWORD_THIS, expr->term.start, expr->term.end);
-		AZONode *prop_node = azo_node_new(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY, expr->term.start, expr->term.end);
+		AZONode *prop_node = azo_node_new(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER, expr->term.start, expr->term.end);
 		az_packed_value_set_string(&prop_node->value, expr->value.v.string);
-		expr->term.subtype = AZO_TERM_REFERENCE_MEMBER;
+		expr->term.subtype = AZO_TERM_REFERENCE_PROPERTY;
 		expr->children = this_node;
 		this_node->next = prop_node;
 	}
@@ -267,9 +321,11 @@ azo_compiler_resolve_reference (AZOCompiler *comp, AZONode *expr, unsigned int f
 	//fprintf(stderr, "\n");
 	if (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
 		return resolve_variable (comp, expr, flags);
-	} else if (expr->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
-		return resolve_member (comp, expr, flags);
 	} else if (expr->term.subtype == AZO_TERM_REFERENCE_PROPERTY) {
+		return resolve_member (comp, expr, flags);
+	} else if (expr->term.subtype == AZO_TERM_REFERENCE_ATTRIBUTE) {
+		return resolve_attribute_reference (comp, expr, flags);
+	} else if (expr->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
 		/* No-op */
 		return 0;
 	}

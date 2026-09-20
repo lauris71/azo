@@ -202,18 +202,26 @@ enum {
 	 */
 	AZO_TERM_REFERENCE_VARIABLE,
 	/**
-	 * @brief Member object (dot operator)
-	 * 
-	 * REFERENCE_MEMBER
-	 *   REFERENCE/ARRAY_ELEMENT/FUNCTION_CALL
-	 *   REFERENCE_PROPERTY
-	 */
-	AZO_TERM_REFERENCE_MEMBER,
-	/**
 	 * @brief Second component (after the dot) of member reference
 	 * 
 	 */
-	AZO_TERM_REFERENCE_PROPERTY
+	AZO_TERM_REFERENCE_MEMBER,
+	/**
+	 * @brief Member object (dot operator)
+	 *
+	 * REFERENCE_PROPERTY
+	 *   REFERENCE/ARRAY_ELEMENT/FUNCTION_CALL
+	 *   REFERENCE_MEMBER
+	 */
+	AZO_TERM_REFERENCE_PROPERTY,
+	/**
+	 * @brief Attribute reference (arrow operator)
+	 *
+	 * REFERENCE_ATTRIBUTE
+	 *   REFERENCE/ARRAY_ELEMENT/FUNCTION_CALL
+	 *   REFERENCE_MEMBER (attribute name)
+	 */
+	AZO_TERM_REFERENCE_ATTRIBUTE
 };
 
 /* Variable subtypes */

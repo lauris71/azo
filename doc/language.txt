@@ -172,12 +172,16 @@ LValue:
 Variable_reference:
   Singular_reference
   Member_reference
+  Attribute_reference
 
 Singular_reference:
   NAME
 
 Member_reference:
   Expression . NAME
+
+Attribute_reference
+  Expression -> NAME
 
 Array_reference:
   Expression[Expression]

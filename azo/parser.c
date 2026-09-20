@@ -1142,7 +1142,7 @@ azo_parser_parse_member (AZOParser *parser, AZOToken *token, unsigned int left_p
 #endif
 	if ((token->type == AZO_TOKEN_WORD) && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE)) {
 		/* Variable reference (keywords cannot be references) */
-		expr = azo_node_new_reference (AZO_TERM_REFERENCE_PROPERTY, parser->src, token);
+		expr = azo_node_new_reference (AZO_TERM_REFERENCE_MEMBER, parser->src, token);
 		/* fixme: Allowed next - operator/function/array */
 	} else {
 		/* Keep the offending token as anchor for error recovery */
@@ -1350,7 +1350,21 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		if (right->term.type == AZO_TERM_REFERENCE) {
 			/* ref.ref construct */
 			left = parser_detach_last (parser);
-			expr = azo_node_new_with_children(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER, left->term.start, right->term.end, 2, left, right);
+			expr = azo_node_new_with_children(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY, left->term.start, right->term.end, 2, left, right);
+			parser_append (parser, expr);
+		} else {
+			return AZO_PARSER_ERROR_SYNTAX;
+		}
+		return AZO_PARSER_ERROR_NONE;
+	} else if (subtype == AZO_OPERATOR_ARROW) {
+		/* Member reference */
+		error = azo_parser_parse_member (parser, token, precendence);
+		if (error) return error;
+		right = parser_detach_last (parser);
+		if (right->term.type == AZO_TERM_REFERENCE) {
+			/* ref->ref construct */
+			left = parser_detach_last (parser);
+			expr = azo_node_new_with_children(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_ATTRIBUTE, left->term.start, right->term.end, 2, left, right);
 			parser_append (parser, expr);
 		} else {
 			return AZO_PARSER_ERROR_SYNTAX;
