@@ -22,6 +22,7 @@ typedef struct _AZOContextFull AZOContextFull;
 #include <az/extend.h>
 
 #include "context.h"
+#include "namespace.h"
 #include "interpreter.h"
 
 struct _AZOContextFull {
@@ -116,12 +117,13 @@ azo_context_delete (AZOContext *ctx)
 }
 
 unsigned int
-azo_context_define (AZOContext *ctx, AZString *key, const AZPackedValue *value)
+azo_context_define(AZOContext *ctx, AZString *key, const AZImplementation *impl, void *inst)
 {
 	AZOContextFull *fctx = (AZOContextFull *) ctx;
 	arikkei_return_val_if_fail (ctx != NULL, 0);
 	arikkei_return_val_if_fail (key != NULL, 0);
-	arikkei_return_val_if_fail (value != NULL, 0);
+	arikkei_return_val_if_fail (impl != NULL, 0);
+	arikkei_return_val_if_fail (inst != NULL, 0);
 	if (arikkei_dict_exists_pval (&fctx->definitions, key->str)) return 0;
 	if (fctx->nvalues >= fctx->values_size) {
 		unsigned int newsize = fctx->values_size << 1;
@@ -130,24 +132,25 @@ azo_context_define (AZOContext *ctx, AZString *key, const AZPackedValue *value)
 		fctx->keys = (AZString **) realloc (fctx->keys, newsize * sizeof (AZString *));
 		fctx->values_size = newsize;
 	}
-	void *valptr = ARIKKEI_INT_TO_POINTER (fctx->nvalues);
+	void *valptr = ARIKKEI_INT_TO_POINTER(fctx->nvalues);
 	arikkei_dict_insert_pval (&fctx->definitions, key->str, valptr);
-	az_packed_value_copy (&fctx->values[fctx->nvalues], value);
+	az_packed_value_set_autobox(&fctx->values[fctx->nvalues], impl, inst);
 	az_string_ref (key);
 	fctx->keys[fctx->nvalues++] = key;
 	return 1;
 }
 
 unsigned int
-azo_context_define_by_str (AZOContext *ctx, const unsigned char *key, const AZPackedValue *value)
+azo_context_define_by_str (AZOContext *ctx, const unsigned char *key, const AZImplementation *impl, void *inst)
 {
 	AZString *str;
 	unsigned int result;
 	arikkei_return_val_if_fail (ctx != NULL, 0);
 	arikkei_return_val_if_fail (key != NULL, 0);
-	arikkei_return_val_if_fail (value != NULL, 0);
+	arikkei_return_val_if_fail (impl != NULL, 0);
+	arikkei_return_val_if_fail (inst != NULL, 0);
 	str = az_string_new (key);
-	result = azo_context_define (ctx, str, value);
+	result = azo_context_define (ctx, str, impl, inst);
 	az_string_unref (str);
 	return result;
 }
@@ -179,9 +182,6 @@ azo_context_define_basic_types (AZOContext *ctx)
 {
 	AZPackedValue val = { 0 };
 	az_init ();
-	/* None */
-	azo_context_define_by_str (ctx, (const unsigned char *) "none", &val);
-	az_packed_value_clear (&val);
 	/* Basic types */
 	azo_context_define_class_by_str (ctx, (const unsigned char *) "any", AZ_TYPE_ANY);
 	azo_context_define_class_by_str (ctx, (const unsigned char *) "boolean", AZ_TYPE_BOOLEAN);
@@ -202,13 +202,18 @@ azo_context_define_basic_types (AZOContext *ctx)
 	azo_context_define_class_by_str (ctx, (const unsigned char *) "interface", AZ_TYPE_INTERFACE);
 	azo_context_define_class_by_str (ctx, (const unsigned char *) "reference", AZ_TYPE_REFERENCE);
 	azo_context_define_class_by_str (ctx, (const unsigned char *) "string", AZ_TYPE_STRING);
-	azo_context_define_class_by_str (ctx, (const unsigned char *) "object", AZ_TYPE_OBJECT);
-	/* AZ subtypes */
 	azo_context_define_class_by_str (ctx, (const unsigned char *) "function", AZ_TYPE_FUNCTION);
-	azo_context_define_class_by_str (ctx, (const unsigned char *) "collection", AZ_TYPE_COLLECTION);
+
 	azo_context_define_class_by_str (ctx, (const unsigned char *) "array", AZ_TYPE_LIST);
-	azo_context_define_class_by_str (ctx, (const unsigned char *) "map", AZ_TYPE_MAP);
-	azo_context_define_class_by_str (ctx, (const unsigned char *) "ActiveObject", AZ_TYPE_ACTIVE_OBJECT);
+	/* Namespaced members */
+	AZONamespace *ns = azo_namespace_new ();
+	azo_context_define_by_str(ctx, (const unsigned char *) "az", AZ_IMPL_FROM_TYPE(AZO_TYPE_NAMESPACE), ns);
+	/* AZ subtypes */
+	azo_namespace_define_class_by_str(ns, (const unsigned char *) "object", AZ_TYPE_OBJECT);
+	azo_namespace_define_class_by_str(ns, (const unsigned char *) "collection", AZ_TYPE_COLLECTION);
+	azo_namespace_define_class_by_str(ns, (const unsigned char *) "array", AZ_TYPE_LIST);
+	azo_namespace_define_class_by_str(ns, (const unsigned char *) "map", AZ_TYPE_MAP);
+	azo_namespace_define_class_by_str(ns, (const unsigned char *) "ActiveObject", AZ_TYPE_ACTIVE_OBJECT);
 }
 
 unsigned int
@@ -222,7 +227,7 @@ azo_context_define_class_by_str (AZOContext *ctx, const unsigned char *key, unsi
 	arikkei_return_val_if_fail (az_type_is_a (type, AZ_TYPE_ANY), 0);
 	klass = az_type_get_class (type);
 	az_packed_value_set_class (&val, klass);
-	result = azo_context_define_by_str (ctx, key, &val);
+	result = azo_context_define_by_str (ctx, key, AZ_IMPL_FROM_TYPE(AZ_TYPE_CLASS), klass);
 	az_packed_value_clear (&val);
 	return result;
 }

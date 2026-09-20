@@ -40,6 +40,11 @@ struct _AZONamespaceClass {
 
 unsigned int azo_namespace_get_type (void);
 
+static inline AZONamespace *azo_namespace_new (void)
+{
+	return (AZONamespace *) az_instance_new(AZO_TYPE_NAMESPACE);
+}
+
 unsigned int azo_namespace_define (AZONamespace *nspace, AZString *key, const AZImplementation *impl, void *inst);
 unsigned int azo_namespace_define_by_str (AZONamespace *nspace, const unsigned char *key, const AZImplementation *impl, void *inst);
 unsigned int azo_namespace_define_by_type (AZONamespace *nspace, AZString *key, unsigned int type, void *inst);

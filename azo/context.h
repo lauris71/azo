@@ -34,8 +34,8 @@ struct _AZOContext {
 
 AZOContext *azo_context_new (void);
 void azo_context_delete (AZOContext *ctx);
-unsigned int azo_context_define (AZOContext *ctx, AZString *key, const AZPackedValue *value);
-unsigned int azo_context_define_by_str (AZOContext *ctx, const unsigned char *key, const AZPackedValue *value);
+unsigned int azo_context_define (AZOContext *ctx, AZString *key, const AZImplementation *impl, void *inst);
+unsigned int azo_context_define_by_str (AZOContext *ctx, const unsigned char *key, const AZImplementation *impl, void *inst);
 const AZImplementation *azo_context_lookup (AZOContext *ctx, AZString *key, AZValue *val, unsigned int size);
 const AZImplementation *azo_context_lookup_by_str (AZOContext *ctx, const uint8_t *key, AZValue *val, unsigned int size);
 

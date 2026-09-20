@@ -78,6 +78,7 @@
    a->b() calls attribute 'b' as a *member* funtion. There should be a way to distinguish member/static calls.
 
    10.1 Maybe we can add -> as a generic lookUp method (for all map-like objects?) Should it then also resolve interfaces (a->Map gives a as map)?.
+   Better not - currently '->' needs bareword as a right hand operand - we do not want to deal with expressions.
 11. Need array casts (type[]) for array literals
 12. There should be a way to create ad-hoc member functions:
    The old syntax:
@@ -116,3 +117,49 @@
     myobj.func2(a,b) - the actual signature is (a, b)
     Then, myObj may have identically named methods with both (myobj,a,b) and (a,b) signatures - which one to choose?
     Also trying (myobj,a,b) for (a,b) call is tolerable if resolved to constant compile-time but unacceptable for run-time resolving
+    Current situation:
+      function (int32) ... creates a static function
+      someobj.function (int32) creates a member function with signature (someobj, int32)
+      (int32) => ... - creates a static function
+      myobj.myfunc(5) calls as a member function if myfunc is instance property or attribute, as static if it is static property
+      myobj->myfunc(5) calls as a member function
+    What we have:
+    - Parser does not know, whether execution will be in member or static context - or does it?
+      - maybe: parse_program always creates static, parse_block creates either static or member (given as an argument)?
+    - function a = (int32 x) {return x * x; };
+      - Currently creates signature (int32 a)
+      - Can we force (this, int32) or (myobj, int32) for member contexts?
+      - But the construct: someobj->func = (int32 x) {return x + 1; };
+        - If parser compiles in member context it creates the signature (current block this, int32) instead of (someobj, int32)
+        - And in static ontext (int32) instead of (someobj, int32)
+      - The determination of signature should be done by resolver that has the full type info
+        - resolver already has this context
+      - But how should the construct above resolve?
+      - Lets say we have member blocks:
+        someobj {
+          func = (int32 x) { return x + 1; };
+        }
+        Should definitely resolve to (someobj, int32)
+        static {
+          func = (int32 x) { return x * 2; };
+        }
+        Should resolve to (int32)
+        But the abovementioned construct - should mere assignment to an attribute force member context? It does not seem logical but probably is what people want to do 99% of time.
+    - How about calling:
+      - myobj->somemethod(5)
+        Should it try to invoke with signature (myobj, int32) or (int32)?
+        Again, is the mere calling as an attribute enough to force member context? But then we cannot call static methods as attributes at all.
+        For compiled function it is easy - we can add a flag to the function definition indicating whether it is a member function (requires 'this' binding) or a static function.
+        But generic functions do not have this functionality.
+    - Properties partially solve this partially not
+      myobj.somefunc(5)
+      If somefunc is of function type, it has expected signature
+      But as was said above, there can be TWO somefunc-s - one with (myobj, int32) other with (int32)
+      And
+      myobj.someprop(5)
+      Someprop is not function property, but common data property that can accept functions (any, function, struct etc.)
+      it is resolved without signature (no overrides), but what signature should be used for calling?
+    - In general making myobj-> and myobj. force member copntext seems good idea (it is the normal usage)
+      - But we need a construct to explicitly call statically (without implicit 'this')
+        myobj.someprop.call(5)?
+        i.e. all function instances have 'call' method that accepts the full signature (i.e. if they are member methods, 'this' has to be given as the first argument)
