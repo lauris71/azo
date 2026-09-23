@@ -176,7 +176,7 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 {
 	AZONode *obj, *type, *args, *body, *child;
 	unsigned int result = 0;
-	if (expr->term.subtype == AZO_TERM_FUNCTION_MEMBER) {
+	if (expr->term.subtype == AZO_TERM_FUNCTION_MEMBER_OLD) {
 		type = expr->children;
 		obj = type->next;
 		args = obj->next;
@@ -189,7 +189,6 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	}
 
 	/* Return type */
-	unsigned int ret_type;
 	result = azo_compiler_resolve_node (comp, type, flags);
 	if (result) return result;
 	if (type->term.type == AZO_TERM_EMPTY) {
@@ -197,7 +196,6 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 		type->term.type = AZO_TERM_TYPE;
 		type->term.subtype = AZ_TYPE_NONE;
 		az_packed_value_clear (&type->value);
-		ret_type = AZ_TYPE_NONE;
 	} else {
 		if (type->term.type != AZO_TERM_CONSTANT) {
 			fprintf (stderr, "resolve_function: Return type is not a compile-time constant (%u/%u)\n", type->term.type, type->term.subtype);
@@ -209,8 +207,8 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 		}
 		type->term.type = AZO_TERM_TYPE;
 		type->term.subtype = AZ_IMPL_TYPE((AZImplementation *) type->value.v.block);
-		ret_type = AZ_IMPL_TYPE((AZImplementation *) type->value.v.block);
 	}
+	unsigned int ret_type = type->term.subtype;
 
 	/* This type */
 	const AZImplementation *this_impl = (const AZImplementation *) az_type_get_class (AZ_TYPE_ANY);
@@ -222,7 +220,7 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 				fprintf (stderr, "resolve_function: parent is constant non-class (%u)\n", obj->term.subtype);
 				return 1;
 			}
-			this_impl = ( const AZImplementation *) obj->value.v.block;
+			this_impl = (const AZImplementation *) obj->value.v.block;
 		}
 	}
 	azo_compiler_push_frame (comp, this_impl, NULL, ret_type);

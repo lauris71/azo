@@ -46,6 +46,8 @@ set(AZO_SOURCES
 add_library(azo STATIC
 	${AZO_HEADERS}
 	${AZO_SOURCES}
+	datablock.h
+	datablock.c
 )
 
 set_property(TARGET azo PROPERTY POSITION_INDEPENDENT_CODE ON)

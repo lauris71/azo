@@ -1614,6 +1614,7 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		if (!type && (AZ_TYPE_IS_REFERENCE(prop->type) || AZ_TYPE_IS_INTERFACE(prop->type))) {
 			result = az_instance_set_property_by_id (def_class, sub_impl, sub_inst, idx, NULL, NULL, NULL);
 		} else if (!az_type_is_assignable_to (type, prop->type)) {
+			/* fixme: No need for double copy, unless we want to use packed value conversion */
 			intr->vals[0].impl = NULL;
 			intr->vals[1].impl = NULL;
 			az_packed_value_set_from_impl_value (&intr->vals[0].packed_val, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0));

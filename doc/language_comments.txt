@@ -44,6 +44,157 @@
 2. LValues can be created from RValues by member or array reference. E.g. myFunction().member or myFunction()[1].
    This is logical - RValue is pure value, but members and array elements are value containers.
 
+##Member and static functions (adopted rules, supersede rough edges 12, 16, 17)
+
+###Function values and signatures
+A function value's signature is always its declared argument list - there is no
+signature negotiation at call sites.
+- Ad-hoc (per-instance) member functions capture this through the closure - the
+  receiver is bound at creation, not passed at call time.
+- Class methods (pre-built by C code - scripts cannot modify classes) have an
+  implicit this parameter: they are created once and must serve every instance,
+  so the receiver is passed at call time.
+
+###Declaration context
+- A lambda is static by default; the static prefix forces a plain function with
+  exactly the declared signature in any context.
+- Expression { Sentences } is a member block: the head is evaluated once, the body
+  is executed with this bound to it, and unqualified names resolve to the head's
+  properties first, then attributes (the block is an explicit convenience context;
+  the strict ./-> separation applies to the operators). New names are installed as
+  attributes (compile-time error if the head does not implement AZAttributeList).
+  The head type must be known at compile time (resolver error otherwise).
+- A class-valued head gives a class context. Classes are pre-built (C code) and
+  cannot be modified from scripts: unqualified names resolve to existing class
+  properties or are compile-time errors, and assignments target existing writable
+  class properties or are errors - no new methods or properties can be installed.
+  Lambdas created in a class context capture the class namespace (bare names
+  resolve to class properties) but keep exactly the declared signature.
+- obj.name = lambda is sugar for obj { name = lambda; } - the dot propagates
+  context to the right, symmetrically with how it propagates the receiver to a
+  call. obj.name = static lambda stores a plain function instead.
+- static { Sentences } evaluates the body in static context (this == NONE).
+
+###Call resolution (no probing, decided by what the name resolves to)
+- obj.name(args) where name is a class function-table method - method call,
+  this == obj.
+- obj.name(args) where obj is a class and name is a static function property -
+  static call (args).
+- obj.name(args) / obj->name(args) where name is a data property or attribute
+  holding a function value - fetch, call with the declared signature (args); no
+  receiver injection. Stored closures and stored static functions work identically.
+- The instance-vs-class type of the left operand decides member-vs-static,
+  statically whenever the type is known. Static functions are reached via the
+  class: obj.class.name(args) (requires obj.class to yield the class of obj).
+- (obj.name)(args) and f = obj.name; f(args) fetch the value and call it plainly -
+  any indirection ends the this-propagation.
+- Extracting a class method (f = obj.method) materializes a bound closure
+  (this == obj), so callbacks never silently lose their receiver.
+
+###. and -> (properties vs attributes)
+- Properties/functions are defined in C code: the list and types are immutable,
+  but the content can be modified (depending on the property).
+- Attributes exist only for instances implementing AZAttributeList - first and
+  foremost AZActiveObject subclasses (most game objects derive from it).
+- . resolves properties/functions only (the current attribute fallback is
+  deprecated).
+- -> resolves attributes only.
+- Neither implies a calling convention.
+
+##Closure model and memory management (adopted rules)
+
+###Storage model
+- Closure: parent captures including this (read-only snapshots), static variables
+  (read-write), link to the shared datablock, link to code (may be shared, may be
+  JIT-optimized for one closure).
+- Shared datablock: function-level constants (read-only) and shared variables
+  (read-write). Owned by the program code plus all live closures of the lambda;
+  freed when the program and all its closures are gone. Closures can escape the
+  script (stored in attributes of long-lived objects) - then the datablock
+  outlives the script, held by the escaped closure.
+- A new closure is created on every evaluation of the lambda expression. The
+  optimizer may reuse a closure only if it has no non-constant captures and no
+  static variables; closure identity (===) of such lambdas is unspecified.
+- static variables: per-closure, initialized at closure creation (arbitrary
+  expressions allowed).
+- shared variables: per lambda declaration site (not per enclosing invocation),
+  constant-expression initializers only (the datablock exists before any closure).
+- All AZActiveObject captures (including this) are weak - closures never extend
+  ActiveObject lifetimes. Rationale: an ActiveObject's meaningful life is its
+  membership in the ownership tree; an object kept alive only by a closure is not
+  updated/rendered/simulated - a zombie. A dead capture reads as (typed) null;
+  member access throws unless the function opted in with the nullsafe flag
+  (rough edge 15). Non-ActiveObject captures (numbers, strings, arrays, closures)
+  are by-value/strong - closure-to-closure cycles are impossible by construction.
+- Keeping an object alive is done by anchoring, not by capture strength: a local
+  anchors for the enclosing frame's lifetime (create-configure-attach window);
+  a persistent anchor is an attribute of an object that outlives the closure's
+  uses (objects own data, closures are behavior).
+- weak variables (AZWeakReference, AZActiveObject only) read as null after the
+  referent's shutdown. AZWeakReference needs fixed-address storage (the ref
+  struct's address is registered as listener data; the stack compacts), so weak
+  is valid at program/script scope - a compile-time error on function locals.
+- Mutable cross-closure state goes through shared variables or object attributes;
+  captured variables are snapshots.
+
+###Memory model
+- All collectible cycles pass through an AZActiveObject edge: closure-to-closure
+  cycles are impossible by construction (snapshot captures are temporal - a closure
+  can only capture what already exists at its creation), and the only mutable
+  closure-holding slots are object attributes and program-rooted shared/static
+  storage.
+- Cycles through attributes are broken by uniformly weak ActiveObject captures
+  (member closures, listeners, back-pointers) and recursive shutdown clearing
+  attributes.
+- Shared/static storage is program-rooted, not a cycle participant: an object kept
+  alive by a shared variable is kept alive by the alive script (usually tied to a
+  game object) - same semantics as a global, freed at script unload.
+
+###Implementation checklist
+- AZOCompiledFunction split: closure object (captures, statics, datablock link,
+  code link) vs shared datablock (constants, shared variables) vs code/program.
+- Replace the bound flag + GET_PROPERTY "bound" skip-jump + AZO_TC_BIND with an
+  unconditional MAKE_CLOSURE n_captures opcode.
+- Resolver: tag lambda context (static / member / class); all AZActiveObject
+  captures (including this) are bound as weak captures.
+- static declarations in function scope: allocate in closure, initialize at
+  creation; shared declarations: allocate in datablock, constant initializer.
+- weak qualifier: AZWeakReference slots for AZActiveObject references; reads
+  produce null after shutdown (typed null per rough edge 15); compile-time error
+  for non-AZActiveObject types and for function locals (fixed-address storage
+  required - valid at program/script scope).
+- Optimizer: closure reuse only when no non-constant captures and no static
+  variables; per-closure JIT code must never migrate to the shared code link.
+- Shutdown integration: clearing attributes releases closures; recursive shutdown
+  propagates as explicit shutdown calls (never passive refcount drops).
+- Verify: no mutable closure-holding container outside attributes and
+  program-rooted storage (e.g. arrays in attributes are fine - shutdown releases
+  the array, which releases the closure).
+- Remove the legacy 'function' keyword path (HAS_FUNCTION_KEYWORD) once scripts
+  are migrated.
+
+###Usage guidelines (script code)
+- DO attach behavior with member closures: btn.onClicked = () => { ... } - all
+  ActiveObject captures (this included) are weak, no cycle possible.
+- DO use static int32 n = 0 inside a lambda for per-closure counters (per-button
+  click counts, accumulators).
+- DO use shared for state common to all closures of the same lambda (rare in
+  singleton scripts - a script-scope constant usually suffices).
+- DO anchor objects that must stay alive: a local anchors for the enclosing
+  frame's lifetime (create-configure-attach window), an attribute of a
+  long-lived object anchors persistently. A closure never keeps an ActiveObject
+  alive.
+- DO dispose objects explicitly and in time - shutdown breaks the attribute edges.
+- DO use weak only for script-scope back-pointers (e.g. weak Button other =
+  otherBtn;) - it is a compile-time error on function locals.
+- DON'T expect a captured ActiveObject to be alive inside a closure - reads of
+  dead captures are null; member access throws unless the function opted into
+  nullsafe. Check for null or anchor the object.
+- DON'T rely on closure identity (===) for lambdas without captures/statics - the
+  optimizer may cache them.
+- DON'T try to mutate captured variables - they are snapshots; use shared or
+  attributes for mutable state.
+
 ##Rough edges:
 
 1. Currently no way to extend (no class keyword)
@@ -63,10 +214,11 @@
 6. No boxing of primitives (probably doable with referenceOf/boxed value but needs to be transparent)
 7. No final function arguments (const in function scope)
 8. No function signature designation for variables
-9. There should be separate function... and new function... variants for creating a function
+9. *OBSOLETE - every lambda evaluation creates a new closure; see "Closure model and memory management"*
+   There should be separate function... and new function... variants for creating a function
    function - creates shared closure, capturing variable values from the first run
    new function - creates fresh closure, capturing current variable values
-10. *PARTIALLY SOLVED* ActiveObject attributes specific syntax, either
+10. *SOLVED - . is properties/functions only, -> is attributes only; see "Member and static functions"* ActiveObject attributes specific syntax, either
    a. object.attribute
    b. object["attribute"]
    c. object{"attribute"}
@@ -80,7 +232,7 @@
    10.1 Maybe we can add -> as a generic lookUp method (for all map-like objects?) Should it then also resolve interfaces (a->Map gives a as map)?.
    Better not - currently '->' needs bareword as a right hand operand - we do not want to deal with expressions.
 11. Need array casts (type[]) for array literals
-12. There should be a way to create ad-hoc member functions:
+12. *SUPERSEDED - see "Member and static functions"* There should be a way to create ad-hoc member functions:
    The old syntax:
      someobj.function...
    These are not discoverable from someobj by default (although can be saved into properties/attributes), but locally have this keyword and references are tried as value members
@@ -89,12 +241,18 @@
      someobj {
         statement ...
      }
+     Creates member context for one specific instance.
      Statements will be executed in the context of someobj (this being someobj, unresolved names resolving to props/attributes, functions being ad-hoc member functions)
      Then logically:
      global {
         statement
      }
      Creates ad-hoc global (static) block
+     Also, probably:
+     myobj.class {
+        statement
+     }
+     Creates class-generic member context (not tied to one specific instance, any instance of that class will do)
 13. *SOLVED* No chained assignments: a = b = c = 0
 14. No exceptions
 15. Typed null (class valid, instance NULL) - design notes (on hold, not implemented yet):
@@ -112,14 +270,14 @@
       controlled per-member at declaration site; UI trees can opt in, secure methods stay safe
     - Untyped null is the 'none' value (a real value), typed null is an absence of value
     - Open: syntax of the nullsafe flag; debug-mode logging of null derefs would help debugging
-16. Function call needs to distinguish member calls and static calls, e.g.
+16. *SUPERSEDED - see "Member and static functions"* Function call needs to distinguish member calls and static calls, e.g.
     myobj.func1(a,b) - the actual signature is (myobj, a, b)
     myobj.func2(a,b) - the actual signature is (a, b)
     Then, myObj may have identically named methods with both (myobj,a,b) and (a,b) signatures - which one to choose?
     Also trying (myobj,a,b) for (a,b) call is tolerable if resolved to constant compile-time but unacceptable for run-time resolving
     Current situation:
-      function (int32) ... creates a static function
-      someobj.function (int32) creates a member function with signature (someobj, int32)
+      function (int32) ... creates a static function (but the 'function' keyword is deprecated for function definition)
+      someobj.function (int32) creates a member function with signature (someobj, int32) - (the same - also deprectaed)
       (int32) => ... - creates a static function
       myobj.myfunc(5) calls as a member function if myfunc is instance property or attribute, as static if it is static property
       myobj->myfunc(5) calls as a member function
@@ -127,21 +285,23 @@
     - Parser does not know, whether execution will be in member or static context - or does it?
       - maybe: parse_program always creates static, parse_block creates either static or member (given as an argument)?
     - function a = (int32 x) {return x * x; };
-      - Currently creates signature (int32 a)
+      - Currently creates signature (int32)
       - Can we force (this, int32) or (myobj, int32) for member contexts?
       - But the construct: someobj->func = (int32 x) {return x + 1; };
-        - If parser compiles in member context it creates the signature (current block this, int32) instead of (someobj, int32)
+        - If parser compiles in member context it would create signature (current_parser_this, int32) instead of (someobj, int32)
         - And in static ontext (int32) instead of (someobj, int32)
       - The determination of signature should be done by resolver that has the full type info
-        - resolver already has this context
-      - But how should the construct above resolve?
+        - resolver already has 'this' defined for the context
+      - But how should the construct
+          myobj->somefunc = (int32 x) int32 { return x * x; };
+        resolve?
       - Lets say we have member blocks:
         someobj {
-          func = (int32 x) { return x + 1; };
+          function func = (int32 x) { return x + 1; };
         }
         Should definitely resolve to (someobj, int32)
         static {
-          func = (int32 x) { return x * 2; };
+          function func = (int32 x) { return x * 2; };
         }
         Should resolve to (int32)
         But the abovementioned construct - should mere assignment to an attribute force member context? It does not seem logical but probably is what people want to do 99% of time.
@@ -162,4 +322,37 @@
     - In general making myobj-> and myobj. force member copntext seems good idea (it is the normal usage)
       - But we need a construct to explicitly call statically (without implicit 'this')
         myobj.someprop.call(5)?
+        myobj.class.staticprop(5)? But currently it gets the property of class class, not myobj class.
         i.e. all function instances have 'call' method that accepts the full signature (i.e. if they are member methods, 'this' has to be given as the first argument)
+    What does
+      myobj.someprop(5)
+      mean? It may be:
+        a) resolve myobj.somperop, get an instance implementing a function, call it with signature (int32)
+        b) resolve myobj.somperop, get an instance... call it with signature (myobj, 5)
+        c) resolve function property myobj.somperop(5), call it
+        d) resolve function property myobj.somperop(myobj, 5), call it
+      but:
+      any a = myobj.someprop
+      a(5) - works, if (a)
+      a(myobj, 5) - works, if (b)
+      (c,d) cannot currently be extracted as values at all
+      The logical approach:
+      (myobj.someprop)(5) - forces fetching the property, then call it as static (5)
+      (myobj).someprop(5) - member call with signature (5)
+      myobj.someprop(5) - member call with signature (myobj, 5)
+      e.g. '.' and '->' propagate 'this' to the right, parentheses break the propagation.
+17. *SUPERSEDED - see "Member and static functions"* 'static' keyword
+  Means that the following term(s) will be evaluated in term-specific static context
+  17.1. Variable declarations
+    static int32 a - if declared inside function, 'a' is added to the closure (but is still writable)
+    static has to be the first keyword (before final/const)
+  17.2. Blocks
+    static { Sentence... } - sentences will be evaluated in static context (this == NONE)
+  17.3. Function (lambda) declaration
+    static (int32 x) => ... - creates a static function with signature (int32), without static it uses current context to create either static or member
+    static myobj.myfunc = (int32 x) => ... - creates a static function assigned to myobj.myfunc (otherwise myobj creates implicit 'this' context)
+    static myobj->myfunc = (int32 x) => ... - creates a static function assigned to myobj.myfunc (otherwise myobj creates implicit 'this' context)
+  17.4. Member calls???
+    static myobj.myfunc(5) - forces static call signature (int32), not (myobj, int32)
+    This is ambiguous with function call as a variable type - but can be determined by the context (expression/declaration)
+    Or omit this and use (myobj.myfunc)(5) for static call?

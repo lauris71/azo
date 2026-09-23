@@ -233,7 +233,7 @@ enum {
 /* Function subtypes */
 enum {
 	AZO_TERM_FUNCTION_STATIC,
-	AZO_TERM_FUNCTION_MEMBER
+	AZO_TERM_FUNCTION_MEMBER_OLD
 };
 
 /* Suffix subtypes */

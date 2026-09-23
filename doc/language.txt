@@ -29,6 +29,8 @@ Sentences:
 Sentence:
   Block
   Line
+  Member_block
+  Static_block
   For_statement
   While_statement
   If_statement
@@ -36,6 +38,20 @@ Sentence:
   
 Block:
   { Sentences }
+
+# Member block: the head expression is evaluated once and the body is executed in
+# its context (this == head value, unqualified names resolve to its properties
+# first, then attributes, new names are installed as attributes). The head type
+# must be known at compile time.
+# A class-valued head gives a class context: classes are pre-built (C code) and
+# cannot be modified from scripts, so unqualified names resolve to existing class
+# properties or are compile-time errors - no new names can be installed.
+Member_block:
+  Expression { Sentences }
+
+# Static block: the body is evaluated in static context (this == NONE)
+Static_block:
+  static Block
 
 Line:
   Statement ;
@@ -101,8 +117,18 @@ Do_statement:
 Declaration:
   Declaration_qualifiers Type Single_declaration [, Single_declaration ...]
 
+# Qualifiers:
+#   static - per-closure storage: the variable is added to the closure (writable),
+#            initialized at closure creation
+#   shared - per-lambda storage: the variable lives in the shared datablock of the
+#            lambda declaration (all closures of the same lambda share it);
+#            the initializer must be a constant expression
+#   weak   - weak reference (AZWeakReference, AZActiveObject only): reads as null
+#            after the referent's shutdown; requires fixed-address storage -
+#            valid at program/script scope, compile-time error on function locals
 Declaration_qualifiers:
-  [static] [const] [final]
+  [static] [weak] [const] [final]
+  [shared] [weak] [const] [final]
 
 Single_declaration:
   Pure_declaration
@@ -247,18 +273,30 @@ New:
 Arguments:
   ([Expression [, Expression ...]])
 
-# Function definitions are lambdas - (arguments) [return_type] => body
+# Function definitions are lambdas - [static] (arguments) [return_type] => body
 # The body is either a block (explicit return) or a single expression (implicit return)
 # Argument types are optional but either all arguments are typed or all are untyped;
 # the return type may only be given if the argument list is empty or all arguments
 # are typed (for untyped arguments it would be ambiguous with a call of the
 # parenthesized argument)
+# Without static a lambda created in a member context (a member block, or assigned
+# to a member/attribute) captures this - an ad-hoc member function; in a class
+# context it captures the class namespace (unqualified names resolve to existing
+# class properties) but is not a method - classes cannot be modified from scripts.
+# static forces a plain function with exactly the declared signature in any context.
+#
+# Evaluating a lambda expression creates a new closure every time; captures are
+# read-only snapshots. All AZActiveObject captures (including this) are weak -
+# closures never extend ActiveObject lifetimes; a dead capture reads as null.
+# Non-ActiveObject captures are by-value/strong.
+# The optimizer may reuse a closure only if it has no non-constant captures and
+# no static variables; closure identity (===) of such lambdas is unspecified.
 
 Lambda:
-  (Arguments_definition) => Block
-  (Arguments_definition) => Expression
-  (Arguments_definition) Type => Block
-  (Arguments_definition) Type => Expression
+  [static] (Arguments_definition) => Block
+  [static] (Arguments_definition) => Expression
+  [static] (Arguments_definition) Type => Block
+  [static] (Arguments_definition) Type => Expression
 
 Arguments_definition:
   ([Argument_definition [, Argument_definition ...]])

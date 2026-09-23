@@ -36,8 +36,9 @@ struct _AZOInterpreter {
 	AZOStack stack;
 	uint32_t flags;
 	AZOException exc;
-	/* Register */
-	AZPackedValue64 vals[4];
+	/* Scratch area */
+	/* vals[0] is used to store return value */
+	AZPackedValue64 vals[2];
 };
 
 

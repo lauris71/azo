@@ -340,7 +340,7 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		break;
 	case AZO_TERM_FUNCTION:
 		/* Lambda - children: [return_type, args, body] (static) or [return_type, object, args, body] (member) */
-		if (expr->term.subtype == AZO_TERM_FUNCTION_MEMBER) {
+		if (expr->term.subtype == AZO_TERM_FUNCTION_MEMBER_OLD) {
 			azo_node_print (expr->children->next, ofs);
 			fprintf (ofs, ".");
 			azo_node_print (expr->children->next->next, ofs);

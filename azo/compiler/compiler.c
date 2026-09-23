@@ -1014,7 +1014,7 @@ compile_function (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 	write_DEBUG_STRING (comp, "Function 1");
 	write_DEBUG_STACK (comp);
 #endif
-	if (expr->term.subtype == AZO_TERM_FUNCTION_MEMBER) {
+	if (expr->term.subtype == AZO_TERM_FUNCTION_MEMBER_OLD) {
 		type = expr->children;
 		obj = type->next;
 		args = obj->next;
@@ -1615,7 +1615,6 @@ azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src)
 	AZOProgram *prog;
 
 	/* Have to reserve closure before compilation */
-	/* fixme: Here we probably do not have parent vars */
 	azo_frame_reserve_data (comp->current, comp->current->n_parent_vars);
 
 	if (root->term.type == AZO_TERM_PROGRAM) {

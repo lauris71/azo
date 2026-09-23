@@ -1764,7 +1764,7 @@ parse_function_definition (AZOParser *parser, AZOToken *token, unsigned int is_m
 	body = parser_detach_last (parser);
 	if (is_member) {
 		AZONode *obj = parser_detach_last (parser);
-		expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER, obj->term.start, body->term.end, 4, type, obj, args, body);
+		expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER_OLD, obj->term.start, body->term.end, 4, type, obj, args, body);
 	} else {
 		expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC, start, body->term.end, 3, type, args, body);
 	}

@@ -66,7 +66,7 @@ tag_assigns(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 	switch (node->term.type) {
 		case AZO_TERM_FUNCTION:
 			/* Return type has to be already resolved to constant class */
-			if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER)) {
+			if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER_OLD)) {
 				AZONode *ret = node->children;
 				AZONode *args = ret->next;
 				AZONode *body = args->next;
@@ -235,7 +235,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			/* Proceed args with existing list, duplicate list and proceed body */
 			/* Return type has to be already resolved to constant class */
 			AZONode *ret, *this, *args, *body;
-			if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER)) {
+			if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER_OLD)) {
 				ret = node->children;
 				this = NULL;
 				args = ret->next;
@@ -397,7 +397,7 @@ optimize_argument_declaration(AZOOptimizer *opt, AZONode *node, unsigned int fla
 static int
 optimize_function(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	if (node->term.subtype == AZO_TERM_FUNCTION_MEMBER) {
+	if (node->term.subtype == AZO_TERM_FUNCTION_MEMBER_OLD) {
 		AZONode *type = node->children;
 		int result = optimize_node(opt, type, flags);
 		if (result) return result;
