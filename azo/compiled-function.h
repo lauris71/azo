@@ -21,6 +21,7 @@ typedef struct _AZOCompiledFunctionClass AZOCompiledFunctionClass;
 
 #include <azo/node.h>
 #include <azo/interpreter.h>
+#include <azo/datablock.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,9 +30,12 @@ extern "C" {
 struct _AZOCompiledFunction {
 	AZObject object;
 	AZFunctionSignature *signature;
-	unsigned int bound;
 	AZOContext *ctx;
 	AZONode *root;
+	/* Captures and static */
+	unsigned int n_captures;
+	unsigned int n_static;
+	AZODataBlock static_data;
 	/* Code */
 	AZOProgram *prog;
 };
@@ -44,7 +48,7 @@ struct _AZOCompiledFunctionClass {
 
 unsigned int azo_compiled_function_get_type (void);
 
-AZOCompiledFunction *azo_compiled_function_new (AZOContext *ctx, AZOProgram *program, unsigned int ret_type, unsigned int nargs);
+AZOCompiledFunction *azo_compiled_function_new(AZOProgram *program);
 
 /**
  * @brief Write an actual value to the reserved parent variable slot

@@ -75,9 +75,9 @@ azo_compiler_release(AZOCompiler *compiler)
 }
 
 void
-azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type)
+azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type)
 {
-	AZOFrame *frame = azo_frame_new (comp->current, this_impl, this_inst, ret_type, comp->debug);
+	AZOFrame *frame = azo_frame_new (comp->current, this_impl, this_inst, n_args, ret_type, comp->debug);
 	frame->parent = comp->current;
 	comp->current = frame;
 }
@@ -304,30 +304,30 @@ azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint3
 /* End new stack methods */
 
 static void
-azo_compiler_write_PUSH_VALUE (AZOCompiler *comp, unsigned int pos)
+write_PUSH_VALUE(AZOCompiler *comp, unsigned int pos, const AZONode *node)
 {
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, NULL);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, node);
 }
 
 static void
-compile_PUSH_VALUE (AZOCompiler *comp, unsigned int type, const AZValue *val)
+compile_PUSH_VALUE_const(AZOCompiler *comp, unsigned int type, const AZValue *val, const AZONode *node)
 {
 	unsigned int pos = azo_frame_append_value (comp->current, type, val);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, NULL);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, comp->current->n_parent_vars + pos, node);
 }
 
 static void
-compile_PUSH_VALUE_string (AZOCompiler *comp, AZString *str)
+compile_PUSH_VALUE_const_string(AZOCompiler *comp, AZString *str, const AZONode *node)
 {
 	unsigned int pos = azo_frame_append_string (comp->current, str);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, NULL);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, comp->current->n_parent_vars + pos, node);
 }
 
 static void
-compile_PUSH_VALUE_object (AZOCompiler *comp, AZObject *obj)
+compile_PUSH_VALUE_const_object(AZOCompiler *comp, AZObject *obj, const AZONode *node)
 {
 	unsigned int pos = azo_frame_append_object (comp->current, obj);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, NULL);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, comp->current->n_parent_vars + pos, node);
 }
 
 /* End temporary */
@@ -363,18 +363,18 @@ azo_compiler_compile_constant (AZOCompiler *comp, const AZONode *expr, AZOSource
 	} else if (AZ_TYPE_IS_PRIMITIVE (expr->term.subtype)) {
 		azo_compiler_write_PUSH_IMMEDIATE (comp, expr->term.subtype, &expr->value.v, expr);
 	} else if (expr->term.subtype == AZ_TYPE_STRING) {
-		compile_PUSH_VALUE_string (comp, expr->value.v.string);
+		compile_PUSH_VALUE_const_string (comp, expr->value.v.string, expr);
 	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_OBJECT)) {
-		compile_PUSH_VALUE_object (comp, ( AZObject *) expr->value.v.reference);
+		compile_PUSH_VALUE_const_object (comp, ( AZObject *) expr->value.v.reference, expr);
 	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_REFERENCE)) {
 		/* fixme: Implement lookup if already pushed */
-		compile_PUSH_VALUE (comp, expr->term.subtype, &expr->value.v);
+		compile_PUSH_VALUE_const (comp, expr->term.subtype, &expr->value.v, expr);
 	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_BLOCK)) {
 		/* fixme: Implement lookup if already pushed */
-		compile_PUSH_VALUE (comp, expr->term.subtype, &expr->value.v);
+		compile_PUSH_VALUE_const (comp, expr->term.subtype, &expr->value.v, expr);
 	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_FUNCTION_VALUE)) {
 		/* fixme: Implement lookup if already pushed */
-		compile_PUSH_VALUE (comp, expr->term.subtype, &expr->value.v);
+		compile_PUSH_VALUE_const (comp, expr->term.subtype, &expr->value.v, expr);
 	} else {
 		fprintf (stderr, "azo_compiler_compile_constant: Unknown constant type %u\n", expr->term.subtype);
 		return 0;
@@ -464,7 +464,7 @@ compile_lvalue (AZOCompiler *comp, const AZONode *expr, AZOSource *src, LValue *
 			/* Interpret as this member */
 			lvalue->type = LVALUE_PROPERTY;
 			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, 0, expr);
-			compile_PUSH_VALUE_string (comp, expr->value.v.string);
+			compile_PUSH_VALUE_const_string (comp, expr->value.v.string, expr);
 			lvalue->n_elements = 2;
 			return 1;
 		} else if (expr->term.subtype == AZO_TERM_REFERENCE_PROPERTY) {
@@ -472,14 +472,14 @@ compile_lvalue (AZOCompiler *comp, const AZONode *expr, AZOSource *src, LValue *
 			AZONode *left = expr->children;
 			AZONode *right = left->next;
 			if (!azo_compiler_compile_expression (comp, left, src)) return 0;
-			compile_PUSH_VALUE_string (comp, right->value.v.string);
+			compile_PUSH_VALUE_const_string (comp, right->value.v.string, expr);
 			lvalue->n_elements = 2;
 		} else if (expr->term.subtype == AZO_TERM_REFERENCE_ATTRIBUTE) {
 			lvalue->type = LVALUE_ATTRIBUTE;
 			AZONode *left = expr->children;
 			AZONode *right = left->next;
 			if (!azo_compiler_compile_expression (comp, left, src)) return 0;
-			compile_PUSH_VALUE_string (comp, right->value.v.string);
+			compile_PUSH_VALUE_const_string (comp, right->value.v.string, expr);
 			lvalue->n_elements = 2;
 		} else {
 			fprintf (stderr, "compile_lvalue: Invalid expression subtype %u\n", expr->term.subtype);
@@ -736,7 +736,7 @@ compile_new (AZOCompiler *comp, const AZONode *klass, const AZONode *list, AZOSo
 	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_CLASS, klass);
 	not_class = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
 	/* [Class] */
-	compile_PUSH_VALUE_string (comp, newstr);
+	compile_PUSH_VALUE_const_string (comp, newstr, klass);
 	/* [Class, "new"] */
 	for (child = list->children; child; child = child->next) {
 		azo_compiler_compile_expression (comp, child, src);
@@ -879,7 +879,7 @@ compile_reference_lookup (AZOCompiler *comp, const AZONode *expr, AZString *str)
 
 	/* InstanceA */
 	azo_compiler_write_DUPLICATE (comp, 0, expr);
-	compile_PUSH_VALUE_string (comp, str);
+	compile_PUSH_VALUE_const_string (comp, str, expr);
 	/* InstanceA, InstanceA, String */
 	azo_compiler_write_ic (comp, AZO_TC_GET_PROPERTY, NULL);
 	/* InstanceA, Value|null */
@@ -891,7 +891,7 @@ compile_reference_lookup (AZOCompiler *comp, const AZONode *expr, AZString *str)
 	not_active_obj = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
 	/* ActiveObj, null */
 	azo_compiler_write_POP (comp, 1, NULL);
-	compile_PUSH_VALUE_string (comp, str);
+	compile_PUSH_VALUE_const_string (comp, str, expr);
 	/* ActiveObj, String */
 	azo_compiler_write_ic (comp, GET_ATTRIBUTE, NULL);
 	/* Value */
@@ -980,7 +980,7 @@ compile_function_call (AZOCompiler *comp, const AZONode *func, const AZONode *li
 		write_DEBUG_STRING (comp, "Parent lval 1\n");
 		write_DEBUG_STACK (comp);
 #endif
-		azo_compiler_write_PUSH_VALUE (comp, lval.pos);
+		write_PUSH_VALUE (comp, lval.pos, func);
 #ifdef DEBUG_PARENT_LVAL
 		write_DEBUG_STRING (comp, "Parent lval 2\n");
 		write_DEBUG_STACK (comp);
@@ -1007,9 +1007,6 @@ compile_function (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 	AZONode *child;
 	AZOProgram *prog;
 	AZOCompiledFunction *cfunc;
-	static AZString *bound_str = NULL;
-	unsigned int bound;
-	if (!bound_str) bound_str = az_string_new ((const unsigned char *) "bound");
 #ifdef DEBUG_FUNCTION
 	write_DEBUG_STRING (comp, "Function 1");
 	write_DEBUG_STACK (comp);
@@ -1034,10 +1031,11 @@ compile_function (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 	//if (obj) n_args = 1;
 	for (child = args->children; child; child = child->next) n_args += 1;
 
-	AZOFrame *func_frame = expr->frame;
-	AZOFrame *prev_frame = azo_compiler_set_frame(comp, func_frame);
-
 	/* Compile function body in it's own resolved frame */
+	assert(expr->frame);
+	AZOFrame *func_frame = expr->frame;
+	assert(func_frame->n_args == n_args);
+	AZOFrame *prev_frame = azo_compiler_set_frame(comp, func_frame);
 	prog = azo_compiler_compile (comp, body, src);
 	if (!prog) {
 		fprintf (stderr, "compile_function: error compiling function\n");
@@ -1045,36 +1043,27 @@ compile_function (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 		azo_compiler_set_frame(comp, prev_frame);
 		return 0;
 	}
-	cfunc = azo_compiled_function_new (comp->ctx->globals, prog, ret_type, n_args);
 	/* Restore the previous frame */
 	azo_compiler_set_frame(comp, prev_frame);
 
-	compile_PUSH_VALUE_object (comp, AZ_OBJECT (cfunc));
-	/* Function */
-	azo_compiler_write_DUPLICATE (comp, 0, expr);
-	/* Function, Function */
-	compile_PUSH_VALUE_string (comp, bound_str);
-	/* Function, Function, "bound" */
-	azo_compiler_write_ic (comp, AZO_TC_GET_PROPERTY, NULL);
-	/* Function, Boolean */
-	bound = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
-	/* Function */
-	/* Bind function - i.e. assign the values to all inherited variables */
+	compile_PUSH_VALUE_const(comp, AZO_TYPE_PROGRAM, (const AZValue *) &prog, expr);
+	/* program */
 	for (AZOVariableList *var = func_frame->parent_vars; var; var = var->next) {
+		/* var->parent is variable in current frame */
 		if (var->var.parent->parent) {
 			/* Variable is inherited from grandparent so present in current frame as value */
-			azo_compiler_write_PUSH_VALUE (comp, var->var.parent->pos);
+			write_PUSH_VALUE (comp, var->var.parent->pos, expr);
 		} else {
 			/* Local variable in current frame (present in stack) */
 			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, var->var.parent->pos, expr);
 		}
 	}
-	write_tc_u32 (comp, AZO_TC_BIND, expr->frame->n_parent_vars, NULL);
+	/* program val1 ... */
+	write_tc_u32 (comp, AZO_TC_CLOSURE, prog->n_captures, expr);
+	/* closure */
 
-	/* Function is already bound */
-	azo_compiler_update_JMP_32 (comp, bound);
+	azo_program_unref(prog);
 
-	az_object_unref ((AZObject *) cfunc);
 	return 1;
 }
 
@@ -1168,7 +1157,7 @@ compile_expression_rvalue (AZOCompiler *comp, const AZONode *expr, AZOSource *sr
 			write_DEBUG_STRING (comp, "Parent var 1\n");
 			write_DEBUG_STACK (comp);
 #endif
-			azo_compiler_write_PUSH_VALUE (comp, expr->var_pos);
+			write_PUSH_VALUE (comp, expr->var_pos, expr);
 #ifdef DEBUG_PARENT_VAR
 			write_DEBUG_STRING (comp, "Parent var 2\n");
 			write_DEBUG_STACK (comp);
@@ -1246,7 +1235,7 @@ compile_attribute_reference (AZOCompiler *comp, const AZONode *expr, AZOSource *
 	left = expr->children;
 	right = left->next;
 	azo_compiler_compile_expression (comp, left, src);
-	compile_PUSH_VALUE_string (comp, right->value.v.string);
+	compile_PUSH_VALUE_const_string (comp, right->value.v.string, expr);
 	azo_compiler_write_ic (comp, GET_ATTRIBUTE, expr);
 	return 1;
 }
@@ -1615,7 +1604,7 @@ azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src)
 	AZOProgram *prog;
 
 	/* Have to reserve closure before compilation */
-	azo_frame_reserve_data (comp->current, comp->current->n_parent_vars);
+	//azo_frame_reserve_data (comp->current, comp->current->n_parent_vars);
 
 	if (root->term.type == AZO_TERM_PROGRAM) {
 		/* Programs are lists of sentences */
@@ -1627,7 +1616,7 @@ azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src)
 		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", root->term.type);
 		return NULL;
 	}
-	prog = azo_program_new(comp->ctx->globals, &comp->current->code, root, src);
+	prog = azo_program_new(comp->ctx->globals, comp->current, root, src);
 
 	return prog;
 }

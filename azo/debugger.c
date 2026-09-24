@@ -106,6 +106,13 @@ azo_debugger_run(AZODebugger *debugger, AZOProgram *prog)
     unsigned int run = 0;
     unsigned int ip = 0;
 
+    AZOInterpreterCtx ictx = {
+        .tcode = prog->tcode,
+        .tcode_len = prog->tcode_length,
+        .static_data = NULL,
+        .shared_data = &prog->shared_data
+    };
+
     while(ip < prog->tcode_length) {
         unsigned int line = prog->debug.terms[ip].line;
         print_line(debugger, prog, line);
@@ -114,7 +121,7 @@ azo_debugger_run(AZODebugger *debugger, AZOProgram *prog)
             // next
             while((ip < prog->tcode_length) && (prog->debug.terms[ip].line == line)) {
                 const uint8_t *ipc = prog->tcode + ip;
-                ipc = azo_interpreter_interpret_tc(debugger->intr, prog, ipc);
+                ipc = azo_interpreter_interpret_tc(debugger->intr, &ictx, ipc);
                 if (!ipc) return;
                 ip = ipc - prog->tcode;
             }
@@ -161,7 +168,7 @@ azo_debugger_run(AZODebugger *debugger, AZOProgram *prog)
             // next
             while((ip < prog->tcode_length) && (prog->debug.terms[ip].line == line)) {
                 const uint8_t *ipc = prog->tcode + ip;
-                ipc = azo_interpreter_interpret_tc(debugger->intr, prog, ipc);
+                ipc = azo_interpreter_interpret_tc(debugger->intr, &ictx, ipc);
                 if (!ipc) break;
                 ip = ipc - prog->tcode;
             }

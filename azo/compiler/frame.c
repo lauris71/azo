@@ -18,14 +18,14 @@
 #include <azo/compiler/frame.h>
 
 AZOFrame *
-azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int debug)
+azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug)
 {
-	AZOFrame *frame = (AZOFrame *) malloc (sizeof (AZOFrame));
-	memset (frame, 0, sizeof (AZOFrame));
+	AZOFrame *frame = (AZOFrame *) calloc (1, sizeof (AZOFrame));
 	frame->parent = parent;
 	frame->ret_type = ret_type;
 	frame->this_impl = this_impl;
 	frame->this_inst = this_inst;
+	frame->n_args = n_args;
 	/* If this is present, reserve the first variable position to it */
 	frame->scope = azo_scope_new (NULL, (this_impl) ? 1 : 0);
 	azo_code_init(&frame->code, debug);

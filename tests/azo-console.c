@@ -40,8 +40,8 @@ main(int argc, const char *argv[])
 	};
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, &comp_ctx, src);
-	azo_compiler_push_frame(&comp, NULL, NULL, AZ_TYPE_NONE);
-	int result = azo_compiler_resolve(&comp, expr);
+	azo_compiler_push_frame(&comp, NULL, NULL, 0, AZ_TYPE_NONE);
+	int result = azo_compiler_resolve_frame(&comp, expr);
     azo_node_print_info(expr, stdout, src, 0);
 
     fprintf(stderr, "-------- OPTIMIZING --------\n");

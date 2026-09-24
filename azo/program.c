@@ -8,7 +8,7 @@
 
 #include <stdlib.h>
 
-#include <az/packed-value.h>
+#include <az/extend.h>
 
 #include <azo/bytecode.h>
 #include <azo/debugger.h>
@@ -18,16 +18,60 @@
 
 #include <azo/program.h>
 
-AZOProgram *
-azo_program_new(AZOContext *ctx, AZOCode *code, AZONode *tree, AZOSource *src)
+static void azo_program_finalize (AZOProgramClass *klass, AZOProgram *program);
+
+unsigned int
+azo_program_get_type()
 {
-	AZOProgram *prog = (AZOProgram *) malloc(sizeof(AZOProgram));
-	memset (prog, 0, sizeof (AZOProgram));
+	static unsigned int type = 0;
+	unsigned int t = AZ_TYPE_READ(type);
+	if (t) return t;
+	AZ_TYPES_LOCK();
+	if (!type) {
+		az_register_type(&type, (const unsigned char *) "AZOProgram", AZ_TYPE_REFERENCE, sizeof (AZOProgramClass), sizeof (AZOProgram),
+			AZ_FLAG_FINAL | AZ_FLAG_ZERO_MEMORY, 0, 0,
+			NULL,
+			NULL,
+			(void (*) (const AZImplementation *, void *)) azo_program_finalize);
+	}
+	t = type;
+	AZ_TYPES_UNLOCK();
+	return t;
+}
+
+static void
+azo_program_finalize (AZOProgramClass *klass, AZOProgram *program)
+{
+	if (program->tcode) free (program->tcode);
+	azo_datablock_finalize(&program->shared_data);
+}
+
+AZOProgram *
+azo_program_new(AZOContext *ctx, AZOFrame *frame, AZONode *tree, AZOSource *src)
+{
+	AZOProgram *prog = (AZOProgram *) az_instance_new(AZO_TYPE_PROGRAM);
+	AZOCode *code = &frame->code;
+
 	prog->ctx = ctx;
 	prog->tcode = code->bc;
 	prog->tcode_length = code->bc_len;
-	prog->values = code->data;
-	prog->nvalues = code->data_len;
+
+	prog->n_args = frame->n_args;
+	prog->ret_type = frame->ret_type;
+	prog->has_this = (frame->this_impl != NULL);
+	prog->n_captures = frame->n_parent_vars;
+	prog->n_static = frame->n_static;
+	prog->n_const = code->data_len;
+	prog->n_shared = frame->n_shared;
+
+	//azo_datablock_init(&prog->shared_data, prog->n_const, prog->n_const + prog->n_shared);
+	azo_datablock_init(&prog->shared_data, prog->n_captures, prog->n_const + prog->n_captures);
+	for (unsigned int i = 0; i < code->data_len; i++) {
+		azo_datablock_transfer_val(&prog->shared_data, prog->n_captures + i, code->data[i].impl, &code->data[i].v, 0);
+	}
+	free (code->data);
+	code->data = NULL;
+	code->data_size = 0;
 	if (code->exprs) {
 		azo_debug_info_setup(&prog->debug, code, src);
 	}
@@ -35,21 +79,9 @@ azo_program_new(AZOContext *ctx, AZOCode *code, AZONode *tree, AZOSource *src)
 	code->bc = NULL;
 	code->bc_len = 0;
 	code->bc_size = 0;
-	code->data = NULL;
-	code->data_size = 0;
 	code->data_len = 0;
 
 	return prog;
-}
-
-void
-azo_program_delete (AZOProgram *program)
-{
-	unsigned int i;
-	if (program->tcode) free (program->tcode);
-	for (i = 0; i < program->nvalues; i++) az_packed_value_clear (&program->values[i]);
-	free (program->values);
-	free (program);
 }
 
 void
@@ -87,11 +119,11 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, &comp_ctx, src);
 	comp.debug = 1;
-	azo_compiler_push_frame(&comp, this_impl, this_inst, ret_type);
+	azo_compiler_push_frame(&comp, this_impl, this_inst, n_args, ret_type);
 	for (unsigned int i = 0; i < n_args; i++) {
 		azo_compiler_declare_variable (&comp, arg_names[i], arg_types[i]);
 	}
-	int result = azo_compiler_resolve(&comp, expr);
+	int result = azo_compiler_resolve_frame(&comp, expr);
 	if (result != 0) {
 		azo_parser_release (&parser);
 		azo_source_unref(src);
@@ -127,23 +159,13 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, unsigned int n_arg
 		azo_debugger_run(debugger, prog);
 		azo_debugger_unref(debugger);
 	} else {
-		azo_interpreter_run (intr, prog);
-	}
-	*ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
-	azo_interpreter_restore_frame (intr, prev_frame);
-}
-
-void
-azo_program_interpret_call(AZOProgram *prog, AZOInterpreter *intr, const AZImplementation *arg_impls[], const AZValue *arg_vals[], unsigned int n_args, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
-{
-	unsigned int prev_frame = azo_interpreter_push_frame (intr, 0);
-	azo_intepreter_push_values (intr, arg_impls, arg_vals, n_args);
-	if (0 && prog->debug.n_terms) {
-		AZODebugger *debugger = azo_debugger_new(intr);
-		azo_debugger_run(debugger, prog);
-		azo_debugger_unref(debugger);
-	} else {
-		azo_interpreter_run (intr, prog);
+		AZOInterpreterCtx ictx = {
+			.tcode = prog->tcode,
+			.tcode_len = prog->tcode_length,
+			.static_data = NULL,
+			.shared_data = &prog->shared_data
+		};
+		azo_interpreter_run(intr, &ictx);
 	}
 	*ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
 	azo_interpreter_restore_frame (intr, prev_frame);

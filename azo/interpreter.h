@@ -8,6 +8,7 @@
 */
 
 typedef struct _AZOInterpreter AZOInterpreter;
+typedef struct _AZOInterpreterCtx AZOInterpreterCtx;
 
 #include <stdio.h>
 
@@ -41,6 +42,12 @@ struct _AZOInterpreter {
 	AZPackedValue64 vals[2];
 };
 
+struct _AZOInterpreterCtx {
+	const uint8_t *tcode;
+	unsigned int tcode_len;
+	AZODataBlock *static_data;
+	AZODataBlock *shared_data;
+};
 
 AZOInterpreter *azo_interpreter_new (AZOContext *ctx);
 void interpreter_delete (AZOInterpreter *intr);
@@ -65,9 +72,9 @@ void azo_interpreter_restore_frame (AZOInterpreter *intr, unsigned int frame);
 
 void azo_interpreter_exception(AZOInterpreter *intr, const uint8_t *ip, unsigned int type);
 
-const uint8_t *azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *ipc);
+const uint8_t *azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ipc);
 
-void azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog);
+void azo_interpreter_run(AZOInterpreter *intr, AZOInterpreterCtx *ictx);
 
 void azo_intepreter_print_stack (AZOInterpreter *intr, FILE *ofs);
 

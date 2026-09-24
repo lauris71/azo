@@ -68,8 +68,8 @@ enum {
 	/**
 	 * @brief Pushes a duplicate of an element into stack
 	 * 
-	 * DUPLICATE U32:POS
 	 * [val, ...]
+	 * DUPLICATE U32:POS
 	 * [val, ..., val]
 	 */
 	AZO_TC_DUPLICATE,
@@ -78,24 +78,24 @@ enum {
 	/**
 	 * @brief Pushes a duplicate of a frame-relative element into stack
 	 * 
-	 * DUPLICATE_FRAME U32:POS
 	 * [...; ..., val, ...]
+	 * DUPLICATE_FRAME U32:POS
 	 * [...; ..., val, ..., val]
 	 */
 	AZO_TC_DUPLICATE_FRAME,
 	/**
 	 * @brief Exchanges the stack element with the top of stack
 	 * 
-	 * EXCHANGE U32:POS
 	 * [val1, ..., val2]
+	 * EXCHANGE U32:POS
 	 * [val2, ..., val1]
 	 */
 	AZO_TC_EXCHANGE,
 	/**
 	 * @brief Exchanges frame-relative element with the top of stack
 	 * 
-	 * EXCHANGE_FRAME U32:POS
 	 * [...; ..., val1, ..., val2]
+	 * EXCHANGE_FRAME U32:POS
 	 * [...; ..., val2, ..., val1]
 	 */
 	AZO_TC_EXCHANGE_FRAME,
@@ -122,16 +122,16 @@ enum {
 	/**
 	 * @brief Get type of value
 	 * 
-	 * TYPE_OF u8:POS
 	 * [val, ...]
+	 * TYPE_OF u8:POS
 	 * [val, ..., type]
 	 */
 	TYPE_OF,
 	/**
 	 * @brief Get type from class
 	 * 
-	 * TYPE_OF_CLASS u8:POS
 	 * [class, ...]
+	 * TYPE_OF_CLASS u8:POS
 	 * [class, ..., type]
 	 */
 	AZO_TC_TYPE_OF_CLASS,
@@ -230,9 +230,14 @@ enum {
 	 * [value]
 	 */
 	AZO_TC_RETURN_VALUE,
-	/* Bind function */
-	/* FUNCTION -> FUNCTION */
-	AZO_TC_BIND,
+	/**
+	 * @brief Capture variables and create closure from compiled program
+	 * 
+	 * [program, val1, ...]
+	 * CLOSURE N_VALUES(U32)
+	 * [closure]
+	 */
+	AZO_TC_CLOSURE,
 
 	/* Arrays */
 

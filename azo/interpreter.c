@@ -369,15 +369,15 @@ interpret_type_EXCEPTION (AZOInterpreter *intr, const uint8_t *ip)
 }
 
 static const unsigned char *
-interpret_DEBUG (AZOInterpreter *intr, AZOProgram *prog, const unsigned char *ip)
+interpret_DEBUG (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t op;
 	memcpy (&op, ip + 1, 4);
 	if ((*ip & 127) == AZO_TC_DEBUG) {
-		fprintf (stderr, "Debug: IPC = %u\n", (unsigned int) (ip - prog->tcode));
+		fprintf (stderr, "Debug: IPC = %u\n", (unsigned int) (ip - ictx->tcode));
 		azo_intepreter_print_stack (intr, stderr);
 	} else {
-		fprintf (stderr, "Debug: %s\n", prog->values[op].v.string->str);
+		fprintf (stderr, "Debug: %s\n", ictx->shared_data->entries[op].val.string->str);
 	}
 	return ip + 5;
 }
@@ -458,12 +458,12 @@ interpret_PUSH_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_PUSH_VALUE (AZOInterpreter *intr, AZOProgram *prog, const unsigned char *ip)
+interpret_PUSH_VALUE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t loc;
 	memcpy (&loc, ip + 1, 4);
 	TEST_OVERFLOW(1);
-	azo_stack_push_value (&intr->stack, prog->values[loc].impl, &prog->values[loc].v);
+	azo_stack_push_value (&intr->stack, ictx->shared_data->entries[loc].impl, &ictx->shared_data->entries[loc].val);
 	return ip + 5;
 }
 
@@ -1351,17 +1351,23 @@ interpret_RETURN_VALUE (AZOInterpreter *intr, const unsigned char *ip)
 	return NULL;
 }
 
-static const unsigned char *
-interpret_BIND (AZOInterpreter *intr, const unsigned char *ip)
+static const uint8_t *
+interpret_CLOSURE(AZOInterpreter *intr, const unsigned char *ip)
 {
-	uint32_t pos;
-	memcpy (&pos, ip + 1, 4);
-	CHECK_TYPE_EXACT(pos, AZO_TYPE_COMPILED_FUNCTION);
-	AZOCompiledFunction *cfunc = (AZOCompiledFunction *) azo_stack_instance_bw (&intr->stack, pos);
-	for (unsigned int i = 0; i < pos; i++) {
-		azo_compiled_function_bind (cfunc, i, azo_stack_impl_bw (&intr->stack, pos - 1 - i), azo_stack_instance_bw (&intr->stack, pos - 1 - i));
+	uint32_t n_vals;
+	memcpy (&n_vals, ip + 1, 4);
+	if (!test_stack_underflow(intr, ip, n_vals + 1)) return NULL;
+	if (!test_stack_type_exact(intr, ip, n_vals, AZO_TYPE_PROGRAM)) return NULL;
+
+	AZOProgram *sub = (AZOProgram *) azo_stack_instance_bw(&intr->stack, n_vals);
+	AZOCompiledFunction *cfunc = azo_compiled_function_new(sub);
+	for (unsigned int i = 0; i < n_vals; i++) {
+		azo_compiled_function_bind (cfunc, i, azo_stack_impl_bw (&intr->stack, n_vals - 1 - i), azo_stack_instance_bw (&intr->stack, n_vals - 1 - i));
 	}
-	if (pos) azo_stack_pop (&intr->stack, pos);
+	azo_stack_pop(&intr->stack, n_vals + 1);
+	azo_stack_push_instance(&intr->stack, (const AZImplementation *) cfunc->object.klass, cfunc);
+	az_object_unref((AZObject *) cfunc);
+
 	return ip + 5;
 }
 
@@ -1549,7 +1555,7 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 /* Instance, String, Arguments -> Instance, String, Arguments, Function | null */
 
 static const unsigned char *
-interpret_GET_FUNCTION (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *ip)
+interpret_GET_FUNCTION (AZOInterpreter *intr, const uint8_t *ip)
 {
 	unsigned int n_args = ip[1];
 	CHECK_TYPE_EXACT(n_args, AZ_TYPE_STRING);
@@ -1800,7 +1806,7 @@ azo_interpreter_exception(AZOInterpreter *intr, const uint8_t *ip, unsigned int 
 }
 
 const uint8_t *
-azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint8_t *ipc)
+azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ipc)
 {
 	switch (*ipc & 127) {
 		case AZO_TC_EXCEPTION:
@@ -1814,7 +1820,7 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint
 
 		case AZO_TC_DEBUG:
 		case AZO_TC_DEBUG_STR:
-			ipc = interpret_DEBUG (intr, prog, ipc);
+			ipc = interpret_DEBUG (intr, ictx, ipc);
 			break;
 
 		/* Stack management */
@@ -1837,7 +1843,7 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint
 			ipc = interpret_PUSH_IMMEDIATE (intr, ipc);
 			break;
 		case AZO_TC_PUSH_VALUE:
-			ipc = interpret_PUSH_VALUE (intr, prog, ipc);
+			ipc = interpret_PUSH_VALUE (intr, ictx, ipc);
 			break;
 		case AZO_TC_DUPLICATE:
 			ipc = interpret_DUPLICATE (intr, ipc);
@@ -1969,8 +1975,8 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint
 		case AZO_TC_RETURN_VALUE:
 			ipc = interpret_RETURN_VALUE (intr, ipc);
 			break;
-		case AZO_TC_BIND:
-			ipc = interpret_BIND (intr, ipc);
+		case AZO_TC_CLOSURE:
+			ipc = interpret_CLOSURE (intr, ipc);
 			break;
 
 		case NEW_ARRAY:
@@ -1990,7 +1996,7 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint
 			ipc = interpret_GET_PROPERTY (intr, ipc);
 			break;
 		case AZO_TC_GET_FUNCTION:
-			ipc = interpret_GET_FUNCTION (intr, prog, ipc);
+			ipc = interpret_GET_FUNCTION (intr, ipc);
 			break;
 		case AZO_TC_SET_PROPERTY:
 			ipc = interpret_SET_PROPERTY (intr, ipc);
@@ -2022,13 +2028,13 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOProgram *prog, const uint
 }
 
 void
-azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog)
+azo_interpreter_run(AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 {
-	const uint8_t *ipc = prog->tcode;
-	const uint8_t *end = prog->tcode + prog->tcode_length;
+	const uint8_t *ipc = ictx->tcode;
+	const uint8_t *end = ictx->tcode + ictx->tcode_len;
 
 	while (ipc && (ipc < end)) {
-		ipc = azo_interpreter_interpret_tc(intr, prog, ipc);
+		ipc = azo_interpreter_interpret_tc(intr, ictx, ipc);
 	}
 
 	if (intr->exc.type != AZO_EXCEPTION_NONE) {
@@ -2036,7 +2042,7 @@ azo_interpreter_run(AZOInterpreter *intr, AZOProgram *prog)
 		/* Exception */
 		az_instance_to_string (&azo_exception_class->klass.impl, &intr->exc, b, 1024);
 		fprintf (stderr, "Fatal exception: %s\n", b);
-		fprintf(stderr, "Position: %ld %d\n", intr->exc.ipc - prog->tcode, prog->tcode[intr->exc.ipc - prog->tcode] & 0x7f);
+		fprintf(stderr, "Position: %ld %d\n", intr->exc.ipc - ictx->tcode, ictx->tcode[intr->exc.ipc - ictx->tcode] & 0x7f);
 		azo_intepreter_print_stack (intr, stderr);
 		fprintf (stderr, "\n");
 

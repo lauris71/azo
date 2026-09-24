@@ -78,7 +78,8 @@ void azo_compiler_release (AZOCompiler *compiler);
 /**
  * @brief Resolves references and types in parsed tree
  * 
- * Argumets must be already declared as variables
+ * Argumets must be already declared as variables.
+ * The frame will be linked to node.
  * 
  * References are replaced with either VARIABLE or CONSTANT nodes
  * All type expressions must resolve to constants
@@ -87,7 +88,7 @@ void azo_compiler_release (AZOCompiler *compiler);
  * @param root The root node of the parsed tree
  * @return 0 if successful, non-zero otherwise
  */
-int azo_compiler_resolve (AZOCompiler *comp, AZONode *node);
+int azo_compiler_resolve_frame (AZOCompiler *comp, AZONode *node);
 AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src);
 
 /**
@@ -100,7 +101,7 @@ AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *s
  * @param this_inst The instance of this (or NULL if none/not defined).
  * @param ret_type The return type of the code.
  */
-void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type);
+void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type);
 /**
  * @brief Set the new current frame, removing all references to parent
  * 

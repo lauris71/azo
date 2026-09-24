@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 
 #include <arikkei/arikkei-utils.h>
 
@@ -33,14 +34,11 @@ static const AZFunctionSignature *compiled_function_signature(const AZFunctionIm
 static unsigned int compiled_function_invoke(const AZFunctionImplementation *impl, void *inst, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx);
 
 // Method implementations
-static unsigned int aosora_compiled_function_call_list (const AZImplementation **arg_impls, const AZValue **arg_vals, const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx);
+static unsigned int compiled_function_call_list (const AZImplementation **arg_impls, const AZValue **arg_vals, const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx);
 
 enum {
 	/* Functions */
 	FUNC_LIST,
-	NUM_FUNCTIONS,
-	/* Values */
-	PROP_BOUND = NUM_FUNCTIONS,
 	NUM_PROPERTIES
 };
 
@@ -61,9 +59,7 @@ static void
 aosora_compiled_function_class_init (AZOCompiledFunctionClass *klass)
 {
 	az_class_declare_interface ((AZClass *) klass, 0, AZ_TYPE_FUNCTION, ARIKKEI_OFFSET (AZOCompiledFunctionClass, function_impl), 0);
-	az_class_define_method_va ((AZClass *) klass, FUNC_LIST, (const unsigned char *) "list", aosora_compiled_function_call_list, AZ_TYPE_NONE, 0);
-	az_class_define_property ((AZClass *) klass, PROP_BOUND, (const unsigned char *) "bound", AZ_TYPE_BOOLEAN, 0, 
-		AZ_FIELD_INSTANCE, AZ_FIELD_READ_VALUE, AZ_FIELD_WRITE_NONE, ARIKKEI_OFFSET(AZOCompiledFunction,bound), NULL, NULL);
+	az_class_define_method_va ((AZClass *) klass, FUNC_LIST, (const unsigned char *) "list", compiled_function_call_list, AZ_TYPE_NONE, 0);
 	/* Implementation */
 	klass->object_class.shutdown = compiled_function_shutdown;
 	klass->function_impl.signature = compiled_function_signature;
@@ -71,9 +67,9 @@ aosora_compiled_function_class_init (AZOCompiledFunctionClass *klass)
 }
 
 static void
-aosora_compiled_function_finalize (AZOCompiledFunctionClass *klass, AZOCompiledFunction *func)
+aosora_compiled_function_finalize (AZOCompiledFunctionClass *klass, AZOCompiledFunction *cfunc)
 {
-	az_function_signature_delete(func->signature);
+	az_function_signature_delete(cfunc->signature);
 }
 
 static void
@@ -85,13 +81,14 @@ compiled_function_shutdown (AZObject *obj)
 		cfunc->root = NULL;
 	}
 	if (cfunc->prog) {
-		azo_program_delete (cfunc->prog);
+		azo_program_unref(cfunc->prog);
 		cfunc->prog = NULL;
 	}
+	azo_datablock_clear(&cfunc->static_data);
 }
 
 static unsigned int
-aosora_compiled_function_call_list (const AZImplementation **arg_impls, const AZValue **arg_vals, const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx)
+compiled_function_call_list (const AZImplementation **arg_impls, const AZValue **arg_vals, const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx)
 {
 	AZOCompiledFunction *func = (AZOCompiledFunction *) arg_vals[0]->reference;
 	if (func->prog) {
@@ -117,7 +114,7 @@ compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, cons
 	/* We have to keep reference during invocation */
 	az_object_ref ((AZObject *) cfunc);
 
-	azo_program_interpret_call(cfunc->prog, cfunc->ctx->intr, arg_impls, arg_vals, cfunc->signature->n_args, ret_impl, &ret_val->value, 64);
+	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, cfunc->signature->n_args, arg_impls, arg_vals, ret_impl, &ret_val->value, 64);
 
 	az_object_unref ((AZObject *) cfunc);
 
@@ -125,20 +122,18 @@ compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, cons
 }
 
 AZOCompiledFunction *
-azo_compiled_function_new (AZOContext *ctx, AZOProgram *program, unsigned int ret_type, unsigned int nargs)
+azo_compiled_function_new(AZOProgram *prog)
 {
 	/* fixme: Implement subprograms as program values */
-	AZOCompiledFunction *func = (AZOCompiledFunction *) az_object_new (AZO_TYPE_COMPILED_FUNCTION);
-	func->ctx = ctx;
+	AZOCompiledFunction *cfunc = (AZOCompiledFunction *) az_object_new (AZO_TYPE_COMPILED_FUNCTION);
+	cfunc->ctx = prog->ctx;
 
-	func->prog = program;
-	if (DEBUG_CFUNC) {
-		fprintf (stderr, "aosora_compiled_function_new\n");
-		azo_program_print_bytecode (program);
-	}
-	/* fixme: Implement return types */
-	func->signature = az_function_signature_new_any(AZ_TYPE_ANY, ret_type, nargs);
-	return func;
+	cfunc->prog = prog;
+	azo_program_ref(prog);
+	cfunc->signature = az_function_signature_new_any(AZ_TYPE_ANY, prog->ret_type, prog->n_args);
+
+	azo_datablock_init(&cfunc->static_data, prog->n_const, prog->n_shared);
+	return cfunc;
 }
 
 #define noDEBUG_BIND
@@ -152,6 +147,5 @@ azo_compiled_function_bind (AZOCompiledFunction *cfunc, unsigned int pos, const 
 	d[len] = 0;
 	fprintf (stderr, "azo_compiled_function_bind: Binding %s to pos %u\n", d, pos);
 #endif
-	az_packed_value_set_from_impl_instance (&cfunc->prog->values[pos], impl, inst);
-	cfunc->bound = 1;
+	azo_datablock_set(&cfunc->prog->shared_data, pos, impl, inst, 0);
 }

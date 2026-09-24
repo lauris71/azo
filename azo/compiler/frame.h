@@ -50,6 +50,11 @@ struct _AZOFrame {
 	 */
 	const AZImplementation *this_impl;
 	void *this_inst;
+	/**
+	 * @brief The number of arguments (i.e. reserved variable positions)
+	 * 
+	 */
+	unsigned int n_args;
 	/* Current scope */
 	AZOScope *scope;
 	/*
@@ -61,6 +66,10 @@ struct _AZOFrame {
 	 */
 	unsigned int n_parent_vars;
 	AZOVariableList *parent_vars;
+
+	unsigned int n_static;
+	unsigned int n_shared;
+
 	/* Compiled bytecode */
 	AZOCode code;
 };
@@ -75,7 +84,7 @@ struct _AZOFrame {
  * @param debug Debug flag (non-zero to enable debugging)
  * @return Pointer to the newly created frame, or NULL on failure
  */
-AZOFrame *azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int debug);
+AZOFrame *azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug);
 void azo_frame_delete (AZOFrame *frame);
 void azo_frame_delete_tree (AZOFrame *frame);
 

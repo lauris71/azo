@@ -40,8 +40,11 @@ struct _AZODataBlock {
 void azo_datablock_init(AZODataBlock *block, unsigned int size_const, unsigned int size_total);
 void azo_datablock_finalize(AZODataBlock *block);
 
+void azo_datablock_clear(AZODataBlock *block);
+
 void azo_datablock_set(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, void *inst, unsigned int weak);
 void azo_datablock_set_from_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, const AZValue *val, unsigned int weak);
+void azo_datablock_transfer_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZValue *val, unsigned int weak);
 void azo_datablock_set_weak(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZActiveObject *object);
 
 #ifdef __cplusplus

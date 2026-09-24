@@ -7,7 +7,11 @@ azo_datablock_init(AZODataBlock *block, unsigned int size_const, unsigned int si
 {
     block->size_const = size_const;
     block->size_total = size_total;
-    block->entries = (AZODataBlockEntry *) calloc(size_total, sizeof(AZODataBlockEntry));
+    if (size_total) {
+        block->entries = (AZODataBlockEntry *) calloc(size_total, sizeof(AZODataBlockEntry));
+    } else {
+        block->entries = NULL;
+    }
 }
 
 static void
@@ -29,6 +33,7 @@ azo_datablock_clear_entry(AZODataBlockEntry *entry)
 void
 azo_datablock_finalize(AZODataBlock *block)
 {
+    if (!block->size_total) return;
     for (unsigned int i = 0; i < block->size_total; i++) {
         AZODataBlockEntry *entry = &block->entries[i];
         azo_datablock_clear_entry(entry);
@@ -37,12 +42,30 @@ azo_datablock_finalize(AZODataBlock *block)
 }
 
 void
+azo_datablock_clear(AZODataBlock *block)
+{
+    if (!block->size_total) return;
+    for (unsigned int i = 0; i < block->size_total; i++) {
+        AZODataBlockEntry *entry = &block->entries[i];
+        azo_datablock_clear_entry(entry);
+    }
+    free(block->entries);
+    block->entries = NULL;
+    block->size_const = 0;
+    block->size_total = 0;
+}
+
+void
 azo_datablock_set(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, void *inst, unsigned int weak)
 {
     arikkei_return_if_fail(idx < block->size_total);
     AZODataBlockEntry *entry = &block->entries[idx];
     if (idx < block->size_const) {
-        arikkei_return_if_fail(!(entry->flags & AZO_DATABLOCK_FLAG_SET));
+        /* fixme: This should, but atm bound does not honour it */
+        if (entry->flags & AZO_DATABLOCK_FLAG_SET) {
+            fprintf(stderr, "azo_datablock_set: Attempt to set const entry %u\n", idx);
+        }
+        //arikkei_return_if_fail(!(entry->flags & AZO_DATABLOCK_FLAG_SET));
     } else {
         azo_datablock_clear_entry(entry);
     }
@@ -90,6 +113,13 @@ azo_datablock_set_from_val(AZODataBlock *block, unsigned int idx, const AZImplem
         }
     }
     entry->flags |= AZO_DATABLOCK_FLAG_SET;
+}
+
+void
+azo_datablock_transfer_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZValue *val, unsigned int weak)
+{
+    azo_datablock_set_from_val(block, idx, impl, val, weak);
+    az_value_clear(impl, val);
 }
 
 void

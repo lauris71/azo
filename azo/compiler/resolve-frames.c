@@ -223,7 +223,6 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 			this_impl = (const AZImplementation *) obj->value.v.block;
 		}
 	}
-	azo_compiler_push_frame (comp, this_impl, NULL, ret_type);
 
 	unsigned int n_args = 0;
 	for (child = args->children; child; child = child->next) {
@@ -249,23 +248,26 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 			fprintf (stderr, "resolve_function: Invalid expression type %u/%u in signature\n", name->term.type, name->term.subtype);
 			return 1;
 		}
+		n_args += 1;
+	}
+
+	azo_compiler_push_frame (comp, this_impl, NULL, n_args, ret_type);
+
+	for (child = args->children; child; child = child->next) {
+		type = child->children;
+		AZONode *name = type->next;
 		// fixme: Use type
 		if (!azo_frame_declare_variable (comp->current, name->value.v.string, AZ_TYPE_ANY, &result)) {
 			fprintf (stderr, "resolve_function: Repeated variable name %s\n", name->value.v.string->str);
 			return result;
 		}
-		n_args += 1;
 	}
 
-	int lresult = azo_compiler_resolve(comp, body);
+	int lresult = azo_compiler_resolve_frame(comp, body);
 	if (lresult) result = 1;
 
-	if (comp->current->n_parent_vars) {
-		/* Reverse list */
-		comp->current->parent_vars = azo_var_list_reverse(comp->current->parent_vars);
-	}
-
 	expr->frame = azo_compiler_pop_frame (comp);
+
 	return result;
 }
 
@@ -519,7 +521,7 @@ azo_compiler_resolve_node (AZOCompiler *comp, AZONode *node, unsigned int flags)
 }
 
 int
-azo_compiler_resolve(AZOCompiler *comp, AZONode *node)
+azo_compiler_resolve_frame(AZOCompiler *comp, AZONode *node)
 {
 	unsigned int result = 0;
 	unsigned int ret_is_last = 0;
@@ -536,8 +538,12 @@ azo_compiler_resolve(AZOCompiler *comp, AZONode *node)
 		if (result) break;
 	}
 	if (comp->current->ret_type && !ret_is_last) {
-		fprintf (stderr, "azo_compiler_resolve: Missing return statement\n");
+		fprintf (stderr, "azo_compiler_resolve_frame: Missing return statement\n");
 		return 1;
+	}
+	if (comp->current->parent_vars) {
+		/* Reverse list */
+		comp->current->parent_vars = azo_var_list_reverse(comp->current->parent_vars);
 	}
 	return result;
 }

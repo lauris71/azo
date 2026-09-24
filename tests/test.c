@@ -54,7 +54,7 @@ test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, con
         ret_type, 0, NULL, NULL, src->cdata, src->csize);
     if (!prog) return 1;
 	azo_program_interpret(prog, ctx->intr, 0, NULL, NULL, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
-    azo_program_delete(prog);
+    azo_program_unref(prog);
     az_object_unref((AZObject *) src);
     return 0;
 }
@@ -150,7 +150,7 @@ run_program(const char *source)
     azo_program_interpret(prog, ctx->intr, 0, NULL, NULL, &ret_val.impl, &ret_val.v, AZ_PACKED_VALUE_MAX_SIZE);
     int32_t result = ret_val.v.int32_v;
     az_packed_value_clear(&ret_val);
-    azo_program_delete(prog);
+    azo_program_unref(prog);
     azo_context_delete(ctx);
     return result;
 }
@@ -205,7 +205,7 @@ test_function(void)
     TEST_ASSERT_EQUAL_INT(128, ret_val.v.int32_v);
 
     az_packed_value_clear(&ret_val);
-    azo_program_delete(prog);
+    azo_program_unref(prog);
     az_object_unref((AZObject *) src);
     azo_context_delete(ctx);
 }
