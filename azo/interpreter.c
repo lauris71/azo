@@ -458,12 +458,44 @@ interpret_PUSH_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_PUSH_VALUE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+interpret_PUSH_VALUE(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t loc;
 	memcpy (&loc, ip + 1, 4);
 	TEST_OVERFLOW(1);
 	azo_stack_push_value (&intr->stack, ictx->shared_data->entries[loc].impl, &ictx->shared_data->entries[loc].val);
+	return ip + 5;
+}
+
+static const unsigned char *
+interpret_STORE_VALUE(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	uint32_t loc;
+	memcpy (&loc, ip + 1, 4);
+	CHECK_UNDERFLOW(1);
+	azo_datablock_set_from_val(ictx->shared_data, loc, azo_stack_impl_bw(&intr->stack, 0), azo_stack_value_bw(&intr->stack, 0), 0);
+	azo_stack_pop (&intr->stack, 1);
+	return ip + 5;
+}
+
+static const unsigned char *
+interpret_PUSH_CAPTURE(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	uint32_t loc;
+	memcpy (&loc, ip + 1, 4);
+	TEST_OVERFLOW(1);
+	azo_stack_push_value (&intr->stack, ictx->static_data->entries[loc].impl, &ictx->static_data->entries[loc].val);
+	return ip + 5;
+}
+
+static const unsigned char *
+interpret_STORE_CAPTURE(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	uint32_t loc;
+	memcpy (&loc, ip + 1, 4);
+	CHECK_UNDERFLOW(1);
+	azo_datablock_set_from_val(ictx->static_data, loc, azo_stack_impl_bw(&intr->stack, 0), azo_stack_value_bw(&intr->stack, 0), 0);
+	azo_stack_pop (&intr->stack, 1);
 	return ip + 5;
 }
 
@@ -1844,6 +1876,15 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 			break;
 		case AZO_TC_PUSH_VALUE:
 			ipc = interpret_PUSH_VALUE (intr, ictx, ipc);
+			break;
+		case AZO_TC_STORE_VALUE:
+			ipc = interpret_STORE_VALUE (intr, ictx,ipc);
+			break;
+		case AZO_TC_PUSH_CAPTURE:
+			ipc = interpret_PUSH_CAPTURE (intr, ictx, ipc);
+			break;
+		case AZO_TC_STORE_CAPTURE:
+			ipc = interpret_STORE_CAPTURE (intr, ictx, ipc);
 			break;
 		case AZO_TC_DUPLICATE:
 			ipc = interpret_DUPLICATE (intr, ipc);

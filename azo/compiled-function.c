@@ -114,7 +114,7 @@ compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, cons
 	/* We have to keep reference during invocation */
 	az_object_ref ((AZObject *) cfunc);
 
-	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, cfunc->signature->n_args, arg_impls, arg_vals, ret_impl, &ret_val->value, 64);
+	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, &cfunc->static_data, cfunc->signature->n_args, arg_impls, arg_vals, ret_impl, &ret_val->value, 64);
 
 	az_object_unref ((AZObject *) cfunc);
 
@@ -130,7 +130,7 @@ azo_compiled_function_new(AZOProgram *prog)
 
 	cfunc->prog = prog;
 	azo_program_ref(prog);
-	cfunc->signature = az_function_signature_new_any(AZ_TYPE_ANY, prog->ret_type, prog->n_args);
+	cfunc->signature = az_function_signature_new_any(prog->this_type, prog->ret_type, prog->n_args);
 
 	azo_datablock_init(&cfunc->static_data, prog->n_const, prog->n_shared);
 	return cfunc;

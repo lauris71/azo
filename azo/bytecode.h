@@ -65,6 +65,9 @@ enum {
 	PUSH_IMMEDIATE,
 	/* PUSH_VALUE LOCATION(U32) */
 	AZO_TC_PUSH_VALUE,
+	AZO_TC_STORE_VALUE,
+	AZO_TC_PUSH_CAPTURE,
+	AZO_TC_STORE_CAPTURE,
 	/**
 	 * @brief Pushes a duplicate of an element into stack
 	 * 

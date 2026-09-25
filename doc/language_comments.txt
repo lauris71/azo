@@ -91,6 +91,29 @@ signature negotiation at call sites.
 - Extracting a class method (f = obj.method) materializes a bound closure
   (this == obj), so callbacks never silently lose their receiver.
 
+###C-facing function properties (boundary adaptation)
+- Function properties defined in C code have fixed contract signatures, often
+  with the object as the leading argument (e.g. onButtonDown(AosoraWidget,
+  uint32, uint32)) - C callers have no other way to know which object fired.
+- In a member context (member block, obj.prop = lambda), a lambda assigned to a
+  function property may use either the full contract signature or the shortened
+  form with the leading receiver argument dropped.
+- Full form: the closure is stored as-is. this is still captured (member
+  context), but the receiver argument is the one passed by the caller - use the
+  parameter, not this, for generic handlers shared between objects.
+- Shortened form: the runtime stores a lightweight adapter (an AZFunction
+  implementation) that references the script closure, exposes the contract
+  signature, and on invocation drops the receiver argument and forwards the
+  rest. this is captured by the closure as usual; during the call the receiver
+  passed by the caller is not available to the lambda at all - it only has its
+  captured this (for the common mywidget.onButtonDown case the same object).
+- Signatures matching neither form are errors - compile-time when the target
+  type is known, runtime at the store otherwise.
+- Attributes (AZO-native) never adapt - the closure is stored as itself.
+- Reuse: otherwidget.onButtonDown = mywidget.onButtonDown reads the adapter and
+  stores it; calls still invoke mywidget's member closure (this == mywidget).
+  This is correct - it reuses mywidget's handler logic.
+
 ###. and -> (properties vs attributes)
 - Properties/functions are defined in C code: the list and types are immutable,
   but the content can be modified (depending on the property).
@@ -167,6 +190,12 @@ signature negotiation at call sites.
   variables; per-closure JIT code must never migrate to the shared code link.
 - Shutdown integration: clearing attributes releases closures; recursive shutdown
   propagates as explicit shutdown calls (never passive refcount drops).
+- Property-store adaptation: when storing a function value into a C function
+  property, compare signatures - exact contract match: store as-is; leading-
+  receiver-dropped match: create and store an adapter (AZFunction implementation;
+  references the closure, exposes the contract signature, drops the first
+  argument on invoke, forwards the rest); anything else: error (compile-time if
+  the target type is known).
 - Verify: no mutable closure-holding container outside attributes and
   program-rooted storage (e.g. arrays in attributes are fine - shutdown releases
   the array, which releases the closure).
@@ -187,6 +216,10 @@ signature negotiation at call sites.
 - DO dispose objects explicitly and in time - shutdown breaks the attribute edges.
 - DO use weak only for script-scope back-pointers (e.g. weak Button other =
   otherBtn;) - it is a compile-time error on function locals.
+- DO write C-property handlers in the shortened form: mywidget.onButtonDown =
+  (uint32 button, uint32 modifiers) => {...} - this is captured. Use the full
+  contract form (AosoraWidget widget, ...) only for generic handlers shared
+  between objects, and then use the parameter, not this.
 - DON'T expect a captured ActiveObject to be alive inside a closure - reads of
   dead captures are null; member access throws unless the function opted into
   nullsafe. Check for null or anchor the object.

@@ -46,6 +46,8 @@ main(int argc, const char *argv[])
     return UNITY_END();
 }
 
+static AZODataBlock static_data = {0};
+
 static int
 test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, const AZImplementation **ret_impl, AZValue *ret_val)
 {
@@ -53,7 +55,7 @@ test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, con
 	AZOProgram *prog = azo_program_compile_from_text(ctx, (const uint8_t *) text, NULL, NULL,
         ret_type, 0, NULL, NULL, src->cdata, src->csize);
     if (!prog) return 1;
-	azo_program_interpret(prog, ctx->intr, 0, NULL, NULL, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
+	azo_program_interpret(prog, ctx->intr, &static_data, 0, NULL, NULL, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
     azo_program_unref(prog);
     az_object_unref((AZObject *) src);
     return 0;
@@ -147,7 +149,7 @@ run_program(const char *source)
         AZ_TYPE_INT32, 0, NULL, NULL,
         (const uint8_t *) source, strlen(source));
     AZPackedValue ret_val;
-    azo_program_interpret(prog, ctx->intr, 0, NULL, NULL, &ret_val.impl, &ret_val.v, AZ_PACKED_VALUE_MAX_SIZE);
+    azo_program_interpret(prog, ctx->intr, &static_data, 0, NULL, NULL, &ret_val.impl, &ret_val.v, AZ_PACKED_VALUE_MAX_SIZE);
     int32_t result = ret_val.v.int32_v;
     az_packed_value_clear(&ret_val);
     azo_program_unref(prog);
@@ -201,7 +203,7 @@ test_function(void)
     const AZImplementation *this_impl = NULL;
     const AZValue *this_val = NULL;
     AZPackedValue ret_val;
-	azo_program_interpret(prog, ctx->intr, 0, NULL, NULL, &ret_val.impl, &ret_val.v, AZ_PACKED_VALUE_MAX_SIZE);
+	azo_program_interpret(prog, ctx->intr, &static_data, 0, NULL, NULL, &ret_val.impl, &ret_val.v, AZ_PACKED_VALUE_MAX_SIZE);
     TEST_ASSERT_EQUAL_INT(128, ret_val.v.int32_v);
 
     az_packed_value_clear(&ret_val);

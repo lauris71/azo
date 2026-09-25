@@ -20,6 +20,16 @@
 #include <azo/keyword.h>
 #include <azo/compiler/resolver.h>
 
+#define noVERBOSE
+
+#ifdef VERBOSE
+#define DBG_PRINTF(...) fprintf(stdout, __VA_ARGS__)
+#define DBG_REPLACE(...) describe(stdout, __VA_ARGS__)
+#else
+#define DBG_PRINTF(...)
+#define DBG_REPLACE(S, args...)
+#endif
+
 static void
 describe(FILE *ofs, const char *text, const AZString *name, const AZImplementation *impl, AZValue *val)
 {
@@ -73,9 +83,7 @@ resolve_member_inst (AZOFrame *frame, AZONode *expr, const AZClass *klass, const
 			/* Final undefined value is not normal but we have to handle it */
 			expr->term.subtype = (expr->value.impl) ? AZ_IMPL_TYPE(expr->value.impl) : 0;
 			azo_node_clear_children(expr);
-#ifdef noDEBUG_MEMBER_INST
-			describe(stderr, "resolve_member: Replaced final property %s with '%s'\n", str, expr->value.impl, &expr->value.v);
-#endif
+			DBG_REPLACE("resolve_member: Replaced final property %s with '%s'\n", str, expr->value.impl, &expr->value.v);
 			return 0;
 		}
 	} else if (inst && az_type_implements(AZ_IMPL_TYPE(impl), AZ_TYPE_ATTRIBUTE_DICT)) {
@@ -101,9 +109,7 @@ resolve_member_inst (AZOFrame *frame, AZONode *expr, const AZClass *klass, const
 				expr->term.subtype = 0;
 			}
 			azo_node_clear_children(expr);
-#ifdef noDEBUG_MEMBER_INST
-			describe(stderr, "resolve_member: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
-#endif
+			DBG_REPLACE("resolve_member: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
 			return 0;
 		}
 	}
@@ -135,9 +141,7 @@ resolve_attribute (AZOFrame *frame, AZONode *expr, const AZClass *klass, const A
 				expr->term.subtype = 0;
 			}
 			azo_node_clear_children(expr);
-#ifdef noDEBUG_MEMBER_INST
-			describe(stderr, "resolve_attribute: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
-#endif
+			DBG_REPLACE("resolve_attribute: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
 			return 0;
 		}
 	}
@@ -234,12 +238,8 @@ resolve_variable (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 		expr->term.type = AZO_TERM_CONSTANT;
 		expr->term.subtype = AZ_IMPL_TYPE(val.impl);
 		az_packed_value_transfer(&expr->value, &val);
-#ifdef DEBUG_RESOLVE_VARIABLE
 		/* If string resolved to global variable we can be sure it has at least reference left */
-		uint8_t *buf = az_value_to_string_autobox_new(expr->value.impl, &expr->value.v);
-		fprintf (stderr, "resolve_variable: %s replaced with global object [%s]\n", str->str, buf);
-		free(buf);
-#endif
+		DBG_REPLACE("resolve_variable: %s replaced with global object [%s]\n", str, expr->value.impl, &expr->value.v);
 		return 0;
 	}
 	/*
@@ -249,9 +249,7 @@ resolve_variable (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	 */
 	AZOVariable *var = azo_frame_lookup_local_var (comp->current, expr->value.v.string);
 	if (var) {
-#ifdef DEBUG_RESOLVE_VARIABLE
-		fprintf (stderr, "resolve_variable: Local %s at pos %u\n", expr->value.v.string->str, var->pos);
-#endif
+		DBG_PRINTF("resolve_variable: Local %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
 		expr->term.subtype = AZO_TERM_VARIABLE_LOCAL;
 		az_packed_value_clear (&expr->value);
@@ -265,9 +263,7 @@ resolve_variable (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	 */
 	var = azo_frame_lookup_parent_var (comp->current, expr->value.v.string);
 	if (var) {
-#ifdef DEBUG_RESOLVE_VARIABLE
-		fprintf (stderr, "resolve_variable: Parent %s at pos %u\n", expr->value.v.string->str, var->pos);
-#endif
+		DBG_PRINTF("resolve_variable: Parent %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
 		expr->term.subtype = AZO_TERM_VARIABLE_PARENT;
 		az_packed_value_clear (&expr->value);
@@ -291,9 +287,7 @@ resolve_variable (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 			 */
 			var = azo_frame_ensure_variable (comp->current, expr->value.v.string);
 			assert(var != NULL);
-#ifdef DEBUG_RESOLVE_VARIABLE
-			fprintf (stderr, "resolve_variable: Created parent variable %s at pos %u\n", expr->value.v.string->str, var->pos);
-#endif
+			DBG_PRINTF("resolve_variable: Created parent variable %s at pos %u\n", expr->value.v.string->str, var->pos);
 			expr->term.type = AZO_TERM_VARIABLE;
 			expr->term.subtype = AZO_TERM_VARIABLE_PARENT;
 			az_packed_value_clear (&expr->value);

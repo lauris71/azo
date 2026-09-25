@@ -1016,46 +1016,46 @@ compile_function (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 		obj = type->next;
 		args = obj->next;
 		body = args->next;
-	} else {
+	} else if (expr->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD) {
 		type = expr->children;
 		obj = NULL;
 		args = type->next;
 		body = args->next;
+	} else if (expr->term.subtype == AZO_TERM_LAMBDA) {
+		type = expr->children;
+		obj = NULL;
+		args = type->next;
+		body = args->next;
+	} else {
+		fprintf (stderr, "compile_function: Invalid function expression subtype %u\n", expr->term.subtype);
+		return 0;
 	}
 
 	/* Return type */
 	assert (type->term.type == AZO_TERM_TYPE);
 	unsigned int ret_type = type->term.subtype;
 
-	unsigned int n_args = 0;
-	//if (obj) n_args = 1;
-	for (child = args->children; child; child = child->next) n_args += 1;
-
 	/* Compile function body in it's own resolved frame */
 	assert(expr->frame);
 	AZOFrame *func_frame = expr->frame;
-	assert(func_frame->n_args == n_args);
 	AZOFrame *prev_frame = azo_compiler_set_frame(comp, func_frame);
 	prog = azo_compiler_compile (comp, body, src);
-	if (!prog) {
-		fprintf (stderr, "compile_function: error compiling function\n");
-		/* Restore the previous frame */
-		azo_compiler_set_frame(comp, prev_frame);
-		return 0;
-	}
 	/* Restore the previous frame */
 	azo_compiler_set_frame(comp, prev_frame);
+	if (!prog) {
+		fprintf (stderr, "compile_function: error compiling function\n");
+		return 0;
+	}
 
 	compile_PUSH_VALUE_const(comp, AZO_TYPE_PROGRAM, (const AZValue *) &prog, expr);
 	/* program */
-	for (AZOVariableList *var = func_frame->parent_vars; var; var = var->next) {
-		/* var->parent is variable in current frame */
-		if (var->var.parent->parent) {
-			/* Variable is inherited from grandparent so present in current frame as value */
-			write_PUSH_VALUE (comp, var->var.parent->pos, expr);
+	for (AZOVariableList *list = func_frame->parent_vars; list; list = list->next) {
+		/* list->var.parent is variable in *current* frame */
+		AZOVariable *var = list->var.parent;
+		if (var->parent) {
+			write_PUSH_VALUE (comp, var->pos, expr);
 		} else {
-			/* Local variable in current frame (present in stack) */
-			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, var->var.parent->pos, expr);
+			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, var->pos, expr);
 		}
 	}
 	/* program val1 ... */
@@ -1175,7 +1175,7 @@ compile_expression_rvalue (AZOCompiler *comp, const AZONode *expr, AZOSource *sr
 			return 0;
 		}
 	} else if (expr->term.type == AZO_TERM_FUNCTION) {
-		if (expr->term.subtype == AZO_TERM_FUNCTION_STATIC) {
+		if (expr->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD) {
 			if (!compile_function (comp, expr, src)) return 0;
 		} else {
 			if (!compile_function (comp, expr, src)) return 0;

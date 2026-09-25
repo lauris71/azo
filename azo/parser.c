@@ -1766,7 +1766,7 @@ parse_function_definition (AZOParser *parser, AZOToken *token, unsigned int is_m
 		AZONode *obj = parser_detach_last (parser);
 		expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER_OLD, obj->term.start, body->term.end, 4, type, obj, args, body);
 	} else {
-		expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC, start, body->term.end, 3, type, args, body);
+		expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC_OLD, start, body->term.end, 3, type, args, body);
 	}
 	parser_append (parser, expr);
 	return AZO_PARSER_ERROR_NONE;
@@ -1841,7 +1841,7 @@ parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, 
 		return error;
 	}
 	body = parser_detach_last (parser);
-	expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC, start, body->term.end, 3, type, args, body);
+	expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_LAMBDA, start, body->term.end, 3, type, args, body);
 	parser_append (parser, expr);
 	return azo_parser_continue_expression (parser, token, left_precedence);
 }

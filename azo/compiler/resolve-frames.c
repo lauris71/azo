@@ -181,11 +181,19 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 		obj = type->next;
 		args = obj->next;
 		body = args->next;
-	} else {
+	} else if (expr->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD) {
 		type = expr->children;
 		obj = NULL;
 		args = type->next;
 		body = args->next;
+	} else if (expr->term.subtype == AZO_TERM_LAMBDA) {
+		obj = NULL;
+		type = expr->children;
+		args = type->next;
+		body = args->next;
+	} else {
+		fprintf (stderr, "resolve_function: Invalid function expression subtype %u\n", expr->term.subtype);
+		return 1;
 	}
 
 	/* Return type */
@@ -211,7 +219,9 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	unsigned int ret_type = type->term.subtype;
 
 	/* This type */
-	const AZImplementation *this_impl = (const AZImplementation *) az_type_get_class (AZ_TYPE_ANY);
+	const AZImplementation *this_impl = (expr->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD)
+		|| (expr->term.subtype == AZO_TERM_LAMBDA)
+		? (const AZImplementation *) az_type_get_class (AZ_TYPE_ANY) : NULL;
 	if (obj) {
 		result = azo_compiler_resolve_node (comp, obj, flags);
 		if (result) return result;
@@ -221,6 +231,8 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 				return 1;
 			}
 			this_impl = (const AZImplementation *) obj->value.v.block;
+		} else {
+			this_impl = (const AZImplementation *) az_type_get_class (AZ_TYPE_ANY);
 		}
 	}
 

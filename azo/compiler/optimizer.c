@@ -66,19 +66,28 @@ tag_assigns(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 	switch (node->term.type) {
 		case AZO_TERM_FUNCTION:
 			/* Return type has to be already resolved to constant class */
-			if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER_OLD)) {
+			if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC_OLD)) {
 				AZONode *ret = node->children;
 				AZONode *args = ret->next;
 				AZONode *body = args->next;
 				vars = tag_assigns(opt, args, vars);
 				break;
-			} else {
+			} else if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER_OLD)) {
 				AZONode *ret = node->children;
 				AZONode *this = ret->next;
 				AZONode *args = this->next;
 				AZONode *body = args->next;
 				vars = tag_assigns(opt, this, vars);
 				vars = tag_assigns(opt, args, vars);
+				break;
+			} else if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_LAMBDA)) {
+				AZONode *ret = node->children;
+				AZONode *args = ret->next;
+				AZONode *body = args->next;
+				vars = tag_assigns(opt, args, vars);
+				break;
+			} else {
+				fprintf(stderr, "tag_assigns: Invalid function subtype %u\n", node->term.subtype);
 				break;
 			}
 		case AZO_TERM_PREFIX:
@@ -235,17 +244,26 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			/* Proceed args with existing list, duplicate list and proceed body */
 			/* Return type has to be already resolved to constant class */
 			AZONode *ret, *this, *args, *body;
-			if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER_OLD)) {
+			if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC_OLD)) {
+				ret = node->children;
+				this = NULL;
+				args = ret->next;
+				body = args->next;
+				break;
+			} else if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER_OLD)) {
+				ret = node->children;
+				this = ret->next;
+				args = this->next;
+				body = args->next;
+				break;
+			} else if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_LAMBDA)) {
 				ret = node->children;
 				this = NULL;
 				args = ret->next;
 				body = args->next;
 				break;
 			} else {
-				ret = node->children;
-				this = ret->next;
-				args = this->next;
-				body = args->next;
+				fprintf(stderr, "optimize_const_assign: Invalid function subtype %u\n", node->term.subtype);
 				break;
 			}
 			if (this) vars = optimize_const_assign(opt, this, vars);

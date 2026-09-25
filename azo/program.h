@@ -33,7 +33,7 @@ struct _AZOProgram {
 
 	unsigned int n_args;
 	unsigned int ret_type;
-	unsigned int has_this;
+	unsigned int this_type;
 	unsigned int n_captures;
 	unsigned int n_static;
 	unsigned int n_const;
@@ -87,7 +87,7 @@ AZOProgram *azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
  * @param ret_val Pointer to store the return value
  * @param ret_size Size of the return value buffer
  */
-void azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, unsigned int n_args, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size);
+void azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *static_data, unsigned int n_args, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size);
 
 #ifdef __cplusplus
 }

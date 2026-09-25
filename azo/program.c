@@ -58,7 +58,7 @@ azo_program_new(AZOContext *ctx, AZOFrame *frame, AZONode *tree, AZOSource *src)
 
 	prog->n_args = frame->n_args;
 	prog->ret_type = frame->ret_type;
-	prog->has_this = (frame->this_impl != NULL);
+	prog->this_type = (frame->this_impl != NULL) ? AZ_IMPL_TYPE(frame->this_impl) : AZ_TYPE_NONE;
 	prog->n_captures = frame->n_parent_vars;
 	prog->n_static = frame->n_static;
 	prog->n_const = code->data_len;
@@ -150,7 +150,7 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 }
 
 void
-azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, unsigned int n_args, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
+azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *static_data, unsigned int n_args, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
 {
 	unsigned int prev_frame = azo_interpreter_push_frame (intr, 0);
 	azo_intepreter_push_values (intr, arg_impls, arg_vals, n_args);
@@ -162,7 +162,7 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, unsigned int n_arg
 		AZOInterpreterCtx ictx = {
 			.tcode = prog->tcode,
 			.tcode_len = prog->tcode_length,
-			.static_data = NULL,
+			.static_data = static_data,
 			.shared_data = &prog->shared_data
 		};
 		azo_interpreter_run(intr, &ictx);
