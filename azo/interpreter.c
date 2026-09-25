@@ -2080,10 +2080,14 @@ azo_interpreter_run(AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 
 	if (intr->exc.type != AZO_EXCEPTION_NONE) {
 		unsigned char b[1024];
+		unsigned int ip = intr->exc.ipc - ictx->tcode;
 		/* Exception */
 		az_instance_to_string (&azo_exception_class->klass.impl, &intr->exc, b, 1024);
 		fprintf (stderr, "Fatal exception: %s\n", b);
-		fprintf(stderr, "Position: %ld %d\n", intr->exc.ipc - ictx->tcode, ictx->tcode[intr->exc.ipc - ictx->tcode] & 0x7f);
+		azo_debug_print_term(ictx->debug, ip, stderr);
+		fprintf(stderr, "Position: %d %d\n", ip, ictx->tcode[ip] & 0x7f);
+		azo_bc_print_instruction(b, 256, ictx->tcode, ip, ictx->tcode_len);
+		fprintf(stderr, "%s\n", b);
 		azo_intepreter_print_stack (intr, stderr);
 		fprintf (stderr, "\n");
 

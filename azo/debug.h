@@ -8,6 +8,7 @@
 */
 
 #include <azo/node.h>
+#include <azo/code.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,6 +30,8 @@ struct _AZODebugInfo {
 
 void azo_debug_info_setup(AZODebugInfo *dbg, const AZOCode *code, AZOSource *src);
 void azo_debug_info_release(AZODebugInfo *dbg);
+
+void azo_debug_print_term(AZODebugInfo *dbg, unsigned int term_idx, FILE *ofs);
 
 #ifdef __cplusplus
 }

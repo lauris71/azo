@@ -6,6 +6,8 @@
 * Copyright (C) Lauris Kaplinski 2026
 */
 
+#include <az/string.h>
+
 #include <azo/code.h>
 #include <azo/debug.h>
 
@@ -37,5 +39,21 @@ azo_debug_info_release(AZODebugInfo *dbg)
         dbg->n_terms = 0;
     }
     if (dbg->src) azo_source_unref(dbg->src);
+}
+
+void
+azo_debug_print_term(AZODebugInfo *dbg, unsigned int term_idx, FILE *ofs)
+{
+    if (!dbg->terms || (term_idx >= dbg->n_terms)) {
+        fprintf(ofs, "No Debug info\n");
+        return;
+    }
+    const AZODebugTerm *term = &dbg->terms[term_idx];
+    fprintf(ofs, "%s line: %u near ", dbg->src->name->str, term->line);
+    for (unsigned int i = term->term.start; i < term->term.end; i++) {
+        fputc(dbg->src->cdata[i], ofs);
+    }
+    fprintf(ofs, "\n");
+    azo_source_print_lines(dbg->src, term->line, term->line + 1, ofs);
 }
 

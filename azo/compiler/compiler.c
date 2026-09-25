@@ -531,13 +531,18 @@ compile_call (AZOCompiler *comp, const AZONode *func, const AZONode *list, AZOSo
 		azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
 		azo_compiler_update_JMP_32 (comp, is_function);
 	}
+	n_args = 0;
 	if (has_this) {
+		// has_this indicates that this is one element BEFORE function
+		// e.g. [this, function]
 		azo_compiler_write_DUPLICATE (comp, 1, NULL);
+		n_args += 1;
 	} else {
 		azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, 0, func);
+		n_args += 1;
+		//fprintf(stderr, "%d\n", func->term.subtype);
 	}
 	/* [func, this] */
-	n_args = 1;
 	for (child = list->children; child; child = child->next) {
 		azo_compiler_compile_expression (comp, child, src);
 		n_args += 1;
@@ -928,6 +933,12 @@ compile_function_call (AZOCompiler *comp, const AZONode *func, const AZONode *li
 
 	// fixme: Handle in lvalue?
 	// fixme: Implement separate expression type for this handling?
+	// This wrong old-style code
+	// Basically for constant properties optimizer creates
+	// FUNCTION:CONST
+	//  PARENT_OBJ:CONST
+	// structure
+	// The parent object is meant to be fed as the first 'this' argument
 	if (func->term.type == AZO_TERM_CONSTANT) {
 		if (func->children) {
 			assert (func->children->term.type == AZO_TERM_CONSTANT);

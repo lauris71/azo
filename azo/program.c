@@ -163,7 +163,8 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 			.tcode = prog->tcode,
 			.tcode_len = prog->tcode_length,
 			.static_data = static_data,
-			.shared_data = &prog->shared_data
+			.shared_data = &prog->shared_data,
+			.debug = &prog->debug
 		};
 		azo_interpreter_run(intr, &ictx);
 	}

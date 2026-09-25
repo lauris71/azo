@@ -220,7 +220,7 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 
 	/* This type */
 	const AZImplementation *this_impl = (expr->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD)
-		|| (expr->term.subtype == AZO_TERM_LAMBDA)
+		//|| (expr->term.subtype == AZO_TERM_LAMBDA)
 		? (const AZImplementation *) az_type_get_class (AZ_TYPE_ANY) : NULL;
 	if (obj) {
 		result = azo_compiler_resolve_node (comp, obj, flags);

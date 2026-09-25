@@ -47,6 +47,7 @@ struct _AZOInterpreterCtx {
 	unsigned int tcode_len;
 	AZODataBlock *static_data;
 	AZODataBlock *shared_data;
+	AZODebugInfo *debug;
 };
 
 AZOInterpreter *azo_interpreter_new (AZOContext *ctx);
