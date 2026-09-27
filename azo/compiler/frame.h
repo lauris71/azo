@@ -20,10 +20,6 @@ typedef struct _AZOFrame AZOFrame;
 extern "C" {
 #endif
 
-#define AZO_FRAME_NO_ERROR 0
-#define AZO_FRAME_VARIABLE_DEFINED 1
-#define AZO_FRAME_VARIABLE_NOT_DEFINED 1
-
 /**
  * @brief The compilation context
  * 
@@ -64,7 +60,7 @@ struct _AZOFrame {
 	 * During the compilation of function body these are reserved to program data values.
 	 * The actual values are filled by binding during the execution of the code that defines the function.
 	 */
-	unsigned int n_parent_vars;
+	unsigned int n_captures;
 	AZOVariableList *parent_vars;
 
 	unsigned int n_static;

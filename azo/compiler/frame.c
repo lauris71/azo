@@ -16,6 +16,7 @@
 #include <az/string.h>
 
 #include <azo/compiler/frame.h>
+#include <azo/errors.h>
 
 AZOFrame *
 azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug)
@@ -26,6 +27,9 @@ azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_i
 	frame->this_impl = this_impl;
 	frame->this_inst = this_inst;
 	frame->n_args = n_args;
+
+	frame->n_captures = (this_impl) ? 1 : 0;
+	// fixme: This goes to captures
 	/* If this is present, reserve the first variable position to it */
 	frame->scope = azo_scope_new (NULL, (this_impl) ? 1 : 0);
 	azo_code_init(&frame->code, debug);
@@ -139,11 +143,11 @@ AZOVariable *
 azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, unsigned int *result)
 {
 	if (azo_scope_lookup_local_var (frame->scope, name)) {
-		*result = AZO_FRAME_VARIABLE_DEFINED;
+		*result = AZO_VARIABLE_DEFINED;
 		return NULL;
 	}
 	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, name, frame->scope->next_var_pos++);
-	*result = AZO_FRAME_NO_ERROR;
+	*result = AZO_ERROR_NONE;
 	return &frame->scope->variables->var;
 }
 
@@ -157,7 +161,7 @@ azo_frame_ensure_variable (AZOFrame *frame, AZString *name)
 	if (frame->parent) {
 		AZOVariable *prev = azo_frame_ensure_variable (frame->parent, name);
 		if (!prev) return NULL;
-		AZOVariableList *list = azo_var_list_prepend(frame->parent_vars, name, frame->n_parent_vars++);
+		AZOVariableList *list = azo_var_list_prepend(frame->parent_vars, name, frame->n_captures++);
 		list->var.parent = prev;
 		frame->parent_vars = list;
 		return &list->var;

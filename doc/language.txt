@@ -47,7 +47,7 @@ Block:
 # cannot be modified from scripts, so unqualified names resolve to existing class
 # properties or are compile-time errors - no new names can be installed.
 Member_block:
-  Expression { Sentences }
+  Expression Block
 
 # Static block: the body is evaluated in static context (this == NONE)
 Static_block:
@@ -123,12 +123,16 @@ Declaration:
 #   shared - per-lambda storage: the variable lives in the shared datablock of the
 #            lambda declaration (all closures of the same lambda share it);
 #            the initializer must be a constant expression
+#   final  - read-only (cannot be reassigned after initialization)
 #   weak   - weak reference (AZWeakReference, AZActiveObject only): reads as null
 #            after the referent's shutdown; requires fixed-address storage -
 #            valid at program/script scope, compile-time error on function locals
+#.  const  - the instance is immutable at least starting from the assignment time.
+#            Property and attribute assignments should be errors and optimizer can
+#            cache property/attribute access. 
 Declaration_qualifiers:
-  [static] [weak] [const] [final]
-  [shared] [weak] [const] [final]
+  [static] [final] [weak] [const]
+  [shared] [final] [weak] [const]
 
 Single_declaration:
   Pure_declaration
@@ -235,10 +239,16 @@ Literal:
 Structured_literal:
   {[Expression [, Expression ...]] }
 
+# A type expression evaluates to a class. Currently restricted to a NAME[.NAME...]
+# path that must be resolvable to a class at compile time through globals/global
+# namespaces (link time - the resolver reads namespace attributes directly; general
+# property/attribute access and value folding belong to the optimizer and runtime).
+# This keeps function signatures, member contexts and new targets statically known.
+# Future extension (not implemented): general type expressions evaluating to a class
+# at runtime - e.g. a variable declared with a runtime-resolved type behaves as
+# 'any' with a runtime type check at each assignment.
 Type_expression:
-  Variable_reference
-  Array_reference
-  Function_call
+  NAME [. NAME ...]
 
 # Assignments
 
@@ -260,6 +270,8 @@ Assignment:
 # are assigned right to left)
 # Note that assignment is a statement, not an expression - a = b is only valid
 # where a statement is expected
+# Assignment to member/attribute creates member context for a lambda, if chained,
+# the last LValue in chain determines the context
 
 Chained_assignment:
   LValue = Expression
@@ -267,8 +279,10 @@ Chained_assignment:
 
 # Functions and new
 
+# new takes a type expression (NAME[.NAME...] path) - the class must be resolvable
+# at compile time (see Type_expression); it is sugar for Type.new(Arguments)
 New:
-  new Expression Arguments
+  new Type Arguments
 
 Arguments:
   ([Expression [, Expression ...]])

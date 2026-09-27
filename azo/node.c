@@ -258,8 +258,16 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		fprintf (ofs, "\nEND_PROGRAM\n");
 		break;
 	case AZO_TERM_BLOCK:
+		child = expr->children;
+		if (expr->term.subtype == AZO_TERM_BLOCK_STATIC) {
+			fprintf (ofs, "static ");
+		} else if (expr->term.subtype == AZO_TERM_BLOCK_REFERENCE) {
+			azo_node_print (child, ofs);
+			fprintf(stderr, " ");
+			child = child->next;
+		}
 		fprintf (ofs, "{\n");
-		azo_node_print_list (expr->children, ofs, "\n");
+		azo_node_print_list (child, ofs, "\n");
 		fprintf (ofs, "}\n");
 		break;
 	case AZO_TERM_STATEMENT_GROUP:
@@ -476,7 +484,7 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		break;
 	case AZO_TERM_TYPE:
 		klass = AZ_CLASS_FROM_TYPE(expr->term.subtype);
-		fprintf (ofs, "%s ", klass->name);
+		fprintf (ofs, "%s ", klass ? (const char *) klass->name : "NONE");
 		break;
 	default:
 		fprintf (ofs, "##(%u/%u) ", expr->term.type, expr->term.subtype);
@@ -509,10 +517,19 @@ print_line (AZONode *expr, FILE *ofs)
 static void
 print_sentence (AZONode *expr, FILE *ofs)
 {
+	AZONode *child;
 	switch (expr->term.type) {
 	case AZO_TERM_BLOCK:
+		child = expr->children;
+		if (expr->term.subtype == AZO_TERM_BLOCK_STATIC) {
+			fprintf (ofs, "static ");
+		} else if (expr->term.subtype == AZO_TERM_BLOCK_REFERENCE) {
+			azo_node_print (child, ofs);
+			fprintf(stderr, " ");
+			child = child->next;
+		}
 		fprintf (ofs, "{\n");
-		print_sentences (expr->children, ofs);
+		print_sentences (child, ofs);
 		fprintf (ofs, "}\n");
 		break;
 	case AZO_TERM_KEYWORD:

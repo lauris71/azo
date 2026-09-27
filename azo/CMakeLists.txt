@@ -6,6 +6,7 @@ set(AZO_HEADERS
 	context.h
 	debug.h
 	debugger.h
+	errors.h
 	exception.h
 	node.h
 	interpreter.h
@@ -28,6 +29,7 @@ set(AZO_SOURCES
 	context.c
 	debug.c
 	debugger.c
+	errors.c
 	exception.c
 	node.c
 	interpreter.c

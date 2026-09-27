@@ -2,10 +2,10 @@
 #define __AZO_PARSER_H__
 
 /*
-* A languge implementation based on AZ
-*
-* Copyright (C) Lauris Kaplinski 2016
-*/
+ * A languge implementation based on AZ
+ *
+ * Copyright (C) Lauris Kaplinski 2016
+ */
 
 typedef struct _AZOParser AZOParser;
 typedef struct _AZOParserClass AZOParserClass;
@@ -21,19 +21,6 @@ typedef struct _AZOParserError AZOParserError;
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* Parser error codes */
-enum {
-	AZO_PARSER_ERROR_NONE,
-	AZO_PARSER_ERROR_UNEXPECTED_EOF,
-	AZO_PARSER_ERROR_SYNTAX,
-	AZO_PARSER_ERROR_END_OF_BLOCK_MISSING,
-	AZO_PARSER_ERROR_SEMICOLON_MISSING,
-	AZO_PARSER_ERROR_CLOSING_PARENTHESIS_MISSING,
-	AZO_PARSER_ERROR_INVALID_START_OF_EXPRESSION,
-	AZO_PARSER_ERROR_TOO_MANY_ERRORS,
-	AZO_PARSER_NUM_ERRORS
-};
 
 /* The maximum number of errors logged into the parser error list */
 #define AZO_PARSER_MAX_ERRORS 20

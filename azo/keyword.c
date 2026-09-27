@@ -16,8 +16,10 @@ const char *azo_keywords[] = {
 	"null",
 	"void",
 	"static",
-	"const",
+	"shared",
 	"final",
+	"weak",
+	"const",
 	"true",
 	"false",
 	"this",
@@ -78,6 +80,14 @@ azo_token_is_keyword (const AZOToken *token, unsigned int keyword, const AZOSour
 		if (!strncmp ((const char *) src->cdata + token->start, azo_keywords[keyword], kwlen)) return 1;
 	}
 	return 0;
+}
+
+unsigned int
+azo_token_is_bareword(const AZOToken *token, const AZOSource *src)
+{
+	unsigned int kwlen;
+	if (token->type != AZO_TOKEN_WORD) return 0;
+	return azo_token_get_keyword(token, src) == AZO_KEYWORD_NONE;
 }
 
 unsigned int

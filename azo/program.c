@@ -59,15 +59,16 @@ azo_program_new(AZOContext *ctx, AZOFrame *frame, AZONode *tree, AZOSource *src)
 	prog->n_args = frame->n_args;
 	prog->ret_type = frame->ret_type;
 	prog->this_type = (frame->this_impl != NULL) ? AZ_IMPL_TYPE(frame->this_impl) : AZ_TYPE_NONE;
-	prog->n_captures = frame->n_parent_vars;
+	prog->n_captures = frame->n_captures;
 	prog->n_static = frame->n_static;
 	prog->n_const = code->data_len;
 	prog->n_shared = frame->n_shared;
 
-	//azo_datablock_init(&prog->shared_data, prog->n_const, prog->n_const + prog->n_shared);
-	azo_datablock_init(&prog->shared_data, prog->n_captures, prog->n_const + prog->n_captures);
+	/* Initialize static datablock */
+	azo_datablock_init(&prog->shared_data, prog->n_const, prog->n_const + prog->n_shared);
+	/* Write constants to static block */
 	for (unsigned int i = 0; i < code->data_len; i++) {
-		azo_datablock_transfer_val(&prog->shared_data, prog->n_captures + i, code->data[i].impl, &code->data[i].v, 0);
+		azo_datablock_transfer_val(&prog->shared_data, i, code->data[i].impl, &code->data[i].v, 0);
 	}
 	free (code->data);
 	code->data = NULL;
@@ -121,7 +122,11 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	comp.debug = 1;
 	azo_compiler_push_frame(&comp, this_impl, this_inst, n_args, ret_type);
 	for (unsigned int i = 0; i < n_args; i++) {
-		azo_compiler_declare_variable (&comp, arg_names[i], arg_types[i]);
+		unsigned int result = 0;
+		if (!azo_frame_declare_variable(comp.current, arg_names[i], arg_types[i], &result)) {
+			fprintf(stderr, "Variable %s is already defined in current scope\n", arg_names[i]->str);
+		}
+		// fixme: fail
 	}
 	int result = azo_compiler_resolve_frame(&comp, expr);
 	if (result != 0) {

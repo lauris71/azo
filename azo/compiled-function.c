@@ -132,7 +132,7 @@ azo_compiled_function_new(AZOProgram *prog)
 	azo_program_ref(prog);
 	cfunc->signature = az_function_signature_new_any(prog->this_type, prog->ret_type, prog->n_args);
 
-	azo_datablock_init(&cfunc->static_data, prog->n_const, prog->n_shared);
+	azo_datablock_init(&cfunc->static_data, prog->n_captures, prog->n_captures + prog->n_static);
 	return cfunc;
 }
 
@@ -147,5 +147,9 @@ azo_compiled_function_bind (AZOCompiledFunction *cfunc, unsigned int pos, const 
 	d[len] = 0;
 	fprintf (stderr, "azo_compiled_function_bind: Binding %s to pos %u\n", d, pos);
 #endif
-	azo_datablock_set(&cfunc->prog->shared_data, pos, impl, inst, 0);
+	if (impl && az_type_is_a(AZ_IMPL_TYPE(impl), AZ_TYPE_ACTIVE_OBJECT)) {
+		azo_datablock_set(&cfunc->static_data, pos, impl, inst, 1);
+	} else {
+		azo_datablock_set(&cfunc->static_data, pos, impl, inst, 0);
+	}
 }

@@ -42,6 +42,62 @@ describe(FILE *ofs, const char *text, const AZString *name, const AZImplementati
 	}
 }
 
+static const AZImplementation *
+resolve_type_chain(AZOCompiler *comp, AZONode *node, unsigned int flags, AZValue *val)
+{
+	if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE)) {
+		const AZImplementation *impl = azo_context_lookup (comp->ctx->globals, node->value.v.string, val, AZ_VALUE_MAX_SIZE);
+		if (!impl) {
+			fprintf(stderr, "resolve_type_chain: Global variable %s is not defined\n", node->value.v.string->str);
+		}
+		return impl;
+	} else if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
+		AZONode *parent = node->children;
+		AZONode *member = parent->next;
+		AZValue parent_val;
+		const AZImplementation *parent_impl = resolve_type_chain(comp, parent, flags, &parent_val);
+		if (!parent_impl) return NULL;
+		void *adict_inst;
+		const AZImplementation *adict_impl = az_instance_get_interface(parent_impl, az_value_get_inst(parent_impl, &parent_val), AZ_TYPE_ATTRIBUTE_DICT, &adict_inst);
+		if (!adict_impl) {
+			fprintf(stderr, "resolve_type_chain: parent is not attribute dictionary\n");
+			az_value_clear(parent_impl, &parent_val);
+			return NULL;
+		}
+		unsigned int adict_flags;
+		const AZImplementation *impl = az_attrib_dict_lookup((const AZAttribDictImplementation *) adict_impl, (AZAttribDict *) adict_inst, member->value.v.string, val, AZ_PACKED_VALUE_MAX_SIZE, &adict_flags);
+		az_value_clear(parent_impl, &parent_val);
+		if (!impl) {
+			fprintf(stderr, "resolve_type_chain: property %s is not defined\n", member->value.v.string->str);
+		}
+		return impl;
+	}
+	fprintf(stderr, "resolve_type_chain: node type not supported\n");
+	return NULL;
+}
+
+int
+azo_compiler_resolve_type_expression(AZOCompiler *comp, AZONode *node, unsigned int flags)
+{
+	AZValue val;
+	const AZImplementation *impl = resolve_type_chain(comp, node, flags, &val);
+	if (!impl) return 1;
+	if (AZ_IMPL_TYPE(impl) != AZ_TYPE_CLASS) {
+		fprintf(stderr, "resolve_type_chain: Expression is not a class type\n");
+		az_value_clear(impl, &val);
+		return 1;
+	}
+
+	node->term.type = AZO_TERM_TYPE;
+	node->term.subtype = AZ_CLASS_TYPE((AZClass *) val.block);
+	az_packed_value_clear(&node->value);
+
+	azo_node_clear_children(node);
+	az_value_clear(impl, &val);
+
+	return 0;
+}
+
 static unsigned int
 resolve_member_class (AZOCompiler *comp, AZONode *member, const AZClass *klass, unsigned int flags)
 {
@@ -182,16 +238,7 @@ resolve_member (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	unsigned int result = azo_compiler_resolve_node (comp, parent, flags);
 	if (result) return result;
 	member = parent->next;
-	result = azo_compiler_resolve_node (comp, member, flags);
-	if (result) return result;
-	if (parent->term.type == AZO_TERM_CONSTANT) {
-		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER)) {
-			void *inst;
-			const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
-			return resolve_member_inst (comp->current, expr, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
-		}
-	}
-	return 0;
+	return azo_compiler_resolve_node (comp, member, flags);
 }
 
 /*
@@ -325,21 +372,4 @@ azo_compiler_resolve_reference (AZOCompiler *comp, AZONode *expr, unsigned int f
 	}
 	assert(0);
 	return 1;
-}
-
-unsigned int
-azo_compiler_resolve_node_to_class(AZOCompiler *comp, AZONode *expr, unsigned int flags)
-{
-	unsigned int result;
-	result = azo_compiler_resolve_node (comp, expr, flags);
-	if (result) return result;
-	if (expr->term.type != AZO_TERM_CONSTANT) {
-		fprintf (stderr, "ERROR: azo_compiler_resolve_node_to_class: reference is not a constant\n");
-		return 1;
-	}
-	if (expr->term.subtype != AZ_TYPE_CLASS) {
-		fprintf (stderr, "ERROR: azo_compiler_resolve_node_to_class: reference is not a class\n");
-		return 1;
-	}
-	return 0;
 }

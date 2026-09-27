@@ -35,6 +35,16 @@ typedef struct _AZOOptimizer AZOOptimizer;
 #include <azo/compiler/compiler.h>
 #include <azo/compiler/variable.h>
 
+#define noVERBOSE
+
+#ifdef VERBOSE
+#define DBG_PRINTF(...) fprintf(stdout, __VA_ARGS__)
+#define DBG_REPLACE(...) describe(stdout, __VA_ARGS__)
+#else
+#define DBG_PRINTF(...)
+#define DBG_REPLACE(S, args...)
+#endif
+
 static int optimize_node(AZOOptimizer *opt, AZONode *node, unsigned int flags);
 
 void
@@ -347,6 +357,68 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 	return vars;
 }
 
+#define noDEBUG_MEMBER_INST
+
+static int
+optimize_member_inst (AZOOptimizer *opt, AZONode *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str, unsigned int flags)
+{
+	const AZClass *def_class;
+	const AZImplementation *def_impl;
+	void *def_inst;
+	/**
+	 * @brief Try to get property from parent
+	 * 
+	 * REFERENCE -> CONSTANT
+	 * 
+	 */
+	int idx = az_class_lookup_property (klass, impl, inst, str, &def_class, &def_impl, &def_inst);
+	if (idx >= 0) {
+		AZField *field = &def_class->props_self[idx];
+		if (!inst && (field->spec == AZ_FIELD_INSTANCE)) return 0;
+		if (!impl && (field->spec == AZ_FIELD_IMPLEMENTATION)) return 0;
+		if (AZ_FIELD_IS_FINAL(field) && !AZ_FIELD_IS_FUNCTION(field)) {
+			az_packed_value_clear(&expr->value);
+			if (!az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &expr->value.impl, &expr->value.v, 16, NULL)) {
+				fprintf (stderr, "resolve_member: Property %s is not readable\n", str->str);
+				return 1;
+			}
+			expr->term.type = AZO_TERM_CONSTANT;
+			/* Final undefined value is not normal but we have to handle it */
+			expr->term.subtype = (expr->value.impl) ? AZ_IMPL_TYPE(expr->value.impl) : 0;
+			azo_node_clear_children(expr);
+			DBG_REPLACE("resolve_member: Replaced final property %s with '%s'\n", str, expr->value.impl, &expr->value.v);
+			return 0;
+		}
+	} else if (inst && az_type_implements(AZ_IMPL_TYPE(impl), AZ_TYPE_ATTRIBUTE_DICT)) {
+		/**
+		 * @brief Try to get attribute from parent
+		 * 
+		 * REFERENCE -> CONSTANT
+		 * 
+		 */
+		void *attrd_inst;
+		const AZAttribDictImplementation *attrd_impl = (AZAttribDictImplementation *) az_instance_get_interface (impl, inst, AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
+		AZValue64 attr_val;
+		unsigned int attr_flags;
+		const AZImplementation *attr_impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, str, &attr_val.value, 64, &attr_flags);
+		if (attr_flags & AZ_ATTRIB_ARRAY_IS_FINAL) {
+			az_packed_value_set_from_impl_value (&expr->value, attr_impl, &attr_val.value);
+			expr->term.type = AZO_TERM_CONSTANT;
+			if (attr_impl) {
+				expr->term.subtype = AZ_IMPL_TYPE(attr_impl);
+				az_value_clear (attr_impl, &attr_val.value);
+			} else {
+				// Final undefined value, not normal but we have to handle it
+				expr->term.subtype = 0;
+			}
+			azo_node_clear_children(expr);
+			DBG_REPLACE("resolve_member: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
+			return 0;
+		}
+	}
+	return 0;
+}
+
 static int
 optimize_children(AZOOptimizer *opt, AZONode *children, unsigned int flags)
 {
@@ -563,9 +635,18 @@ optimize_reference(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 	/* REFERENCE_VARIBLE has to be resolved to CONSTANT, VARIABLE, REFERENCE_PROPERTY or REFERENCE_ATTRIBUTE */
 	/* REFERENCE_MEMBER is never seen alone */
 	assert((node->term.subtype == AZO_TERM_REFERENCE_PROPERTY) || (node->term.subtype == AZO_TERM_REFERENCE_ATTRIBUTE));
-	AZONode *expr = node->children;
-	int result = optimize_node(opt, expr, flags);
+	AZONode *parent = node->children;
+	AZONode *member = parent->next;
+	assert(AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER));
+	int result = optimize_node(opt, parent, flags);
 	if (result) return result;
+	if (parent->term.type == AZO_TERM_CONSTANT) {
+		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER)) {
+			void *inst;
+			const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
+			return optimize_member_inst (opt, node, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
+		}
+	}
 	return 0;
 }
 

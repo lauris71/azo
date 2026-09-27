@@ -50,14 +50,18 @@ enum {
 	/**
 	 * @brief Block
 	 * 
+	 * Groups sentences, creates a new scope
+	 * Subtypes: PLAIN, STATIC, REFERENCE
+	 * 
 	 * BLOCK
+	 *   [REFERENCE]
 	 *   [SENTENCE ...]
 	 */
 	AZO_TERM_BLOCK,
 	/**
 	 * @brief Statement group
 	 * 
-	 * Statement group - behaves like a block but does not create a new scope
+	 * Groups statements (step or silent), does not create a new scope
 	 *
 	 * STATEMENT_GROUP
 	 *   [STATEMENT ...]
@@ -193,6 +197,13 @@ enum {
 
 /* Unspecified subtype */
 #define AZO_TERM_GENERIC 0
+
+/* Block subtypes */
+enum {
+	AZO_TERM_BLOCK_PLAIN,
+	AZO_TERM_BLOCK_STATIC,
+	AZO_TERM_BLOCK_REFERENCE
+};
 
 /* Reference subtypes */
 enum {
@@ -346,8 +357,10 @@ enum {
 	AZO_TERM_FLAG_ROUNDED = 2,
 	/* Declaration qualifiers */
 	AZO_TERM_FLAG_STATIC = 4,
-	AZO_TERM_FLAG_CONST = 8,
-	AZO_TERM_FLAG_FINAL = 16
+	AZO_TERM_FLAG_SHARED = 8,
+	AZO_TERM_FLAG_FINAL = 16,
+	AZO_TERM_FLAG_WEAK = 32,
+	AZO_TERM_FLAG_CONST = 64,
 };
 
 struct _AZONode {

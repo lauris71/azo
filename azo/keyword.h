@@ -22,10 +22,13 @@ enum {
 	AZO_KEYWORD_NULL,
 	/* VOID */
 	AZO_KEYWORD_VOID,
-	/* TYPE QUALIFIERS */
+	/* TYPE QUALIFIERS, the order is fixed: */
+	/* [static|shared] [final] [weak] [const] */
 	AZO_KEYWORD_STATIC,
-	AZO_KEYWORD_CONST,
+	AZO_KEYWORD_SHARED,
 	AZO_KEYWORD_FINAL,
+	AZO_KEYWORD_WEAK,
+	AZO_KEYWORD_CONST,
 	/* BOOLEANS */
 	AZO_KEYWORD_TRUE,
 	AZO_KEYWORD_FALSE,
@@ -100,6 +103,8 @@ unsigned int azo_keyword_lookup (const unsigned char *text, unsigned int len);
 
 /* Tests both token type and content */
 unsigned int azo_token_is_keyword(const AZOToken *token, unsigned int keyword, const AZOSource *src);
+unsigned int azo_token_is_bareword(const AZOToken *token, const AZOSource *src);
+
 /**
  * @brief Return the keyword code or AZO_KEYWORD_NONE if not a keyword
  * 

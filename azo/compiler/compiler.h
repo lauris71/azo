@@ -114,9 +114,6 @@ void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_im
 AZOFrame *azo_compiler_set_frame (AZOCompiler *comp, AZOFrame *frame);
 AZOFrame *azo_compiler_pop_frame (AZOCompiler *comp);
 
-/* Declares variable at next free position unless already known */
-void azo_compiler_declare_variable (AZOCompiler *comp, AZString *name, unsigned int type);
-
 void azo_compiler_write_ic (AZOCompiler *comp, unsigned int ic, const AZONode *expr);
 
 void azo_compiler_write_DEBUG_STACK (AZOCompiler *comp);

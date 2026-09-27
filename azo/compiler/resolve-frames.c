@@ -31,14 +31,21 @@ analyze_variables (AZOCompiler *comp, AZONode *expr)
 }
 
 static unsigned int
-resolve_children (AZOCompiler *comp, AZONode *node, unsigned int flags)
+resolve_list(AZOCompiler *comp, AZONode *node, unsigned int flags)
 {
 	unsigned int result = 0;
-	for (AZONode *child = node->children; child; child = child->next) {
-		unsigned int lresult = azo_compiler_resolve_node (comp, child, flags);
+	while (node) {
+		unsigned int lresult = azo_compiler_resolve_node (comp, node, flags);
 		if (lresult) result = 1;
+		node = node->next;
 	}
 	return result;
+}
+
+static unsigned int
+resolve_children (AZOCompiler *comp, AZONode *node, unsigned int flags)
+{
+	return resolve_list(comp, node->children, flags);
 }
 
 static unsigned int
@@ -72,12 +79,14 @@ resolve_new (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	unsigned int result = 0;
 	static AZString *new_str = NULL;
 	if (!new_str) new_str = az_string_new((const uint8_t *) "new");
-	AZONode *ref, *args, *child;
-	ref = expr->children;
-	args = ref->next;
+	AZONode *type, *args, *child;
+	type = expr->children;
+	args = type->next;
 	assert (!args->next);
-	result = azo_compiler_resolve_node_to_class(comp, ref, flags);
+
+	result = azo_compiler_resolve_type_expression(comp, type, flags);
 	if (result) return result;
+
 	result = azo_compiler_resolve_node (comp, args, flags);
 	if (result) return result;
 
@@ -94,7 +103,9 @@ resolve_new (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	/* All arguments are constants */
 	const AZClass *klass;
 	const AZImplementation *impl;
-	klass = (AZClass *) ref->value.v.block;
+
+	klass = AZ_CLASS_FROM_TYPE(type->term.subtype);
+
 	impl = (AZImplementation *) klass;
 	AZFunctionSignature *sig = az_function_signature_new (AZ_TYPE_NONE, AZ_CLASS_TYPE(klass), n_args, arg_types);
 	const AZClass *def_class;
@@ -111,16 +122,16 @@ resolve_new (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 				fprintf (stderr, "azo_compiler_resolve_new: Property new is not readable\n");
 				return 1;
 			}
-			az_packed_value_set_from_impl_value (&ref->value, prop_impl, &prop_val.value);
+			az_packed_value_set_from_impl_value (&type->value, prop_impl, &prop_val.value);
 			expr->term.type = AZO_TERM_FUNCTION_CALL;
 			expr->term.subtype = AZO_TERM_GENERIC;
-			ref->term.type = AZO_TERM_CONSTANT;
+			type->term.type = AZO_TERM_CONSTANT;
 			if (prop_impl) {
-				ref->term.subtype = AZ_IMPL_TYPE(prop_impl);
+				type->term.subtype = AZ_IMPL_TYPE(prop_impl);
 				az_value_clear (prop_impl, &prop_val.value);
 			} else {
 				// Missing new, this is not normal
-				ref->term.subtype = 0;
+				type->term.subtype = 0;
 			}
 #ifdef DEBUG_RESOLVE_NEW
 			fprintf (stderr, "azo_compiler_resolve_new: Replaced new %s with constant\n", klass->name);
@@ -132,11 +143,11 @@ resolve_new (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 }
 
 static unsigned int
-resolve_declaration (AZOCompiler *comp, AZONode *expr, unsigned int flags)
+resolve_declaration (AZOCompiler *comp, AZONode *node, unsigned int flags)
 {
 	AZOVariable *var;
 	unsigned int result;
-	AZONode *id = expr->children;
+	AZONode *id = node->children;
 	AZONode *value = id->next;
 	if (azo_scope_lookup_local_var (comp->current->scope, id->value.v.string)) {
 		fprintf (stderr, "resolve_declaration: Variable %s already declared in scope\n", id->value.v.string->str);
@@ -158,17 +169,28 @@ resolve_declaration_list (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	unsigned int result;
 	AZONode *type = expr->children;
 	AZONode *child = type->next;
-	result = azo_compiler_resolve_node_to_class(comp, type, flags);
+	result = azo_compiler_resolve_type_expression(comp, type, flags);
 	if (result) return result;
-	type->term.type = AZO_TERM_TYPE;
-	type->term.subtype = AZ_IMPL_TYPE((AZImplementation *) type->value.v.block);
-	az_packed_value_clear (&type->value);
 	for (child = type->next; child; child = child->next) {
 		if (resolve_declaration (comp, child, flags)) {
 			return 1;
 		}
 	}
 	return 0;
+}
+
+static unsigned int
+resolve_argument_declaration (AZOCompiler *comp, AZONode *expr, unsigned int flags)
+{
+	unsigned int result;
+	AZONode *type = expr->children;
+	AZONode *child = type->next;
+	if (type->term.type != AZO_TERM_EMPTY) {
+		result = azo_compiler_resolve_type_expression(comp, type, flags);
+		if (result) return result;
+		// fixme: Use type
+	}
+	return azo_compiler_resolve_node (comp, child, flags);
 }
 
 static unsigned int
@@ -197,24 +219,14 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 	}
 
 	/* Return type */
-	result = azo_compiler_resolve_node (comp, type, flags);
-	if (result) return result;
 	if (type->term.type == AZO_TERM_EMPTY) {
 		/* Replace void with type none */
 		type->term.type = AZO_TERM_TYPE;
 		type->term.subtype = AZ_TYPE_NONE;
 		az_packed_value_clear (&type->value);
 	} else {
-		if (type->term.type != AZO_TERM_CONSTANT) {
-			fprintf (stderr, "resolve_function: Return type is not a compile-time constant (%u/%u)\n", type->term.type, type->term.subtype);
-			return 1;
-		}
-		if (type->term.subtype != AZ_TYPE_CLASS) {
-			fprintf (stderr, "resolve_function: Return type is not a class\n");
-			return 1;
-		}
-		type->term.type = AZO_TERM_TYPE;
-		type->term.subtype = AZ_IMPL_TYPE((AZImplementation *) type->value.v.block);
+		result = azo_compiler_resolve_type_expression(comp, type, flags);
+		if (result) return result;
 	}
 	unsigned int ret_type = type->term.subtype;
 
@@ -244,19 +256,11 @@ resolve_function (AZOCompiler *comp, AZONode *expr, unsigned int flags)
 		}
 		type = child->children;
 		AZONode *name = type->next;
-		result = azo_compiler_resolve_node (comp, type, flags);
-		if (result) return result;
 		if (type->term.type != AZO_TERM_EMPTY) {
-			if (type->term.type != AZO_TERM_CONSTANT) {
-				fprintf (stderr, "resolve_function: Argument type is not a compile-time constant (%u/%u)\n", type->term.type, type->term.subtype);
-				return 1;
-			}
-			if (type->term.subtype != AZ_TYPE_CLASS) {
-				fprintf (stderr, "resolve_function: Argument type is not a class\n");
-				return 1;
-			}
+			result = azo_compiler_resolve_type_expression(comp, type, flags);
+			if (result) return result;
 		}
-		if ((name->term.type != AZO_TERM_REFERENCE) || (name->term.subtype != AZO_TERM_REFERENCE_VARIABLE)) {
+		if (!AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE)) {
 			fprintf (stderr, "resolve_function: Invalid expression type %u/%u in signature\n", name->term.type, name->term.subtype);
 			return 1;
 		}
@@ -465,7 +469,19 @@ azo_compiler_resolve_node (AZOCompiler *comp, AZONode *node, unsigned int flags)
 		case AZO_TERM_BLOCK:
 			/* Create new scope */
 			azo_frame_push_scope(comp->current);
-			result = resolve_children(comp, node, flags);
+			if (node->term.subtype == AZO_TERM_BLOCK_PLAIN) {
+				result = resolve_children(comp, node, flags);
+			} else if (node->term.subtype == AZO_TERM_BLOCK_STATIC) {
+				result = resolve_children(comp, node, flags);
+			} else if (node->term.subtype == AZO_TERM_BLOCK_REFERENCE) {
+				AZONode *expr = node->children;
+				result = azo_compiler_resolve_node(comp, expr, flags);
+				unsigned int lresult = resolve_list(comp, expr->next, flags);
+				if (lresult) result = 1;
+			} else {
+				fprintf(stderr, "resolve_block: Invalid block subtype %u\n", node->term.subtype);
+				return 1;
+			}
 			node->scope_size = azo_scope_get_size(comp->current->scope);
 			azo_frame_pop_scope(comp->current);
 			return result;
@@ -491,8 +507,9 @@ azo_compiler_resolve_node (AZOCompiler *comp, AZONode *node, unsigned int flags)
 		case AZO_TERM_DECLARATION_LIST:
 			return resolve_declaration_list (comp, node, flags);
 		case AZO_TERM_DECLARATION:
-		case AZO_TERM_ARGUMENT_DECLARATION:
 			return resolve_children(comp, node, flags);
+		case AZO_TERM_ARGUMENT_DECLARATION:
+			return resolve_argument_declaration(comp, node, flags);
 		case AZO_TERM_FUNCTION:
 			return resolve_function (comp, node, flags);
 		case AZO_TERM_FUNCTION_CALL:

@@ -16,25 +16,15 @@
 #include <az/string.h>
 #include <az/extend.h>
 
+#include <azo/errors.h>
 #include <azo/keyword.h>
 #include <azo/operator.h>
 #include <azo/parser.h>
 
-static const char *parser_errors[] = {
-	"No error",
-	"Unexpected EOF",
-	"Syntax error",
-	"End of block missing",
-	"Missing semicolon",
-	"Closing brace missing",
-	"Invalid start of expression",
-	"Too many errors"
-};
-
 static unsigned int parse_program (AZOParser *parser, AZOToken *token);
 static unsigned int azo_parser_parse_sentences (AZOParser *parser, AZOToken *token);
 static unsigned int azo_parser_parse_sentence (AZOParser *parser, AZOToken *token);
-static unsigned int azo_parser_parse_block (AZOParser *parser, AZOToken *token);
+static unsigned int azo_parser_parse_block (AZOParser *parser, AZOToken *token, unsigned int subtype, AZONode *context);
 static unsigned int azo_parser_parse_line (AZOParser *parser, AZOToken *token);
 static unsigned int azo_parser_parse_statement (AZOParser *parser, AZOToken *token);
 static unsigned int azo_parser_parse_return (AZOParser *parser, AZOToken *token);
@@ -112,10 +102,10 @@ parser_report_error (AZOParser *parser, const AZOToken *token, unsigned int errv
 		AZOParserError *error = &parser->errors[parser->n_errors++];
 		error->code = errval;
 		error->token = *token;
-		strncpy (error->message, parser_errors[errval], sizeof (error->message) - 1);
+		strncpy(error->message, azo_get_error_str(errval), sizeof (error->message) - 1);
 		error->message[sizeof (error->message) - 1] = 0;
 	}
-	fprintf (stderr, "%s at line ", parser_errors[errval]);
+	fprintf (stderr, "%s at line ", azo_get_error_str(errval));
 	if (!azo_tokenizer_is_eof (&parser->tokenizer, token)) {
 		unsigned int first, last;
 		if (azo_source_find_line_range (parser->src, token->start, token->end, &first, &last)) {
@@ -130,13 +120,6 @@ parser_report_error (AZOParser *parser, const AZOToken *token, unsigned int errv
 		azo_source_ensure_lines(parser->src);
 		azo_source_print_lines (parser->src, parser->src->n_lines - 1, parser->src->n_lines, stderr);
 	}
-}
-
-const char *
-azo_parser_error_get_message (unsigned int code)
-{
-	if (code >= AZO_PARSER_NUM_ERRORS) return "Unknown error";
-	return parser_errors[code];
 }
 
 AZONode *
@@ -258,6 +241,27 @@ new_named_reference (unsigned int subtype, unsigned int start, unsigned int end,
 	return expr;
 }
 
+/*
+ * Whether the node is a valid type expression: a NAME[.NAME...] path
+ * (AZO_TERM_REFERENCE_VARIABLE, or a chain of AZO_TERM_REFERENCE_PROPERTY whose
+ * links are all variable references). Type expressions must be resolvable to a
+ * class at compile time through globals/global namespaces (link time), so
+ * general expressions (array references, calls, casts, ...) are not allowed
+ * (language.txt: Type_expression)
+ */
+
+static unsigned int
+node_is_name_path (const AZONode *node)
+{
+	if (node->term.type != AZO_TERM_REFERENCE) return 0;
+	if (node->term.subtype == AZO_TERM_REFERENCE_VARIABLE) return 1;
+	if (node->term.subtype != AZO_TERM_REFERENCE_PROPERTY) return 0;
+	if (!node->children || !node->children->next || node->children->next->next) return 0;
+	if (!node_is_name_path (node->children)) return 0;
+	return node->children->next->term.type == AZO_TERM_REFERENCE &&
+		node->children->next->term.subtype == AZO_TERM_REFERENCE_MEMBER;
+}
+
 /* Whether the token can start an expression (used to disambiguate primitive casts from parenthesized class values) */
 
 static unsigned int
@@ -353,7 +357,7 @@ parser_synchronize (AZOParser *parser, AZOToken *token)
 static unsigned int
 azo_parser_parse_sentences (AZOParser *parser, AZOToken *token)
 {
-	unsigned int result = AZO_PARSER_ERROR_NONE;
+	unsigned int result = AZO_ERROR_NONE;
 	/* Sentence list is terminated either by EOF or closing BRACE */
 	while ((token->type != AZO_TOKEN_EOF) && (token->type != AZO_TOKEN_RIGHT_BRACE)) {
 		unsigned int n_errors_before, lresult;
@@ -396,7 +400,7 @@ static unsigned int
 azo_parser_parse_sentence (AZOParser *parser, AZOToken *token)
 {
 	if (token->type == AZO_TOKEN_LEFT_BRACE) {
-		return azo_parser_parse_block (parser, token);
+		return azo_parser_parse_block (parser, token, AZO_TERM_BLOCK_PLAIN, NULL);
 	} else if (azo_token_is_keyword (token, AZO_KEYWORD_FOR, parser->src)) {
 		return parse_for (parser, token);
 	} else if (azo_token_is_keyword (token, AZO_KEYWORD_WHILE, parser->src)) {
@@ -413,10 +417,12 @@ azo_parser_parse_sentence (AZOParser *parser, AZOToken *token)
 /*
  * Block:
  *   { Sentences }
+ * 
+ * Token is at opening brace
  */
 
 static unsigned int
-azo_parser_parse_block (AZOParser *parser, AZOToken *token)
+azo_parser_parse_block (AZOParser *parser, AZOToken *token, unsigned int subtype, AZONode *context)
 {
 	AZONode *expr;
 	unsigned int result, start, end;
@@ -424,8 +430,9 @@ azo_parser_parse_block (AZOParser *parser, AZOToken *token)
 	start = token->start;
 	end = token->end;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	expr = azo_node_new (AZO_TERM_BLOCK, AZO_TERM_GENERIC, start, end);
+	expr = azo_node_new (AZO_TERM_BLOCK, subtype, start, end);
 	parser_push (parser, expr);
+	if (context) parser_append(parser, context);
 	result = azo_parser_parse_sentences (parser, token);
 	expr->term.end = token->end;
 	parser_pop (parser);
@@ -476,7 +483,7 @@ parse_remaining_multi_statement (AZOParser *parser, AZOToken *token, unsigned in
 		}
 		if (result) return result;
 	}
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -510,7 +517,7 @@ parse_multi_statement (AZOParser *parser, AZOToken *token, unsigned int terminat
 	if (token->type != terminator) {
 		return (terminator == AZO_TOKEN_SEMICOLON) ? AZO_PARSER_ERROR_SEMICOLON_MISSING : AZO_PARSER_ERROR_CLOSING_PARENTHESIS_MISSING;
 	}
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -566,7 +573,7 @@ azo_parser_parse_line (AZOParser *parser, AZOToken *token)
 		if (token_is_sentence_boundary (parser, token)) {
 			/* Log the error but continue as if the semicolon was there */
 			parser_report_error (parser, token, AZO_PARSER_ERROR_SEMICOLON_MISSING);
-			return AZO_PARSER_ERROR_NONE;
+			return AZO_ERROR_NONE;
 		}
 		return AZO_PARSER_ERROR_SEMICOLON_MISSING;
 	}
@@ -595,14 +602,14 @@ azo_parser_parse_statement (AZOParser *parser, AZOToken *token)
 		parser_append (parser, expr);
 		/* The following token may be EOF - the semicolon check (and repair) is done by parse_line */
 		azo_tokenizer_get_next_token (&parser->tokenizer, token);
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	}
 #ifdef HAS_DEBUG_KEYWORD
 	else if (azo_token_is_keyword (token, AZO_KEYWORD_DEBUG, parser->src)) {
 		AZONode *expr = azo_node_new (AZO_TERM_KEYWORD, AZO_KEYWORD_DEBUG, token->start, token->end);
 		parser_append (parser, expr);
 		azo_tokenizer_get_next_token (&parser->tokenizer, token);
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	}
 #endif
 	result = azo_parser_parse_step_statement (parser, token);
@@ -632,7 +639,35 @@ azo_parser_parse_return (AZOParser *parser, AZOToken *token)
 	}
 	expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_RETURN, start, end, 1, val);
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
+}
+
+/*
+ * Consume token and go forward if it is keyword
+ */
+
+ static int
+parse_keyword(AZOParser *parser, AZOToken *token, unsigned int keyword)
+{
+	if (azo_token_get_keyword(token, parser->src) == keyword) {
+		azo_tokenizer_get_next_token (&parser->tokenizer, token);
+		return 1;
+	}
+	return 0;
+}
+
+static int
+parse_qualifiers(AZOParser *parser, AZOToken *token, uint16_t *flags)
+{
+	if (parse_keyword(parser, token, AZO_KEYWORD_STATIC)) *flags |= AZO_TERM_FLAG_STATIC;
+	if (parse_keyword(parser, token, AZO_KEYWORD_SHARED)) {
+		if (*flags & AZO_TERM_FLAG_STATIC) return AZO_PARSER_ERROR_SYNTAX;
+		*flags |= AZO_TERM_FLAG_SHARED;
+	}
+	if (parse_keyword(parser, token, AZO_KEYWORD_FINAL)) *flags |= AZO_TERM_FLAG_FINAL;
+	if (parse_keyword(parser, token, AZO_KEYWORD_WEAK)) *flags |= AZO_TERM_FLAG_WEAK;
+	if (parse_keyword(parser, token, AZO_KEYWORD_CONST)) *flags |= AZO_TERM_FLAG_CONST;
+	return 0;
 }
 
 /*
@@ -648,31 +683,23 @@ static unsigned int
 azo_parser_parse_step_statement (AZOParser *parser, AZOToken *token)
 {
 	uint16_t flags = 0;
-	unsigned int result;
-	/* Qualifiers can appear in any order but only once each */
-	while (1) {
-		unsigned int keyword = azo_token_get_keyword (token, parser->src);
-		if (keyword == AZO_KEYWORD_STATIC) {
-			if (flags & AZO_TERM_FLAG_STATIC) return AZO_PARSER_ERROR_SYNTAX;
-			flags |= AZO_TERM_FLAG_STATIC;
-		} else if (keyword == AZO_KEYWORD_CONST) {
-			if (flags & AZO_TERM_FLAG_CONST) return AZO_PARSER_ERROR_SYNTAX;
-			flags |= AZO_TERM_FLAG_CONST;
-		} else if (keyword == AZO_KEYWORD_FINAL) {
-			if (flags & AZO_TERM_FLAG_FINAL) return AZO_PARSER_ERROR_SYNTAX;
-			flags |= AZO_TERM_FLAG_FINAL;
-		} else {
-			break;
-		}
-		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	unsigned int result = parse_qualifiers(parser, token, &flags);
+	if (result) return result;
+	if (token->type == AZO_TOKEN_EOF) {
+		return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	}
+	/* ';' and ')' mark empty block, qualifiers are error */
 	if ((token->type == AZO_TOKEN_SEMICOLON) || (token->type == AZO_TOKEN_RIGHT_PARENTHESIS)) {
 		/* EMPTY */
-		AZONode *expr;
 		if (flags) return AZO_PARSER_ERROR_SYNTAX;
-		expr = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->start);
-		parser_append (parser, expr);
-		return AZO_PARSER_ERROR_NONE;
+		AZONode *node = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->start);
+		parser_append (parser, node);
+		return AZO_ERROR_NONE;
+	}
+	/* '{' and 'static' starts static block */
+	if (token->type == AZO_TOKEN_LEFT_BRACE) {
+		if (flags != AZO_TERM_FLAG_STATIC) return AZO_PARSER_ERROR_SYNTAX;
+		return azo_parser_parse_block(parser, token, AZO_TERM_BLOCK_STATIC, NULL);
 	}
 #ifdef HAS_FUNCTION_KEYWORD
 	if (azo_token_is_keyword (token, AZO_KEYWORD_FUNCTION, parser->src)) {
@@ -681,27 +708,31 @@ azo_parser_parse_step_statement (AZOParser *parser, AZOToken *token)
 		AZONode *expr = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
 		parser_append (parser, expr);
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-		if ((token->type != AZO_TOKEN_WORD) || (azo_token_get_keyword (token, parser->src) != AZO_KEYWORD_NONE)) return AZO_PARSER_ERROR_SYNTAX;
+		if (!azo_token_is_bareword(token, parser->src)) return AZO_PARSER_ERROR_SYNTAX;
 		return azo_parser_parse_declaration (parser, token, flags);
 	}
 #endif
-	/* Either Declaration or Silent Statement - both start with expression */
+	/* Either Declaration, Silent Statement or member block - all start with expression */
 	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
 	if (result) return result;
 	/* If a naked word follows it is declaration (keywords cannot be variable names) */
-	if ((token->type == AZO_TOKEN_WORD) && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE)) {
+	if (azo_token_is_bareword(token, parser->src)) {
 		return azo_parser_parse_declaration (parser, token, flags);
-	} else {
-		AZONode *expr;
-		if (flags) return AZO_PARSER_ERROR_SYNTAX;
-		if (AZO_TOKEN_IS_OPERATOR (token) && azo_operator_is_assignment (AZO_TOKEN_OPERATOR_CODE (token))) {
-			/* Assignment */
-			return parse_assignment_statement (parser, token);
-		}
-		expr = parser_peek_last (parser);
-		if (!term_is_silent_statement (&expr->term)) return AZO_PARSER_ERROR_SYNTAX;
-		return AZO_PARSER_ERROR_NONE;
 	}
+	/* No flags allowed */
+	if (flags) return AZO_PARSER_ERROR_SYNTAX;
+	/* '{' starts member block */
+	if (token->type == AZO_TOKEN_LEFT_BRACE) {
+		AZONode *context = parser_detach_last(parser);
+		return azo_parser_parse_block(parser, token, AZO_TERM_BLOCK_REFERENCE, context);
+	}
+	if (AZO_TOKEN_IS_OPERATOR(token) && azo_operator_is_assignment(AZO_TOKEN_OPERATOR_CODE(token))) {
+		/* Assignment */
+		return parse_assignment_statement (parser, token);
+	}
+	AZONode *node = parser_peek_last (parser);
+	if (!term_is_silent_statement (&node->term)) return AZO_PARSER_ERROR_SYNTAX;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -714,10 +745,14 @@ azo_parser_parse_step_statement (AZOParser *parser, AZOToken *token)
 static unsigned int
 azo_parser_parse_declaration (AZOParser *parser, AZOToken *token, uint16_t flags)
 {
-	unsigned int result = AZO_PARSER_ERROR_NONE;
+	unsigned int result = AZO_ERROR_NONE;
 	AZONode *declr, *type, *last;
 	/* Create topmost declaration list */
 	type = parser_detach_last (parser);
+	if (!node_is_name_path (type)) {
+		azo_node_free_tree (type);
+		return AZO_PARSER_ERROR_INVALID_TYPE_EXPRESSION;
+	}
 	declr = azo_node_new_with_children (AZO_TERM_DECLARATION_LIST, AZO_TERM_GENERIC, type->term.start, token->end, 1, type);
 	declr->term.flags = flags;
 	last = type;
@@ -783,7 +818,7 @@ azo_parser_parse_single_declaration (AZOParser *parser, AZOToken *token)
 	}
 	expr = azo_node_new_with_children(AZO_TERM_DECLARATION, AZO_TERM_GENERIC, left->term.start, end, 2, left, right);
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -804,7 +839,7 @@ azo_parser_parse_silent_statement (AZOParser *parser, AZOToken *token)
 		/* EMPTY */
 		expr = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->start);
 		parser_append (parser, expr);
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	}
 	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
 	if (result) return result;
@@ -814,7 +849,7 @@ azo_parser_parse_silent_statement (AZOParser *parser, AZOToken *token)
 	}
 	expr = parser_peek_last (parser);
 	if (!term_is_silent_statement (&expr->term)) return AZO_PARSER_ERROR_SYNTAX;
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -1193,7 +1228,7 @@ azo_parser_continue_expression (AZOParser *parser, AZOToken *token, unsigned int
 			break;
 		}
 	}
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 static unsigned int
@@ -1225,7 +1260,7 @@ azo_parser_parse_prefix_expression (AZOParser *parser, AZOToken *token)
 	}
 	expr = azo_node_new_with_children (AZO_TERM_PREFIX, subtype, start, right->term.end, 1, right);
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /* Whether the term is an assignable LValue (variable/member reference or array element) */
@@ -1309,7 +1344,7 @@ parse_assignment_statement (AZOParser *parser, AZOToken *token)
 	expr = azo_node_new (AZO_TERM_ASSIGN, subtype, start, right->term.end);
 	expr->children = left;
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -1355,7 +1390,7 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		} else {
 			return AZO_PARSER_ERROR_SYNTAX;
 		}
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	} else if (subtype == AZO_OPERATOR_ARROW) {
 		/* Member reference */
 		error = azo_parser_parse_member (parser, token, precendence);
@@ -1369,7 +1404,7 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		} else {
 			return AZO_PARSER_ERROR_SYNTAX;
 		}
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	}
 	if (azo_operator_is_comparison (subtype)) {
 		error = azo_parser_parse_expression (parser, token, precendence);
@@ -1379,7 +1414,7 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		subtype = azo_token_get_comparison_term(&optoken);
 		expr = azo_node_new_with_children(AZO_TERM_COMPARISON, subtype, left->term.start, right->term.end, 2, left, right);
 		parser_append (parser, expr);
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	}
 	if (azo_operator_is_arithmetic (subtype)) {
 		error = azo_parser_parse_expression (parser, token, precendence);
@@ -1389,19 +1424,19 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		subtype = azo_token_get_binary_term(&optoken);
 		expr = azo_node_new_with_children(AZO_TERM_BINARY, subtype, left->term.start, right->term.end, 2, left, right);
 		parser_append (parser, expr);
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	}
 	if (subtype == AZO_OPERATOR_PLUSPLUS) {
 		left = parser_detach_last (parser);
 		expr = azo_node_new_with_children (AZO_TERM_SUFFIX, AZO_TERM_SUFFIX_INCREMENT, left->term.start, end, 1, left);
 		parser_append (parser, expr);
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	}
 	if (subtype == AZO_OPERATOR_MINUSMINUS) {
 		left = parser_detach_last (parser);
 		expr = azo_node_new_with_children (AZO_TERM_SUFFIX, AZO_TERM_SUFFIX_DECREMENT, left->term.start, end, 1, left);
 		parser_append (parser, expr);
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	}
 	if (subtype == AZO_OPERATOR_QUESTION) {
 		/* Ternary selection - CONDITION ? TRUE_EXPRESSION : FALSE_EXPRESSION */
@@ -1436,7 +1471,7 @@ parse_operator (AZOParser *parser, AZOToken *token)
 		qend = iffalse->term.end;
 		expr = azo_node_new_with_children (AZO_TERM_SELECT, AZO_TERM_GENERIC, cond->term.start, qend, 3, cond, iftrue, iffalse);
 		parser_append (parser, expr);
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	}
 	/* Everything else (arrow, comma, ...) is not a valid expression operator */
 	return AZO_PARSER_ERROR_SYNTAX;
@@ -1488,7 +1523,7 @@ parse_type_operator (AZOParser *parser, AZOToken *token)
 		expr = azo_node_new_with_children (type, subtype, left->term.start, right->term.end, 2, right, left);
 	}
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -1503,12 +1538,12 @@ static unsigned int
 parse_expression_list (AZOParser *parser, AZOToken *token, unsigned int terminator)
 {
 	unsigned int error;
-	if (token->type == terminator) return AZO_PARSER_ERROR_NONE;
+	if (token->type == terminator) return AZO_ERROR_NONE;
 	while (1) {
 		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
 		if (error) return error;
 		if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-		if (token->type == terminator) return AZO_PARSER_ERROR_NONE;
+		if (token->type == terminator) return AZO_ERROR_NONE;
 		if (token->type != AZO_TOKEN_COMMA) return AZO_PARSER_ERROR_SYNTAX;
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	}
@@ -1544,7 +1579,7 @@ parse_list (AZOParser *parser, AZOToken *token)
 	expr->term.end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	parser_pop (parser);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -1567,7 +1602,7 @@ parse_function_call (AZOParser *parser, AZOToken *token)
 	AZONode *left = parser_detach_last (parser);
 	AZONode *expr = azo_node_new_with_children (AZO_TERM_FUNCTION_CALL, AZO_TERM_GENERIC, left->term.start, right->term.end, 2, left, right);
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -1596,6 +1631,11 @@ parse_argument_definition (AZOParser *parser, AZOToken *token, unsigned int *has
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 		right = parser_detach_last (parser);
 		left = parser_detach_last (parser);
+		if (!node_is_name_path (left)) {
+			azo_node_free_tree (left);
+			azo_node_free_tree (right);
+			return AZO_PARSER_ERROR_INVALID_TYPE_EXPRESSION;
+		}
 		*has_type = 1;
 	} else {
 		left = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, start, start);
@@ -1604,7 +1644,7 @@ parse_argument_definition (AZOParser *parser, AZOToken *token, unsigned int *has
 	}
 	decl = azo_node_new_with_children (AZO_TERM_ARGUMENT_DECLARATION, AZO_TERM_GENERIC, start, token->start, 2, left, right);
 	parser_append (parser, decl);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -1627,7 +1667,7 @@ continue_arguments_definition (AZOParser *parser, AZOToken *token, unsigned int 
 		*any_typed |= is_typed;
 		*any_untyped |= !is_typed;
 	}
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 #ifdef HAS_FUNCTION_KEYWORD
@@ -1675,7 +1715,7 @@ parse_arguments_definition (AZOParser *parser, AZOToken *token)
 	expr->term.end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	parser_pop (parser);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -1731,7 +1771,7 @@ parse_function_definition (AZOParser *parser, AZOToken *token, unsigned int is_m
 		/* The bareword evaluates to the function class (e.g. function.name, a implements function, function f) */
 		expr = new_named_reference (AZO_TERM_REFERENCE_VARIABLE, start, token->start, "function");
 		parser_append (parser, expr);
-		return AZO_PARSER_ERROR_NONE;
+		return AZO_ERROR_NONE;
 	} else {
 		/* Keep the offending token as anchor for error recovery */
 		return AZO_PARSER_ERROR_SYNTAX;
@@ -1769,7 +1809,7 @@ parse_function_definition (AZOParser *parser, AZOToken *token, unsigned int is_m
 		expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC_OLD, start, body->term.end, 3, type, args, body);
 	}
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 #endif
 
@@ -1811,6 +1851,10 @@ parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, 
 		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
 		if (error) return error;
 		type = parser_detach_last (parser);
+		if (!node_is_name_path (type)) {
+			azo_node_free_tree (type);
+			return AZO_PARSER_ERROR_INVALID_TYPE_EXPRESSION;
+		}
 	} else {
 		/* Keep the offending token as anchor for error recovery */
 		return AZO_PARSER_ERROR_SYNTAX;
@@ -1879,7 +1923,7 @@ parse_array_element (AZOParser *parser, AZOToken *token)
 	left = parser_detach_last (parser);
 	expr = azo_node_new_with_children (AZO_TERM_ARRAY_ELEMENT, AZO_TERM_GENERIC, left->term.start, right->term.end, 2, left, right);
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -1908,7 +1952,7 @@ parse_array_literal (AZOParser *parser, AZOToken *token)
 	expr->term.end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	parser_pop (parser);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -1934,6 +1978,7 @@ parse_new (AZOParser *parser, AZOToken *token)
 	/* The class expression (member references bind tighter, calls are not consumed) */
 	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_FUNCTION);
 	if (error) return error;
+	if (!node_is_name_path (parser_peek_last (parser))) return AZO_PARSER_ERROR_INVALID_TYPE_EXPRESSION;
 	/* The constructor arguments */
 	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
 	error = parse_list (parser, token);
@@ -1942,7 +1987,7 @@ parse_new (AZOParser *parser, AZOToken *token)
 	type = parser_detach_last (parser);
 	expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_NEW, start, args->term.end, 2, type, args);
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -1977,7 +2022,7 @@ parse_while (AZOParser *parser, AZOToken *token)
 	//AZONode *node = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_FOR, start, block->term.end, 4, left, cond, right, block);
 	AZONode *node = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_WHILE, start, block->term.end, 2, cond, block);
 	parser_append (parser, node);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -2026,7 +2071,7 @@ parse_for (AZOParser *parser, AZOToken *token)
 	left = parser_detach_last (parser);
 	expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_FOR, start, block->term.end, 4, left, middle, right, block);
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -2070,7 +2115,7 @@ parse_if (AZOParser *parser, AZOToken *token)
 	}
 	expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_IF, start, end, 3, cond, if_true, if_false);
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 
 /*
@@ -2121,6 +2166,6 @@ parse_do (AZOParser *parser, AZOToken *token)
 	/* Unlike for the condition is evaluated after the block */
 	expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_DO, start, end, 2, block, cond);
 	parser_append (parser, expr);
-	return AZO_PARSER_ERROR_NONE;
+	return AZO_ERROR_NONE;
 }
 

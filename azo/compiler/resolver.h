@@ -19,7 +19,15 @@ extern "C" {
 unsigned int azo_compiler_resolve_node (AZOCompiler *comp, AZONode *expr, unsigned int flags);
 
 int azo_compiler_resolve_reference (AZOCompiler *comp, AZONode *expr, unsigned int flags);
-unsigned int azo_compiler_resolve_node_to_class(AZOCompiler *comp, AZONode *expr, unsigned int flags);
+/**
+ * @brief Resolve type expression to TYPE term
+ * 
+ * @param comp The compiler
+ * @param node The current node
+ * @param flags Resolver flags
+ * @return int 0 on success, non-zero on error
+ */
+int azo_compiler_resolve_type_expression(AZOCompiler *comp, AZONode *node, unsigned int flags);
 
 #ifdef __cplusplus
 }

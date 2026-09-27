@@ -100,15 +100,6 @@ azo_compiler_pop_frame (AZOCompiler *comp)
 }
 
 void
-azo_compiler_declare_variable (AZOCompiler *comp, AZString *name, unsigned int type)
-{
-	unsigned int result;
-	if (!azo_frame_declare_variable (comp->current, name, type, &result)) {
-		fprintf (stderr, "azo_compiler_declare_variable: Variable %s is already defined in current scope\n", name->str);
-	}
-}
-
-void
 azo_compiler_write_ic(AZOCompiler *comp, unsigned int ic, const AZONode *expr)
 {
 	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
@@ -306,28 +297,34 @@ azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint3
 static void
 write_PUSH_VALUE(AZOCompiler *comp, unsigned int pos, const AZONode *node)
 {
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, node);
+	write_tc_u32(comp, AZO_TC_PUSH_VALUE, pos, node);
+}
+
+static void
+write_PUSH_CAPTURE(AZOCompiler *comp, unsigned int pos, const AZONode *node)
+{
+	write_tc_u32(comp, AZO_TC_PUSH_CAPTURE, pos, node);
 }
 
 static void
 compile_PUSH_VALUE_const(AZOCompiler *comp, unsigned int type, const AZValue *val, const AZONode *node)
 {
 	unsigned int pos = azo_frame_append_value (comp->current, type, val);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, comp->current->n_parent_vars + pos, node);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, node);
 }
 
 static void
 compile_PUSH_VALUE_const_string(AZOCompiler *comp, AZString *str, const AZONode *node)
 {
 	unsigned int pos = azo_frame_append_string (comp->current, str);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, comp->current->n_parent_vars + pos, node);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, node);
 }
 
 static void
 compile_PUSH_VALUE_const_object(AZOCompiler *comp, AZObject *obj, const AZONode *node)
 {
 	unsigned int pos = azo_frame_append_object (comp->current, obj);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, comp->current->n_parent_vars + pos, node);
+	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, node);
 }
 
 /* End temporary */
@@ -379,6 +376,13 @@ azo_compiler_compile_constant (AZOCompiler *comp, const AZONode *expr, AZOSource
 		fprintf (stderr, "azo_compiler_compile_constant: Unknown constant type %u\n", expr->term.subtype);
 		return 0;
 	}
+	return 1;
+}
+
+static int
+compile_this(AZOCompiler *comp, const AZONode *node, AZOSource *src)
+{
+	azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, 0, node);
 	return 1;
 }
 
@@ -727,19 +731,20 @@ static unsigned int
 compile_new (AZOCompiler *comp, const AZONode *klass, const AZONode *list, AZOSource *src)
 {
 	AZONode *child;
-	unsigned int not_class, invalid_type_2, finished;
+	unsigned int invalid_type_2, finished;
 	static AZString *newstr = NULL;
 	unsigned int n_args = 0;
 	if (!newstr) newstr = az_string_new ((const unsigned char *) "new");
+
+	assert(klass->term.type == AZO_TERM_TYPE);
 
 #ifdef DEBUG_NEW
 	write_DEBUG_STRING (comp, "compile_new: 1\n");
 	write_DEBUG_STACK (comp);
 #endif
-	azo_compiler_compile_expression (comp, klass, src);
-	/* [Value] */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_CLASS, klass);
-	not_class = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
+	AZClass *tklass = AZ_CLASS_FROM_TYPE(klass->term.subtype);
+	compile_PUSH_VALUE_const(comp, AZ_TYPE_CLASS, (const AZValue *) &tklass, klass);
+
 	/* [Class] */
 	compile_PUSH_VALUE_const_string (comp, newstr, klass);
 	/* [Class, "new"] */
@@ -763,7 +768,6 @@ compile_new (AZOCompiler *comp, const AZONode *klass, const AZONode *list, AZOSo
 	compile_call_inst_func_args (comp, n_args, klass);
 	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 	/* Invalid type */
-	azo_compiler_update_JMP_32 (comp, not_class);
 	azo_compiler_update_JMP_32 (comp, invalid_type_2);
 	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
 	/* Finished */
@@ -991,7 +995,7 @@ compile_function_call (AZOCompiler *comp, const AZONode *func, const AZONode *li
 		write_DEBUG_STRING (comp, "Parent lval 1\n");
 		write_DEBUG_STACK (comp);
 #endif
-		write_PUSH_VALUE (comp, lval.pos, func);
+		write_PUSH_CAPTURE (comp, lval.pos, func);
 #ifdef DEBUG_PARENT_LVAL
 		write_DEBUG_STRING (comp, "Parent lval 2\n");
 		write_DEBUG_STACK (comp);
@@ -1060,16 +1064,21 @@ compile_function (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 
 	compile_PUSH_VALUE_const(comp, AZO_TYPE_PROGRAM, (const AZValue *) &prog, expr);
 	/* program */
+	if (prog->this_type) {
+		// fixme: This should be fetched from context
+		compile_this(comp, expr, src);
+		/* program [this] */
+	}
 	for (AZOVariableList *list = func_frame->parent_vars; list; list = list->next) {
 		/* list->var.parent is variable in *current* frame */
 		AZOVariable *var = list->var.parent;
 		if (var->parent) {
-			write_PUSH_VALUE (comp, var->pos, expr);
+			write_PUSH_CAPTURE (comp, var->pos, expr);
 		} else {
 			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, var->pos, expr);
 		}
 	}
-	/* program val1 ... */
+	/* program [this] val1 ... */
 	write_tc_u32 (comp, AZO_TC_CLOSURE, prog->n_captures, expr);
 	/* closure */
 
@@ -1164,21 +1173,13 @@ compile_expression_rvalue (AZOCompiler *comp, const AZONode *expr, AZOSource *sr
 		if (expr->term.subtype == AZO_TERM_VARIABLE_LOCAL) {
 			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, expr->var_pos, expr);
 		} else {
-#ifdef DEBUG_PARENT_VAR
-			write_DEBUG_STRING (comp, "Parent var 1\n");
-			write_DEBUG_STACK (comp);
-#endif
-			write_PUSH_VALUE (comp, expr->var_pos, expr);
-#ifdef DEBUG_PARENT_VAR
-			write_DEBUG_STRING (comp, "Parent var 2\n");
-			write_DEBUG_STACK (comp);
-#endif
+			write_PUSH_CAPTURE (comp, expr->var_pos, expr);
 		}
 	} else if (expr->term.type == AZO_TERM_CONSTANT) {
 		if (!azo_compiler_compile_constant (comp, expr, src)) return 0;
 	} else if (expr->term.type == AZO_TERM_KEYWORD) {
 		if (expr->term.subtype == AZO_KEYWORD_THIS) {
-			azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE_FRAME, 0, expr);
+			if (!compile_this (comp, expr, src)) return 0;
 		} else if (expr->term.subtype == AZO_KEYWORD_NEW) {
 			if (!compile_new (comp, expr->children, expr->children->next, src)) return 0;
 		} else {
@@ -1426,8 +1427,13 @@ compile_statement (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 static unsigned int
 compile_block (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 {
-	unsigned int result;
-	result = compile_sentences (comp, expr->children, src);
+	AZONode *child = expr->children;
+	if (expr->term.subtype == AZO_TERM_BLOCK_REFERENCE) {
+		// fixme: Should we push reference?
+		// Then variables should be adjusted accordingly during resolve
+		child = child->next;
+	}
+	unsigned int result = compile_sentences (comp, child, src);
 	/* Clear scope */
 	azo_compiler_write_POP (comp, expr->scope_size, NULL);
 	return result;

@@ -9,6 +9,7 @@
 #include <azo/node.h>
 #include <azo/keyword.h>
 #include <azo/operator.h>
+#include <azo/errors.h>
 
 #include "unity/unity.h"
 #include "test.h"
@@ -60,8 +61,8 @@ test_parser(void)
         if (tree) azo_node_free_tree(tree);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_INVALID_START_OF_EXPRESSION, parser.errors[0].code);
-        TEST_ASSERT_EQUAL_STRING(azo_parser_error_get_message(AZO_PARSER_ERROR_INVALID_START_OF_EXPRESSION), parser.errors[0].message);
-        TEST_ASSERT_EQUAL_STRING("Unknown error", azo_parser_error_get_message(999));
+        TEST_ASSERT_EQUAL_STRING(azo_get_error_str(AZO_PARSER_ERROR_INVALID_START_OF_EXPRESSION), parser.errors[0].message);
+        TEST_ASSERT_EQUAL_STRING("Unknown error", azo_get_error_str(999));
         azo_parser_release(&parser);
         az_object_unref((AZObject *) src);
     }
@@ -447,12 +448,13 @@ test_parser(void)
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SEMICOLON_MISSING, parser.errors[0].code);
         free_parse(&parser, src, tree);
     }
-    /* Qualifiers can appear in any order (compiler ignores them, parser keeps them) */
+    /* Qualifiers must be in order order (compiler ignores them, parser keeps them) */
     {
         const char *srcs[] = {
-            "static const final int32 a = 1;",
-            "const static int32 a = 1;",
-            "final static const int32 a = 1;",
+            "static final weak const int32 a = 1;",
+            "static final const int32 a = 1;",
+            "static const int32 a = 1;",
+            "static int32 a = 1;",
             "const int32 a = 1;",
             NULL
         };
@@ -477,6 +479,17 @@ test_parser(void)
         AZOParser parser;
         AZOSource *src;
         AZONode *tree = parse_text("static static int32 a = 1;", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
+        TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_INVALID_START_OF_EXPRESSION, parser.errors[0].code);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
+    /* No static and shared simultaneously */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("static shared int32 a = 1;", &parser, &src);
         if (tree) azo_node_free_tree(tree);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SYNTAX, parser.errors[0].code);
@@ -657,22 +670,52 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[4]->term.subtype);
+        /* The tree must contain a FUNCTION whose return type is a member reference (mod.Type) */
+        unsigned int seen_function = 0, seen_property_type = 0;
+        for (unsigned int i = 0; i < n; i++) {
+            if (nodes[i]->term.type == AZO_TERM_FUNCTION) {
+                seen_function = 1;
+                AZONode *type = nodes[i]->children;
+                if (type && (type->term.type == AZO_TERM_REFERENCE) && (type->term.subtype == AZO_TERM_REFERENCE_PROPERTY)) seen_property_type = 1;
+            }
+        }
+        TEST_ASSERT(seen_function);
+        TEST_ASSERT(seen_property_type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
-    /* Lambda: typed args, function call return type */
+    /* Type expressions: only NAME[.NAME...] is allowed (language.txt: Type_expression) */
+    {
+        const char *srcs[] = {
+            /* function call as lambda return type */
+            "f = (int32 x) factory() => x;",
+            /* function call as declaration type */
+            "factory() x = 1;",
+            /* array reference as declaration type */
+            "arr[0] x = 1;",
+            NULL
+        };
+        for (int i = 0; srcs[i]; i++) {
+            AZOParser parser;
+            AZOSource *src;
+            AZONode *tree = parse_text(srcs[i], &parser, &src);
+            if (tree) azo_node_free_tree(tree);
+            TEST_ASSERT_GREATER_THAN_UINT_MESSAGE(0, parser.n_errors, srcs[i]);
+            azo_parser_release(&parser);
+            az_object_unref((AZObject *) src);
+        }
+    }
+    /* Declaration: member-qualified type name */
     {
         AZOParser parser;
         AZOSource *src;
-        AZONode *tree = parse_text("f = (int32 x) factory() => x;", &parser, &src);
+        AZONode *tree = parse_text("Widgets.Button b = null;", &parser, &src);
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[2]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1257,8 +1300,10 @@ test_parser(void)
             { "static int32 a = 1;", AZO_TERM_FLAG_STATIC },
             { "const int32 a = 1;", AZO_TERM_FLAG_CONST },
             { "final int32 a = 1;", AZO_TERM_FLAG_FINAL },
-            { "static const final int32 a = 1;", AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_CONST | AZO_TERM_FLAG_FINAL },
-            { "const static int32 a = 1;", AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_CONST },
+            { "static final const int32 a = 1;", AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_CONST | AZO_TERM_FLAG_FINAL },
+            { "static const int32 a = 1;", AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_CONST },
+            { "shared const int32 a = 1;", AZO_TERM_FLAG_SHARED | AZO_TERM_FLAG_CONST },
+            { "shared final weak const int32 a = 1;", AZO_TERM_FLAG_SHARED | AZO_TERM_FLAG_FINAL | AZO_TERM_FLAG_WEAK | AZO_TERM_FLAG_CONST },
             { NULL, 0 }
         };
         for (int i = 0; cases[i].src; i++) {

@@ -1540,6 +1540,11 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		az_boxed_interface_unbox(&impl, &inst);
 	}
 	intr->vals[0].impl = NULL;
+	/* fixme: We should support class properties on null objects probably */
+	if (!inst) {
+		azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
+		return NULL;
+	}
 	/* Try simple property */
 	if (az_instance_get_property_by_key (impl, inst, key->str, &intr->vals[0].impl, &intr->vals[0].v)) {
 		/* Ordinary property */
