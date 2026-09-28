@@ -7,6 +7,7 @@
 */
 
 #include <stdlib.h>
+#include <assert.h>
 
 #include <az/extend.h>
 
@@ -15,6 +16,7 @@
 #include <azo/parser.h>
 #include <azo/compiler/compiler.h>
 #include <azo/compiler/optimizer.h>
+#include <azo/compiler/resolver.h>
 
 #include <azo/program.h>
 
@@ -98,27 +100,23 @@ azo_program_print_bytecode (AZOProgram *prog)
 }
 
 AZOProgram *
-azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
+azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[],
 	const uint8_t *code, unsigned int code_len)
 {
-	AZOSource *src = azo_source_new_static(name, code, code_len);
+	AZOSource *src = azo_source_new_duplicate(name, code, code_len);
 	AZOParser parser;
 	azo_parser_setup (&parser, src);
 	AZONode *expr = azo_parser_parse (&parser);
 	//azo_node_print_info(expr, stderr, src, 0);
 
 	AZOCompilerContext comp_ctx = {
-		.globals = ctx,
 		.this_impl = this_impl,
 		.this_inst = this_inst,
-		.ret_type = ret_type,
-		.n_args = n_args,
-		.arg_names = arg_names,
-		.arg_types = arg_types
+		.ret_type = ret_type
 	};
 	AZOCompiler comp;
-	azo_compiler_setup(&comp, &comp_ctx, src);
+	azo_compiler_setup(&comp, globals, &comp_ctx, src);
 	comp.debug = 1;
 	azo_compiler_push_frame(&comp, this_impl, this_inst, n_args, ret_type);
 	for (unsigned int i = 0; i < n_args; i++) {
@@ -128,7 +126,12 @@ azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 		}
 		// fixme: fail
 	}
-	int result = azo_compiler_resolve_frame(&comp, expr);
+	AZOResolveCtx res_ctx = {
+		.this_impl = this_impl,
+		.this_inst = this_inst,
+		.ret_type = ret_type
+	};
+	int result = azo_compiler_resolve_frame(&comp, &res_ctx, expr);
 	if (result != 0) {
 		azo_parser_release (&parser);
 		azo_source_unref(src);

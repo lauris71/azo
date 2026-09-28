@@ -33,15 +33,18 @@ main(int argc, const char *argv[])
     azo_node_print_info(expr, stdout, src, 0);
 
     fprintf(stderr, "-------- RESOLVING --------\n");
-    AZOContext *ctx = azo_context_new();
-    azo_context_define_basic_types(ctx);
-    AZOCompilerContext comp_ctx = {
-		.globals = ctx,
-	};
+    AZOContext *globals = azo_context_new();
+    azo_context_define_basic_types(globals);
+    AZOCompilerContext ctx = {0};
 	AZOCompiler comp;
-	azo_compiler_setup(&comp, &comp_ctx, src);
+	azo_compiler_setup(&comp, globals, &ctx, src);
 	azo_compiler_push_frame(&comp, NULL, NULL, 0, AZ_TYPE_NONE);
-	int result = azo_compiler_resolve_frame(&comp, expr);
+    AZOResolveCtx rctx = {
+        .this_impl = NULL,
+        .this_inst = NULL,
+        .ret_type = AZ_TYPE_NONE
+    };
+	int result = azo_compiler_resolve_frame(&comp, &rctx, expr);
     azo_node_print_info(expr, stdout, src, 0);
 
     fprintf(stderr, "-------- OPTIMIZING --------\n");

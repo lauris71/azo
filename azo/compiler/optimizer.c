@@ -359,18 +359,50 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 
 #define noDEBUG_MEMBER_INST
 
+/*
+ * REFERENCE_PROPERTY
+ *   AZO_TERM_REFERENCE_VARIABLE | AZO_TERM_REFERENCE_PROPERTY | CONSTANT
+ *   AZO_TERM_REFERENCE_MEMBER
+ */
+
 static int
-optimize_member_inst (AZOOptimizer *opt, AZONode *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str, unsigned int flags)
+optimize_attribute (AZOOptimizer *opt, AZONode *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str, unsigned int flags)
 {
-	const AZClass *def_class;
-	const AZImplementation *def_impl;
-	void *def_inst;
+	if (inst && az_type_implements(AZ_IMPL_TYPE(impl), AZ_TYPE_ATTRIBUTE_DICT)) {
+		void *attrd_inst;
+		const AZAttribDictImplementation *attrd_impl = (AZAttribDictImplementation *) az_instance_get_interface (impl, inst, AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
+		AZValue64 attr_val;
+		unsigned int attr_flags;
+		const AZImplementation *attr_impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, str, &attr_val.value, 64, &attr_flags);
+		if (attr_flags & AZ_ATTRIB_ARRAY_IS_FINAL) {
+			az_packed_value_set_from_impl_value (&expr->value, attr_impl, &attr_val.value);
+			expr->term.type = AZO_TERM_CONSTANT;
+			if (attr_impl) {
+				expr->term.subtype = AZ_IMPL_TYPE(attr_impl);
+				az_value_clear (attr_impl, &attr_val.value);
+			} else {
+				expr->term.subtype = 0;
+			}
+			azo_node_clear_children(expr);
+			DBG_REPLACE("resolve_attribute: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
+			return 0;
+		}
+	}
+	return 0;
+}
+
+static int
+optimize_property(AZOOptimizer *opt, AZONode *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str, unsigned int flags)
+{
 	/**
 	 * @brief Try to get property from parent
 	 * 
 	 * REFERENCE -> CONSTANT
 	 * 
 	 */
+	const AZClass *def_class;
+	const AZImplementation *def_impl;
+	void *def_inst;
 	int idx = az_class_lookup_property (klass, impl, inst, str, &def_class, &def_impl, &def_inst);
 	if (idx >= 0) {
 		AZField *field = &def_class->props_self[idx];
@@ -389,34 +421,9 @@ optimize_member_inst (AZOOptimizer *opt, AZONode *expr, const AZClass *klass, co
 			DBG_REPLACE("resolve_member: Replaced final property %s with '%s'\n", str, expr->value.impl, &expr->value.v);
 			return 0;
 		}
-	} else if (inst && az_type_implements(AZ_IMPL_TYPE(impl), AZ_TYPE_ATTRIBUTE_DICT)) {
-		/**
-		 * @brief Try to get attribute from parent
-		 * 
-		 * REFERENCE -> CONSTANT
-		 * 
-		 */
-		void *attrd_inst;
-		const AZAttribDictImplementation *attrd_impl = (AZAttribDictImplementation *) az_instance_get_interface (impl, inst, AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
-		AZValue64 attr_val;
-		unsigned int attr_flags;
-		const AZImplementation *attr_impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, str, &attr_val.value, 64, &attr_flags);
-		if (attr_flags & AZ_ATTRIB_ARRAY_IS_FINAL) {
-			az_packed_value_set_from_impl_value (&expr->value, attr_impl, &attr_val.value);
-			expr->term.type = AZO_TERM_CONSTANT;
-			if (attr_impl) {
-				expr->term.subtype = AZ_IMPL_TYPE(attr_impl);
-				az_value_clear (attr_impl, &attr_val.value);
-			} else {
-				// Final undefined value, not normal but we have to handle it
-				expr->term.subtype = 0;
-			}
-			azo_node_clear_children(expr);
-			DBG_REPLACE("resolve_member: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
-			return 0;
-		}
 	}
-	return 0;
+	// fixme: For now we support dot as an attribute but it should be removed
+	return optimize_attribute(opt, expr, klass, impl, inst, str, flags);
 }
 
 static int
@@ -450,6 +457,21 @@ optimize_group(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 static int
 optimize_keyword(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
+	if (node->term.subtype == AZO_KEYWORD_THIS) {
+		if (opt->comp->current->this_impl && opt->comp->current->this_inst) {
+			node->term.type = AZO_TERM_CONSTANT;
+			node->term.subtype = AZ_IMPL_TYPE(opt->comp->current->this_impl);
+			az_packed_value_set_autobox(&node->value, opt->comp->current->this_impl, opt->comp->current->this_inst);
+			fprintf(stderr, "resolve_member: Replaced 'this' with ");
+			azo_node_print(node, stderr);
+			fprintf(stderr, "\n");
+			unsigned int first, last;
+			if (azo_source_find_line_range(opt->comp->src, node->term.start, node->term.end, &first, &last)) {
+				azo_source_print_lines(opt->comp->src, first, last + 1, stderr);
+			}
+			opt->n_const_subst += 1;
+		}
+	}
 	return 0;
 }
 
@@ -498,7 +520,10 @@ optimize_function(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 		result = optimize_node(opt, args, flags);
 		if (result) return result;
 		AZONode *body = args->next;
+		// fixme: Think out the frame/context management
+		azo_compiler_set_frame(opt->comp, node->frame);
 		result = optimize_node(opt, body, flags);
+		azo_compiler_pop_frame(opt->comp);
 		if (result) return result;
 	} else {
 		AZONode *type = node->children;
@@ -508,7 +533,10 @@ optimize_function(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 		result = optimize_node(opt, args, flags);
 		if (result) return result;
 		AZONode *body = args->next;
+		// fixme: Think out the frame/context management
+		azo_compiler_set_frame(opt->comp, node->frame);
 		result = optimize_node(opt, body, flags);
+		azo_compiler_pop_frame(opt->comp);
 		if (result) return result;
 	}
 	return 0;
@@ -641,10 +669,12 @@ optimize_reference(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 	int result = optimize_node(opt, parent, flags);
 	if (result) return result;
 	if (parent->term.type == AZO_TERM_CONSTANT) {
-		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER)) {
-			void *inst;
-			const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
-			return optimize_member_inst (opt, node, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
+		void *inst;
+		const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
+		if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
+			return optimize_property (opt, node, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
+		} else if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_ATTRIBUTE)) {
+			return optimize_attribute(opt, node, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
 		}
 	}
 	return 0;

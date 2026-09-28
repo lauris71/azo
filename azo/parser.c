@@ -110,7 +110,7 @@ parser_report_error (AZOParser *parser, const AZOToken *token, unsigned int errv
 		unsigned int first, last;
 		if (azo_source_find_line_range (parser->src, token->start, token->end, &first, &last)) {
 			fprintf (stderr, "%d near ", first);
-			azo_tokenizer_print_token (&parser->tokenizer, token, stderr);
+			azo_source_print_token (parser->src, token->start, token->end, stderr);
 			fprintf (stderr, "\n");
 			/* fixme: Keep track of the last processed token */
 			azo_source_print_lines (parser->src, first, last + 1, stderr);

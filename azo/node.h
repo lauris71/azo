@@ -382,8 +382,6 @@ struct _AZONode {
 		 *   - position of the variable in the current frame stack (local) or datablock (parent)
 		 */
 		unsigned int var_pos;
-		/* Size of scope */
-		unsigned int scope_size;
 	};
 
 	/* Optimizer */

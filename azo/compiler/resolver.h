@@ -7,6 +7,8 @@
 * Copyright (C) Lauris Kaplinski 2016-2026
 */
 
+typedef struct _AZOResolveCtx AZOResolveCtx;
+
 #include <azo/node.h>
 #include <azo/compiler/compiler.h>
 
@@ -14,11 +16,17 @@
 extern "C" {
 #endif
 
-#define AZO_COMPILER_VAR_IS_LVALUE 1
+struct _AZOResolveCtx {
+    const AZImplementation *this_impl;
+    const void *this_inst;
+    unsigned int ret_type;
 
-unsigned int azo_compiler_resolve_node (AZOCompiler *comp, AZONode *expr, unsigned int flags);
+    unsigned int ret_is_last;
+};
 
-int azo_compiler_resolve_reference (AZOCompiler *comp, AZONode *expr, unsigned int flags);
+unsigned int azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr);
+
+int azo_compiler_resolve_reference(AZOCompiler *comp, AZOResolveCtx *rct, AZONode *expr);
 /**
  * @brief Resolve type expression to TYPE term
  * 
@@ -27,7 +35,7 @@ int azo_compiler_resolve_reference (AZOCompiler *comp, AZONode *expr, unsigned i
  * @param flags Resolver flags
  * @return int 0 on success, non-zero on error
  */
-int azo_compiler_resolve_type_expression(AZOCompiler *comp, AZONode *node, unsigned int flags);
+int azo_compiler_resolve_type_expression(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node);
 
 #ifdef __cplusplus
 }

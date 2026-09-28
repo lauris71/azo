@@ -28,6 +28,7 @@ static const int debug = 0;
 /* Bytecodes */
 #include <azo/bytecode.h>
 #include <azo/keyword.h>
+#include <azo/errors.h>
 
 #include <azo/compiler/arithmetic.h>
 #include <azo/compare.h>
@@ -58,9 +59,10 @@ struct _LValue {
 };
 
 void
-azo_compiler_setup(AZOCompiler *compiler, AZOCompilerContext *ctx, AZOSource *src)
+azo_compiler_setup(AZOCompiler *compiler, AZOContext *globals, AZOCompilerContext *ctx, AZOSource *src)
 {
 	memset (compiler, 0, sizeof (AZOCompiler));
+	compiler->globals = globals;
 	compiler->ctx = ctx;
 	compiler->src = src;
 	az_object_ref((AZObject *) src);
@@ -1369,6 +1371,7 @@ compile_single_declaration (AZOCompiler *comp, const AZONode *expr, AZOSource *s
 		azo_compiler_write_PUSH_EMPTY (comp, AZ_TYPE_NONE, expr);
 		//azo_compiler_write_PUSH_EMPTY (comp, type);
 	}
+	comp->ctx->n_stack += 1;
 	return 1;
 }
 
@@ -1433,9 +1436,14 @@ compile_block (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
 		// Then variables should be adjusted accordingly during resolve
 		child = child->next;
 	}
+	unsigned int n_stack = comp->ctx->n_stack;
 	unsigned int result = compile_sentences (comp, child, src);
 	/* Clear scope */
-	azo_compiler_write_POP (comp, expr->scope_size, NULL);
+	if (comp->ctx->n_stack > n_stack) {
+		azo_compiler_write_POP (comp, comp->ctx->n_stack - n_stack, NULL);
+		comp->ctx->n_stack = n_stack;
+	}
+	//azo_compiler_write_POP (comp, expr->scope_size, NULL);
 	return result;
 }
 
@@ -1448,9 +1456,10 @@ compile_cycle (AZOCompiler *comp, const AZONode *expr,
 {
 	unsigned int cycle_begin, cycle_end;
 
+	unsigned int n_stack = comp->ctx->n_stack;
 	/* Initialization */
 	if (init) compile_step_statement (comp, init, src);
-	/* Cycle star */
+	/* Cycle start */
 	cycle_begin = azo_frame_get_current_ip (comp->current);
 	/* Test condition */
 	if (test_at_begin) {
@@ -1473,8 +1482,11 @@ compile_cycle (AZOCompiler *comp, const AZONode *expr,
 	if (test_at_begin) {
 		azo_compiler_update_JMP_32 (comp, cycle_end);
 	}
-
-	azo_compiler_write_POP (comp, expr->scope_size, NULL);
+	if (comp->ctx->n_stack > n_stack) {
+		azo_compiler_write_POP (comp, comp->ctx->n_stack - n_stack, NULL);
+		comp->ctx->n_stack = n_stack;
+	}
+	//azo_compiler_write_POP (comp, expr->scope_size, NULL);
 	return 1;
 }
 
@@ -1620,9 +1632,6 @@ azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src)
 {
 	AZOProgram *prog;
 
-	/* Have to reserve closure before compilation */
-	//azo_frame_reserve_data (comp->current, comp->current->n_parent_vars);
-
 	if (root->term.type == AZO_TERM_PROGRAM) {
 		/* Programs are lists of sentences */
 		if (!compile_program (comp, root, src)) return NULL;
@@ -1633,7 +1642,7 @@ azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src)
 		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", root->term.type);
 		return NULL;
 	}
-	prog = azo_program_new(comp->ctx->globals, comp->current, root, src);
+	prog = azo_program_new(comp->globals, comp->current, root, src);
 
 	return prog;
 }

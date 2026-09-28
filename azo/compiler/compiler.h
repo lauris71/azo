@@ -14,6 +14,7 @@ typedef struct _AZOCompilerContext AZOCompilerContext;
 
 #include <azo/context.h>
 #include <azo/compiler/frame.h>
+#include <azo/compiler/resolver.h>
 #include <azo/node.h>
 #include <azo/interpreter.h>
 #include <azo/source.h>
@@ -24,23 +25,22 @@ extern "C" {
 
 struct _AZOCompilerContext {
 	/**
-	 * @brief Global definitions
-	 * 
-	 */
-	AZOContext *globals;
-	/**
-	 * @brief Local variables
+	 * @brief Program context
 	 * 
 	 */
 	const AZImplementation *this_impl;
 	void *this_inst;
 	unsigned int ret_type;
-	unsigned int n_args;
-	AZString **arg_names;
-	const unsigned int *arg_types;
+	/* The number of stack variables */
+	unsigned int n_stack;
 };
 
 struct _AZOCompiler {
+	/**
+	 * @brief Global definitions
+	 * 
+	 */
+	AZOContext *globals;
 	/**
 	 * @brief Compiler context
 	 * 
@@ -72,7 +72,7 @@ struct _AZOCompiler {
 	AZOFrame *current;
 };
 
-void azo_compiler_setup (AZOCompiler *compiler, AZOCompilerContext *ctx, AZOSource *src);
+void azo_compiler_setup (AZOCompiler *compiler, AZOContext *globals, AZOCompilerContext *ctx, AZOSource *src);
 void azo_compiler_release (AZOCompiler *compiler);
 
 /**
@@ -85,10 +85,12 @@ void azo_compiler_release (AZOCompiler *compiler);
  * All type expressions must resolve to constants
  * 
  * @param comp A compiler
+ * @param rctx Resolve context
  * @param root The root node of the parsed tree
  * @return 0 if successful, non-zero otherwise
  */
-int azo_compiler_resolve_frame (AZOCompiler *comp, AZONode *node);
+int azo_compiler_resolve_frame (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node);
+
 AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src);
 
 /**

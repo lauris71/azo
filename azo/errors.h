@@ -7,9 +7,30 @@
  * Copyright (C) Lauris Kaplinski 2016
  */
 
+ #include <stdint.h>
+ #include <stdio.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct _AZOCompiler AZOCompiler;
+
+enum AZOSubSystem {
+	AZO_SUBSYSTEM_PARSER,
+	AZO_SUBSYSTEM_RESOLVER,
+	AZO_SUBSYSTEM_OPTIMIZER,
+	AZO_SUBSYSTEM_COMPILER,
+	AZO_NUM_SUBSYSTEMS
+};
+
+enum AZOMessageType {
+	AZO_MESSAGE_ERROR,
+	AZO_MESSAGE_WARNING,
+	AZO_MESSAGE_INFO,
+	AZO_MESSAGE_DEBUG,
+	AZO_NUM_MESSAGE_TYPES
+};
 
 /* Error codes */
 enum {
@@ -31,6 +52,9 @@ enum {
 };
 
 const char *azo_get_error_str(int errval);
+
+void azo_compiler_printf_message(AZOCompiler *comp, FILE *ofs, unsigned int type, unsigned int subsystem, unsigned int code_start, unsigned int code_end, const char *format, ...);
+void azo_compiler_print_error(AZOCompiler *comp, FILE *ofs, unsigned int subsystem, unsigned int code_start, unsigned int code_end, unsigned int errval);
 
 #ifdef __cplusplus
 }
