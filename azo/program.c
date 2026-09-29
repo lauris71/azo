@@ -116,7 +116,7 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 		.ret_type = ret_type
 	};
 	AZOCompiler comp;
-	azo_compiler_setup(&comp, globals, &comp_ctx, src);
+	azo_compiler_setup(&comp, globals, src);
 	comp.debug = 1;
 	azo_compiler_push_frame(&comp, this_impl, this_inst, n_args, ret_type);
 	for (unsigned int i = 0; i < n_args; i++) {
@@ -150,7 +150,7 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 		return NULL;
 	}
 
-	AZOProgram *prog = azo_compiler_compile (&comp, expr, src);
+	AZOProgram *prog = azo_compiler_compile (&comp, &comp_ctx, expr, src);
 	azo_parser_release (&parser);
 	azo_source_unref(src);
 	azo_compiler_release(&comp);

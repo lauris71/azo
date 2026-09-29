@@ -521,9 +521,10 @@ optimize_function(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 		if (result) return result;
 		AZONode *body = args->next;
 		// fixme: Think out the frame/context management
+		AZOFrame *current = opt->comp->current;
 		azo_compiler_set_frame(opt->comp, node->frame);
 		result = optimize_node(opt, body, flags);
-		azo_compiler_pop_frame(opt->comp);
+		azo_compiler_set_frame(opt->comp, current);
 		if (result) return result;
 	} else {
 		AZONode *type = node->children;
@@ -534,9 +535,10 @@ optimize_function(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 		if (result) return result;
 		AZONode *body = args->next;
 		// fixme: Think out the frame/context management
+		AZOFrame *current = opt->comp->current;
 		azo_compiler_set_frame(opt->comp, node->frame);
 		result = optimize_node(opt, body, flags);
-		azo_compiler_pop_frame(opt->comp);
+		azo_compiler_set_frame(opt->comp, current);
 		if (result) return result;
 	}
 	return 0;

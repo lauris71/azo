@@ -70,6 +70,8 @@ struct _AZOFrame {
 	AZOCode code;
 };
 
+void azo_frame_init(AZOFrame *frame, AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug);
+void azo_frame_finalize(AZOFrame *frame);
 /**
  * @brief Create a new frame
  * 

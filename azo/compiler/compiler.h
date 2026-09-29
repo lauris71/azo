@@ -23,6 +23,12 @@ typedef struct _AZOCompilerContext AZOCompilerContext;
 extern "C" {
 #endif
 
+/**
+ * @brief Compiler context
+ * 
+ * Defines this object, argument types and return type
+ * 
+ */
 struct _AZOCompilerContext {
 	/**
 	 * @brief Program context
@@ -41,13 +47,6 @@ struct _AZOCompiler {
 	 * 
 	 */
 	AZOContext *globals;
-	/**
-	 * @brief Compiler context
-	 * 
-	 * Defines this object, argument types and return type
-	 * 
-	 */
-	AZOCompilerContext *ctx;
 	/**
 	 * @brief Link to source
 	 * 
@@ -70,9 +69,13 @@ struct _AZOCompiler {
 	 * 
 	 */
 	AZOFrame *current;
+
+	unsigned int n_frames_allocated;
+	unsigned int n_frames;
+	AZOFrame **frames;
 };
 
-void azo_compiler_setup (AZOCompiler *compiler, AZOContext *globals, AZOCompilerContext *ctx, AZOSource *src);
+void azo_compiler_setup (AZOCompiler *compiler, AZOContext *globals, AZOSource *src);
 void azo_compiler_release (AZOCompiler *compiler);
 
 /**
@@ -91,7 +94,7 @@ void azo_compiler_release (AZOCompiler *compiler);
  */
 int azo_compiler_resolve_frame (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node);
 
-AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *src);
+AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOCompilerContext *ctx, AZONode *root, AZOSource *src);
 
 /**
  * @brief Start new current frame, preserving link to parent
@@ -103,7 +106,7 @@ AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZONode *root, AZOSource *s
  * @param this_inst The instance of this (or NULL if none/not defined).
  * @param ret_type The return type of the code.
  */
-void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type);
+unsigned int azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type);
 /**
  * @brief Set the new current frame, removing all references to parent
  * 
@@ -114,7 +117,6 @@ void azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_im
  * @return AZOFrame* The previous current frame.
  */
 AZOFrame *azo_compiler_set_frame (AZOCompiler *comp, AZOFrame *frame);
-AZOFrame *azo_compiler_pop_frame (AZOCompiler *comp);
 
 void azo_compiler_write_ic (AZOCompiler *comp, unsigned int ic, const AZONode *expr);
 
@@ -140,7 +142,7 @@ void azo_compiler_write_COMPARE_TYPED (AZOCompiler *comp, uint32_t type);
 void azo_compiler_write_ARITHMETIC_TYPED (AZOCompiler *comp, unsigned int typecode, uint32_t type);
 void azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint32_t type);
 
-unsigned int azo_compiler_compile_expression (AZOCompiler *comp, const AZONode *expr, AZOSource *src);
+unsigned int azo_compiler_compile_expression (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src);
 
 #ifdef __cplusplus
 }

@@ -37,7 +37,7 @@ main(int argc, const char *argv[])
     azo_context_define_basic_types(globals);
     AZOCompilerContext ctx = {0};
 	AZOCompiler comp;
-	azo_compiler_setup(&comp, globals, &ctx, src);
+	azo_compiler_setup(&comp, globals, src);
 	azo_compiler_push_frame(&comp, NULL, NULL, 0, AZ_TYPE_NONE);
     AZOResolveCtx rctx = {
         .this_impl = NULL,

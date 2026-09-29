@@ -140,10 +140,10 @@ azo_compiler_compile_arithmetic_boolean (AZOCompiler *comp, unsigned int operati
 }
 
 unsigned int
-azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, AZOSource *src)
+azo_compiler_compile_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, AZOSource *src)
 {
-	if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
-	if (!azo_compiler_compile_expression (comp, rhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
 	/* LHS RHS */
 	switch (expr->term.subtype) {
 	case AZO_TERM_ARITHMETIC_PLUS:
@@ -168,10 +168,10 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, const AZONode *lhs, const AZ
 }
 
 unsigned int
-azo_compiler_compile_tilde (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
+azo_compiler_compile_tilde (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src)
 {
 	unsigned int lt_i8, gt_i64, gt_cd, finished_1, finished_2;
-	if (!azo_compiler_compile_expression (comp, expr, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, expr, src)) return 0;
 	compile_type_is_in_range (comp, 0, AZ_TYPE_INT8, AZ_TYPE_INT64, &lt_i8, &gt_i64);
 	azo_compiler_write_ic (comp, AZO_TC_BITWISE_NOT, NULL);
 	finished_1 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
@@ -188,14 +188,14 @@ azo_compiler_compile_tilde (AZOCompiler *comp, const AZONode *expr, AZOSource *s
 }
 
 unsigned int
-azo_compiler_compile_increment (AZOCompiler *comp, const AZONode *lhs, const AZONode *expr, AZOSource *src)
+azo_compiler_compile_increment (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *expr, AZOSource *src)
 {
 	unsigned int lhs_type_lt_min, lhs_type_gt_max;
 	unsigned int types_equal;
 	unsigned int finished;
 
 	/* Stack: LHS RHS */
-	if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 	compile_type_is_in_range (comp, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, &lhs_type_lt_min, &lhs_type_gt_max);
 
 	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_INT8, (const AZValue *) &uint8_one, NULL);
@@ -225,14 +225,14 @@ azo_compiler_compile_increment (AZOCompiler *comp, const AZONode *lhs, const AZO
 }
 
 unsigned int
-azo_compiler_compile_decrement (AZOCompiler *comp, const AZONode *lhs, const AZONode *expr, AZOSource *src)
+azo_compiler_compile_decrement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *expr, AZOSource *src)
 {
 	unsigned int lhs_type_lt_min, lhs_type_gt_max;
 	unsigned int types_equal;
 	unsigned int finished;
 
 	/* Stack: LHS RHS */
-	if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 	compile_type_is_in_range (comp, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, &lhs_type_lt_min, &lhs_type_gt_max);
 
 	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_INT8, (const AZValue *) &uint8_one, NULL);

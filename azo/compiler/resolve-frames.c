@@ -266,6 +266,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		n_args += 1;
 	}
 
+	AZOFrame *current = comp->current;
 	azo_compiler_push_frame (comp, this_impl, NULL, n_args, ret_type);
 
 	for (child = args->children; child; child = child->next) {
@@ -282,7 +283,8 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	int lresult = azo_compiler_resolve_frame(comp, &fctx, body);
 	if (lresult) result = 1;
 
-	expr->frame = azo_compiler_pop_frame (comp);
+	expr->frame = comp->current;
+	azo_compiler_set_frame(comp, current);
 
 	return result;
 }

@@ -185,7 +185,7 @@ compile_comparison_eq_arithmetic_arithmetic (AZOCompiler *comp, unsigned int com
 }
 
 static unsigned int
-azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
+azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
 {
 	unsigned int rhs_is_none, lhs_is_none, invalid_type_cmp_none;
 	unsigned int rhs_is_boolean, invalid_type_cmp_boolean;
@@ -195,8 +195,8 @@ azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, const AZONode *lh
 	unsigned int finished_1, finished_2, finished_3, finished_4, finished_5;
 
 	/* Stack: LHS RHS */
-	if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
-	if (!azo_compiler_compile_expression (comp, rhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
 
 	/* if (RHS.type == None) goto rhs_is_none */
 	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
@@ -269,23 +269,23 @@ azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, const AZONode *lh
 
 
 static unsigned int
-compile_comparison_any_const_eq (AZOCompiler *comp, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
+compile_comparison_any_const_eq (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
 {
 	unsigned int invalid_type, finished;
 	if (!rhs->value.impl) {
-		if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
+		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 		compile_compare_eq_any_none (comp, comp_type, &invalid_type, expr);
 		return 1;
 	} else if (AZ_PACKED_VALUE_TYPE(&rhs->value) == AZ_TYPE_POINTER) {
-		if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
+		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 		compile_comparison_eq_any_const_pointer (comp, rhs->value.v.pointer_v, comp_type, &invalid_type, expr);
 	} else if (AZ_IMPL_TYPE(rhs->value.impl) == AZ_TYPE_BLOCK) {
-		if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
+		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 		compile_comparison_eq_any_const_block (comp, AZ_IMPL_TYPE(rhs->value.impl), rhs->value.v.block, comp_type, &invalid_type, expr);
 	} else if (AZ_TYPE_IS_ARITHMETIC(AZ_PACKED_VALUE_TYPE(&rhs->value))) {
 		unsigned int lhs_type_lt_i8, lhs_type_gt_cdouble;
-		if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
-		if (!azo_compiler_compile_expression (comp, rhs, src)) return 0;
+		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
+		if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
 		compile_type_is_in_range (comp, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
 		compile_comparison_eq_arithmetic_arithmetic (comp, comp_type);
 		finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
@@ -306,27 +306,27 @@ compile_comparison_any_const_eq (AZOCompiler *comp, const AZONode *lhs, const AZ
 }
 
 static unsigned int
-azo_compiler_compile_comparison_eq (AZOCompiler *comp, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
+azo_compiler_compile_comparison_eq (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
 {
 	if (rhs->term.type == AZO_TERM_CONSTANT) {
-		return compile_comparison_any_const_eq (comp, lhs, rhs, expr, comp_type, src, reg);
+		return compile_comparison_any_const_eq (comp, ctx, lhs, rhs, expr, comp_type, src, reg);
 	} else if (lhs->term.type == AZO_TERM_CONSTANT) {
-		return compile_comparison_any_const_eq (comp, rhs, lhs, expr, comp_type, src, reg);
+		return compile_comparison_any_const_eq (comp, ctx, rhs, lhs, expr, comp_type, src, reg);
 	} else {
-		return azo_compiler_compile_comparison_eq_any_any (comp, lhs, rhs, expr, comp_type, src, reg);
+		return azo_compiler_compile_comparison_eq_any_any (comp, ctx, lhs, rhs, expr, comp_type, src, reg);
 	}
 }
 
 static unsigned int
-azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, AZOSource *src, unsigned int reg)
+azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, AZOSource *src, unsigned int reg)
 {
 	unsigned int lhs_type_lt_i8, lhs_type_gt_double, rhs_type_lt_i8, rhs_type_gt_double;
 	unsigned int types_equal_1, types_equal_2, lhs_type_gt_rhs_type;
 	unsigned int is_true, is_false;
 	unsigned int finished_1, finished_2;
 	/* Stack: LHS RHS */
-	if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
-	if (!azo_compiler_compile_expression (comp, rhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
 
 	//if (comp->debug) {
 	//	azo_compiler_write_DEBUG_STRING (comp, "azo_compiler_compile_comparison_lg_any_any start");
@@ -438,14 +438,14 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, const AZONode *lh
 }
 
 static unsigned int
-compile_comparison_any_const_lg (AZOCompiler *comp, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, AZOSource *src, unsigned int reg)
+compile_comparison_any_const_lg (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, AZOSource *src, unsigned int reg)
 {
 	unsigned int lhs_type_lt_i8, lhs_type_gt_double;
 	unsigned int types_equal_1, types_equal_2, lhs_type_gt_rhs_type;
 	unsigned int is_true, is_false;
 	unsigned int finished_1, finished_2;
 	/* Stack: LHS RHS */
-	if (!azo_compiler_compile_expression (comp, lhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 	azo_compiler_write_PUSH_IMMEDIATE (comp, (uint8_t) AZ_PACKED_VALUE_TYPE(&rhs->value), &rhs->value.v, NULL);
 	/* Test LHS is in range */
 	compile_type_is_in_range (comp, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, &lhs_type_lt_i8, &lhs_type_gt_double);
@@ -518,10 +518,10 @@ compile_comparison_any_const_lg (AZOCompiler *comp, const AZONode *lhs, const AZ
 }
 
 unsigned int
-azo_compiler_compile_comparison (AZOCompiler *comp, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, AZOSource *src, unsigned int reg)
+azo_compiler_compile_comparison (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, AZOSource *src, unsigned int reg)
 {
 	if ((expr->term.subtype == AZO_TERM_COMPARISON_E) || (expr->term.subtype == AZO_TERM_COMPARISON_NE)) {
-		return azo_compiler_compile_comparison_eq (comp, lhs, rhs, expr, expr->term.subtype, src, reg);
+		return azo_compiler_compile_comparison_eq (comp, ctx, lhs, rhs, expr, expr->term.subtype, src, reg);
 	} else if ((expr->term.subtype == AZO_TERM_COMPARISON_IDENTICAL) || (expr->term.subtype == AZO_TERM_COMPARISON_NOT_IDENTICAL)) {
 		/* fixme: implement identity comparison (=== !==) */
 		fprintf (stderr, "azo_compiler_compile_comparison: identity comparison is not implemented\n");
@@ -529,12 +529,12 @@ azo_compiler_compile_comparison (AZOCompiler *comp, const AZONode *lhs, const AZ
 	} else {
 #if 0
 		if ((lhs->term.type != EXPRESSION_CONSTANT) && (rhs->term.type == EXPRESSION_CONSTANT)) {
-			if (!compile_comparison_any_const_lg (comp, lhs, rhs, expr, text, reg)) return 0;
+			if (!compile_comparison_any_const_lg (comp, ctx, lhs, rhs, expr, src, reg)) return 0;
 			write_PUSH_FROM (comp, reg);
 			return 1;
 		}
 #endif
-		return azo_compiler_compile_comparison_lg_any_any (comp, lhs, rhs, expr, src, reg);
+		return azo_compiler_compile_comparison_lg_any_any (comp, ctx, lhs, rhs, expr, src, reg);
 	}
 }
 

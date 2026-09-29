@@ -18,10 +18,10 @@
 #include <azo/compiler/frame.h>
 #include <azo/errors.h>
 
-AZOFrame *
-azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug)
+void
+azo_frame_init(AZOFrame *frame, AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug)
 {
-	AZOFrame *frame = (AZOFrame *) calloc (1, sizeof (AZOFrame));
+	memset(frame, 0, sizeof(AZOFrame));
 	frame->parent = parent;
 	frame->ret_type = ret_type;
 	frame->this_impl = this_impl;
@@ -33,17 +33,30 @@ azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_i
 	/* If this is present, reserve the first variable position to it */
 	frame->scope = azo_scope_new (NULL, (this_impl) ? 1 : 0);
 	azo_code_init(&frame->code, debug);
-	return frame;
 }
 
 void
-azo_frame_delete (AZOFrame *frame)
+azo_frame_finalize(AZOFrame *frame)
 {
 	while (frame->scope) {
 		azo_frame_pop_scope (frame);
 	}
 	azo_code_clear(&frame->code);
 	azo_var_list_free(frame->parent_vars);
+}
+
+AZOFrame *
+azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug)
+{
+	AZOFrame *frame = (AZOFrame *) calloc (1, sizeof (AZOFrame));
+	azo_frame_init(frame, parent, this_impl, this_inst, n_args, ret_type, debug);
+	return frame;
+}
+
+void
+azo_frame_delete (AZOFrame *frame)
+{
+	azo_frame_finalize(frame);
 	free (frame);
 }
 
