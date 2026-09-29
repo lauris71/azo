@@ -266,8 +266,10 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		n_args += 1;
 	}
 
-	AZOFrame *current = comp->current;
-	azo_compiler_push_frame (comp, this_impl, NULL, n_args, ret_type);
+	AZOFrame *current = rctx->frame;
+	unsigned int func_frame_idx = comp->n_frames;
+	AZOFrame *func_frame = azo_compiler_push_frame (comp, this_impl, NULL, n_args, ret_type);
+	assert(func_frame);
 
 	for (child = args->children; child; child = child->next) {
 		type = child->children;
@@ -279,11 +281,16 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		}
 	}
 
-	AZOResolveCtx fctx = *rctx;
+	AZOResolveCtx fctx = {
+		.this_impl = this_impl,
+		.this_inst = NULL,
+		.ret_type = ret_type,
+		.frame = func_frame
+	};
 	int lresult = azo_compiler_resolve_frame(comp, &fctx, body);
 	if (lresult) result = 1;
 
-	expr->frame = comp->current;
+	expr->frame = func_frame_idx;
 	azo_compiler_set_frame(comp, current);
 
 	return result;
@@ -463,7 +470,8 @@ azo_compiler_resolve_node (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node
 		case AZO_TERM_EMPTY:
 			return 0;
 		case AZO_TERM_PROGRAM:
-			return resolve_children(comp, rctx, node);
+			/* Skip the empty 'this' reference */
+			return resolve_list(comp, rctx, node->children->next);
 		case AZO_TERM_BLOCK:
 			/* Create new scope */
 			azo_frame_push_scope(comp->current);

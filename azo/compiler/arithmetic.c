@@ -34,7 +34,7 @@ compile_type_is_in_range (AZOCompiler *comp, unsigned int pos, uint32_t min_type
 }
 
 static unsigned int
-azo_compiler_compile_arithmetic_any_any (AZOCompiler *comp, unsigned int operation)
+azo_compiler_compile_arithmetic_any_any (AZOCompiler *comp, AZOCompilerContext *ctx, unsigned int operation)
 {
 	unsigned int lhs_type_lt_min, lhs_type_gt_max, rhs_type_lt_min, rhs_type_gt_max;
 	unsigned int max_ge_i32, types_equal_1, types_equal_2, lhs_type_gt_rhs_type, types_equal_3;
@@ -108,7 +108,7 @@ azo_compiler_compile_arithmetic_any_any (AZOCompiler *comp, unsigned int operati
 	azo_compiler_update_JMP_32 (comp, lhs_type_gt_max);
 	azo_compiler_update_JMP_32 (comp, rhs_type_lt_min);
 	azo_compiler_update_JMP_32 (comp, rhs_type_gt_max);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 
 	/* finished */
 	azo_compiler_update_JMP_32 (comp, finished);
@@ -117,7 +117,7 @@ azo_compiler_compile_arithmetic_any_any (AZOCompiler *comp, unsigned int operati
 }
 
 static unsigned int
-azo_compiler_compile_arithmetic_boolean (AZOCompiler *comp, unsigned int operation, const AZONode *expr)
+azo_compiler_compile_arithmetic_boolean (AZOCompiler *comp, AZOCompilerContext *ctx, unsigned int operation, const AZONode *expr)
 {
 	unsigned int not_boolean_1, not_boolean_2, finished;
 	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_BOOLEAN, expr);
@@ -133,7 +133,7 @@ azo_compiler_compile_arithmetic_boolean (AZOCompiler *comp, unsigned int operati
 	/* invalid_type */
 	azo_compiler_update_JMP_32 (comp, not_boolean_1);
 	azo_compiler_update_JMP_32 (comp, not_boolean_2);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 	/* finished */
 	azo_compiler_update_JMP_32 (comp, finished);
 	return 1;
@@ -156,10 +156,10 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	case AZO_TERM_ARITHMETIC_AND:
 	case AZO_TERM_ARITHMETIC_OR:
 	case AZO_TERM_ARITHMETIC_CARET:
-		return azo_compiler_compile_arithmetic_any_any (comp, expr->term.subtype);
+		return azo_compiler_compile_arithmetic_any_any (comp, ctx, expr->term.subtype);
 	case AZO_TERM_ARITHMETIC_ANDAND:
 	case AZO_TERM_ARITHMETIC_OROR:
-		return azo_compiler_compile_arithmetic_boolean (comp, expr->term.subtype, expr);
+		return azo_compiler_compile_arithmetic_boolean (comp, ctx, expr->term.subtype, expr);
 	default:
 		fprintf (stderr, "azo_compiler_compile_arithmetic: Unknown subtype %u\n", expr->term.subtype);
 		break;
@@ -181,7 +181,7 @@ azo_compiler_compile_tilde (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 	finished_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 	azo_compiler_update_JMP_32 (comp, lt_i8);
 	azo_compiler_update_JMP_32 (comp, gt_cd);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 	azo_compiler_update_JMP_32 (comp, finished_1);
 	azo_compiler_update_JMP_32 (comp, finished_2);
 	return 1;
@@ -216,7 +216,7 @@ azo_compiler_compile_increment (AZOCompiler *comp, AZOCompilerContext *ctx, cons
 	/* Invalid_type */
 	azo_compiler_update_JMP_32 (comp, lhs_type_lt_min);
 	azo_compiler_update_JMP_32 (comp, lhs_type_gt_max);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 
 	/* finished */
 	azo_compiler_update_JMP_32 (comp, finished);
@@ -253,7 +253,7 @@ azo_compiler_compile_decrement (AZOCompiler *comp, AZOCompilerContext *ctx, cons
 	/* Invalid_type */
 	azo_compiler_update_JMP_32 (comp, lhs_type_lt_min);
 	azo_compiler_update_JMP_32 (comp, lhs_type_gt_max);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 
 	/* finished */
 	azo_compiler_update_JMP_32 (comp, finished);

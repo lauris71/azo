@@ -302,6 +302,9 @@ parse_program (AZOParser *parser, AZOToken *token)
 {
 	AZONode *node = azo_node_new (AZO_TERM_PROGRAM, AZO_TERM_GENERIC, token->start, token->end);
 	parser->current = node;
+	/* Add empty 'this' node, resolver will replace it if needed */
+	AZONode *child = azo_node_new(AZO_TERM_EMPTY, AZO_TERM_GENERIC, 0, 0);
+	parser_append(parser, child);
 	unsigned int result = azo_parser_parse_sentences (parser, token);
 	node->term.end = token->start;
 	if (result) return result;

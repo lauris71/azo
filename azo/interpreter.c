@@ -1669,6 +1669,9 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		} else {
 			result = az_instance_set_property_by_id (def_class, sub_impl, sub_inst, idx, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), NULL);
 		}
+	} else {
+		//7azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_PROPERTY, 1UL << AZO_EXCEPTION_INVALID_PROPERTY, ip);
+		//return NULL;
 	}
 	if (result) azo_stack_pop (&intr->stack, 3);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_BOOLEAN), &result);
@@ -1718,17 +1721,12 @@ interpret_GET_STATIC_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 static const unsigned char *
 interpret_GET_STATIC_FUNCTION (AZOInterpreter *intr, const unsigned char *ip)
 {
-	AZString *key;
-	AZClass *klass;
 	AZFunctionSignature32 sig;
 	unsigned int n_args = ip[1];
 	CHECK_TYPE_EXACT(n_args + 1, AZ_TYPE_CLASS);
 	CHECK_TYPE_EXACT(n_args, AZ_TYPE_STRING);
-	if (ip[0] & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_underflow (intr, ip, n_args + 2)) return NULL;
-	}
-	key = (AZString *) azo_stack_instance_bw (&intr->stack, n_args);
-	klass = (AZClass *) azo_stack_instance_bw (&intr->stack, n_args + 1);
+	AZClass *klass = (AZClass *) azo_stack_instance_bw (&intr->stack, n_args + 1);
+	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, n_args);
 	sig.n_args = n_args;
 	sig.ret_type = AZ_TYPE_ANY;
 	for (unsigned int i = 0; i < n_args; i++) {
@@ -1749,38 +1747,6 @@ interpret_GET_STATIC_FUNCTION (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_LOOKUP_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
-{
-	const AZImplementation *impl;
-	const AZClass *sub_class;
-	const AZImplementation *prop_impl;
-	void *prop_inst;
-	AZString *key;
-	int idx;
-	CHECK_TYPE_EXACT(0, AZ_TYPE_STRING);
-	if (ip[0] & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_underflow (intr, ip, 2)) return NULL;
-	}
-	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
-	impl = azo_stack_impl_bw (&intr->stack, 1);
-	if (!impl) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
-		return NULL;
-	}
-	idx = az_class_lookup_property (AZ_CLASS_FROM_IMPL(impl), impl, azo_stack_instance_bw (&intr->stack, 1), key, &sub_class, &prop_impl, &prop_inst);
-	azo_stack_pop (&intr->stack, 1);
-	if (idx >= 0) {
-		AZField *prop = &sub_class->props_self[idx];
-		azo_stack_push_instance (&intr->stack, prop_impl, prop_inst);
-		azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_UINT32), &idx);
-		azo_stack_push_instance (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_FIELD), prop);
-	} else {
-		azo_stack_push_value (&intr->stack, NULL, NULL);
-	}
-	return ip + 1;
-}
-
-static const unsigned char *
 interpret_GET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 {
 	AZString *key;
@@ -1794,6 +1760,10 @@ interpret_GET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 	}
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
 	attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 1), azo_stack_instance_bw (&intr->stack, 1), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
+	if (!attrd_impl) {
+		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
+		return NULL;
+	}
 	intr->vals[0].impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, key, &intr->vals[0].v.value, 64, &flags);
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value_transfer (&intr->stack, intr->vals[0].impl, &intr->vals[0].v);
@@ -2053,10 +2023,7 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 		case AZO_TC_GET_STATIC_FUNCTION:
 			ipc = interpret_GET_STATIC_FUNCTION (intr, ipc);
 			break;
-		case AZO_TC_LOOKUP_PROPERTY:
-			ipc = interpret_LOOKUP_PROPERTY (intr, ipc);
-			break;
-		case GET_ATTRIBUTE:
+		case AZO_TC_GET_ATTRIBUTE:
 			ipc = interpret_GET_ATTRIBUTE (intr, ipc);
 			break;
 		case AZO_TC_SET_ATTRIBUTE:

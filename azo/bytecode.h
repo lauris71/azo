@@ -267,9 +267,27 @@ enum {
 	 * [inst, name, arg1..., func | null]
 	 */
 	AZO_TC_GET_FUNCTION,
-	/* Instance, key, value -> boolean */
+	/**
+	 * @brief Set property by name
+	 * 
+	 * SET_PROPERTY
+	 * [instance, key, value]
+	 * [boolean]
+	 * 
+	 * Throws NULL_DEREFERENCE if instance is null
+	 * fixme: not implemented as of now: Throws INVALID_PROPERTY if there is no property with such name
+	 */
 	AZO_TC_SET_PROPERTY,
-	/* Class, key */
+	/**
+	 * @brief Get static attribute by name
+	 * 
+	 * GET_STATIC_PROPERTY
+	 * [class, name]
+	 * [value | null]
+	 * 
+	 * Throws INVALID_TYPE if class is not a class
+	 * Throws INVALID_TYPE if name is not a string
+	 */
 	AZO_TC_GET_STATIC_PROPERTY,
 	/**
 	 * @brief Get static function by name and argument types
@@ -277,15 +295,21 @@ enum {
 	 * GET_STATIC_FUNCTION U8:N_ARGS
 	 * [class, name, arg1...]
 	 * [class, name, arg1..., func | null]
+	 * 
+	 * Throws INVALID_TYPE if instance class is not a class
+	 * Throws INVALID_TYPE if name is not a string
 	 */
-	/* Class, String, Arguments -> Class, String, Arguments, Function | null */
 	AZO_TC_GET_STATIC_FUNCTION,
-	/* Instance, key */
-	/* Success: original instance, property instance, index, field */
-	/* Failure: original instance, null */
-	AZO_TC_LOOKUP_PROPERTY,
-	/* fixme: remove this */
-	GET_ATTRIBUTE,
+	/**
+	 * @brief Get attribute by name
+	 * 
+	 * GET_ATTRIBUTE
+	 * [instance, key]
+	 * [value | null]
+	 * 
+	 * Throws INVALID_TYPE if instance is not a dictionary
+	 */
+	AZO_TC_GET_ATTRIBUTE,
 	/**
 	 * @brief Set value in dictionary
 	 * 
@@ -293,8 +317,8 @@ enum {
 	 * [instance, key, value]
 	 * []
 	 * 
-	 * Throws INVALID_TYPE if instance is not dictionary
-	 * Throws INVALID_VALUE if attribute cannot be set
+	 * Throws INVALID_TYPE if instance is not a dictionary
+	 * Throws INVALID_VALUE if the attribute cannot be set
 	 */
 	AZO_TC_SET_ATTRIBUTE,
 	AZO_TC_END

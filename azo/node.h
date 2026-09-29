@@ -44,6 +44,7 @@ enum {
 	 * @brief Full program
 	 * 
 	 * PROGRAM
+	 *   CONSTANT | EMPTY
 	 *   [SENTENCE ...]
 	 */
 	AZO_TERM_PROGRAM,
@@ -374,7 +375,7 @@ struct _AZONode {
 	/* Need to align 16 bytes anyways */
 	union {
 		/* Function frame */
-		AZOFrame *frame;
+		unsigned int frame;
 		/**
 		 * @brief Variable position
 		 * 

@@ -42,14 +42,15 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(4, n);
-        /* PROGRAM -> ASSIGN(=) -> REFERENCE(a), CONSTANT(1) */
+        TEST_ASSERT_EQUAL_UINT(5, n);
+        /* PROGRAM -> EMPTY, ASSIGN(=) -> REFERENCE(a), CONSTANT(1) */
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN_PLAIN, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_INT32(1, nodes[3]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN_PLAIN, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_INT32(1, nodes[4]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -75,14 +76,15 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> BLOCK -> INVALID, ASSIGN(b = 2) */
-        TEST_ASSERT_EQUAL_UINT(6, n);
+        TEST_ASSERT_EQUAL_UINT(7, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_INVALID, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_INT32(2, nodes[5]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_INVALID, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_INT32(2, nodes[6]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_INVALID_START_OF_EXPRESSION, parser.errors[0].code);
         free_parse(&parser, src, tree);
@@ -96,12 +98,13 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> INVALID(a = ...), ASSIGN(b = 2) */
-        TEST_ASSERT_EQUAL_UINT(5, n);
+        TEST_ASSERT_EQUAL_UINT(6, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_INVALID, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_INT32(2, nodes[4]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_INVALID, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_INT32(2, nodes[5]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -114,12 +117,13 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> BLOCK -> ASSIGN(a = 1) - no poison node */
-        TEST_ASSERT_EQUAL_UINT(5, n);
+        TEST_ASSERT_EQUAL_UINT(6, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_INT32(1, nodes[4]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_INT32(1, nodes[5]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SEMICOLON_MISSING, parser.errors[0].code);
         free_parse(&parser, src, tree);
@@ -133,15 +137,16 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> IF(a, ASSIGN(b = 1), ASSIGN(b = 2)) */
-        TEST_ASSERT_EQUAL_UINT(9, n);
+        TEST_ASSERT_EQUAL_UINT(10, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_IF, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_INT32(1, nodes[5]->value.v.int32_v);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_INT32(2, nodes[8]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_IF, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_INT32(1, nodes[6]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_INT32(2, nodes[9]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SEMICOLON_MISSING, parser.errors[0].code);
         free_parse(&parser, src, tree);
@@ -154,10 +159,10 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[5]->term.type);
         /* { is at offset 7, } ends at offset 17 */
-        TEST_ASSERT_EQUAL_UINT(7, nodes[4]->term.start);
-        TEST_ASSERT_EQUAL_UINT(17, nodes[4]->term.end);
+        TEST_ASSERT_EQUAL_UINT(7, nodes[5]->term.start);
+        TEST_ASSERT_EQUAL_UINT(17, nodes[5]->term.end);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -170,18 +175,19 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> DO(ASSIGN(a = a + 1), COMPARISON(a < 100)) */
-        TEST_ASSERT_EQUAL_UINT(10, n);
+        TEST_ASSERT_EQUAL_UINT(11, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_DO, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BINARY, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARITHMETIC_PLUS, nodes[4]->term.subtype);
-        TEST_ASSERT_EQUAL_INT32(1, nodes[6]->value.v.int32_v);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_COMPARISON, nodes[7]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_COMPARISON_LT, nodes[7]->term.subtype);
-        TEST_ASSERT_EQUAL_INT32(100, nodes[9]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_DO, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BINARY, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARITHMETIC_PLUS, nodes[5]->term.subtype);
+        TEST_ASSERT_EQUAL_INT32(1, nodes[7]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_COMPARISON, nodes[8]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_COMPARISON_LT, nodes[8]->term.subtype);
+        TEST_ASSERT_EQUAL_INT32(100, nodes[10]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -194,12 +200,13 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> DO(...), ASSIGN(b = 3) */
-        TEST_ASSERT_EQUAL_UINT(11, n);
+        TEST_ASSERT_EQUAL_UINT(12, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_DO, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[8]->term.type);
-        TEST_ASSERT_EQUAL_INT32(3, nodes[10]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_DO, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[9]->term.type);
+        TEST_ASSERT_EQUAL_INT32(3, nodes[11]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SEMICOLON_MISSING, parser.errors[0].code);
         free_parse(&parser, src, tree);
@@ -224,13 +231,13 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> STATEMENT_GROUP(ASSIGN(a = 1), ASSIGN(b = 2)) */
-        TEST_ASSERT_EQUAL_UINT(8, n);
+        TEST_ASSERT_EQUAL_UINT(9, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_STATEMENT_GROUP, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_INT32(1, nodes[4]->value.v.int32_v);
-        TEST_ASSERT_EQUAL_INT32(2, nodes[7]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_STATEMENT_GROUP, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_INT32(1, nodes[5]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_INT32(2, nodes[8]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -243,12 +250,12 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> DECLARATION_LIST(int32, DECL(a = 1), DECL(b = 2)) */
-        TEST_ASSERT_EQUAL_UINT(9, n);
+        TEST_ASSERT_EQUAL_UINT(10, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[7]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -278,10 +285,10 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(8, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_STATEMENT_GROUP, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(9, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_STATEMENT_GROUP, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[6]->term.type);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SEMICOLON_MISSING, parser.errors[0].code);
         free_parse(&parser, src, tree);
@@ -295,18 +302,18 @@ test_parser(void)
         AZONode *nodes[32];
         unsigned int n = azo_node_flatten(tree, nodes, 32);
         /* PROGRAM -> FOR(STATEMENT_GROUP(init...), COMPARISON, STATEMENT_GROUP(step...), ASSIGN) */
-        TEST_ASSERT_EQUAL_UINT(20, n);
+        TEST_ASSERT_EQUAL_UINT(21, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_FOR, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_STATEMENT_GROUP, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_COMPARISON, nodes[9]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_STATEMENT_GROUP, nodes[12]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_SUFFIX, nodes[13]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_SUFFIX, nodes[15]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[17]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_FOR, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_STATEMENT_GROUP, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_COMPARISON, nodes[10]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_STATEMENT_GROUP, nodes[13]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_SUFFIX, nodes[14]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_SUFFIX, nodes[16]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[18]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -318,13 +325,13 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[32];
         unsigned int n = azo_node_flatten(tree, nodes, 32);
-        TEST_ASSERT_EQUAL_UINT(13, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_FOR, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_COMPARISON, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_SUFFIX, nodes[8]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[10]->term.type);
+        TEST_ASSERT_EQUAL_UINT(14, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_FOR, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_COMPARISON, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_SUFFIX, nodes[9]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[11]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -336,12 +343,12 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(11, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_FOR, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_SUFFIX, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(12, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_FOR, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_SUFFIX, nodes[7]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -355,13 +362,13 @@ test_parser(void)
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> FOR(EMPTY, a, EMPTY, BLOCK(BREAK, CONTINUE)) */
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_WHILE, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_BREAK, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_WHILE, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[4]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_CONTINUE, nodes[5]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_BREAK, nodes[5]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_CONTINUE, nodes[6]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -373,8 +380,8 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_BREAK, nodes[3]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_BREAK, nodes[4]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SEMICOLON_MISSING, parser.errors[0].code);
         free_parse(&parser, src, tree);
@@ -402,15 +409,15 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> RETURN(1), RETURN(no children) */
-        TEST_ASSERT_EQUAL_UINT(4, n);
+        TEST_ASSERT_EQUAL_UINT(5, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_INT32(1, nodes[2]->value.v.int32_v);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[3]->term.subtype);
-        TEST_ASSERT_NULL(nodes[3]->children);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_INT32(1, nodes[3]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[4]->term.subtype);
+        TEST_ASSERT_NULL(nodes[4]->children);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -422,12 +429,12 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(3, n);
+        TEST_ASSERT_EQUAL_UINT(4, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[2]->term.subtype);
-        TEST_ASSERT_NULL(nodes[2]->children);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[3]->term.subtype);
+        TEST_ASSERT_NULL(nodes[3]->children);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SEMICOLON_MISSING, parser.errors[0].code);
         free_parse(&parser, src, tree);
@@ -440,10 +447,10 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(2, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[1]->term.subtype);
-        TEST_ASSERT_NULL(nodes[1]->children);
+        TEST_ASSERT_EQUAL_UINT(3, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[2]->term.subtype);
+        TEST_ASSERT_NULL(nodes[2]->children);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SEMICOLON_MISSING, parser.errors[0].code);
         free_parse(&parser, src, tree);
@@ -466,10 +473,10 @@ test_parser(void)
             AZONode *nodes[16];
             unsigned int n = azo_node_flatten(tree, nodes, 16);
             /* PROGRAM -> DECLARATION_LIST(int32, DECL(a = 1)) */
-            TEST_ASSERT_EQUAL_UINT(6, n);
-            TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-            TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
-            TEST_ASSERT_EQUAL_INT32(1, nodes[5]->value.v.int32_v);
+            TEST_ASSERT_EQUAL_UINT(7, n);
+            TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+            TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[4]->term.type);
+            TEST_ASSERT_EQUAL_INT32(1, nodes[6]->value.v.int32_v);
             TEST_ASSERT_EQUAL_UINT_MESSAGE(0, parser.n_errors, srcs[i]);
             free_parse(&parser, src, tree);
         }
@@ -515,12 +522,12 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> DECLARATION_LIST(function, DECL(f)) */
-        TEST_ASSERT_EQUAL_UINT(5, n);
+        TEST_ASSERT_EQUAL_UINT(6, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -543,14 +550,14 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> FOR(EMPTY, EMPTY, EMPTY, ASSIGN(b = 1)) */
-        TEST_ASSERT_EQUAL_UINT(8, n);
+        TEST_ASSERT_EQUAL_UINT(9, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_FOR, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_FOR, nodes[2]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[3]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[6]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -563,17 +570,17 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> DECL_LIST(function, DECL(f, FUNCTION_STATIC(void, (), { return; }))) */
-        TEST_ASSERT_EQUAL_UINT(10, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[5]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[7]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[8]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[9]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[9]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(11, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[6]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[8]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[9]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[10]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[10]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -587,14 +594,14 @@ test_parser(void)
         unsigned int n = azo_node_flatten(tree, nodes, 24);
         /* PROGRAM -> ASSIGN(f, FUNCTION_STATIC(EMPTY, LIST(a, b), +(a, b))) */
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[3]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BINARY, nodes[12]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARITHMETIC_PLUS, nodes[12]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BINARY, nodes[13]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARITHMETIC_PLUS, nodes[13]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -606,12 +613,12 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[24];
         unsigned int n = azo_node_flatten(tree, nodes, 24);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[3]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[12]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[13]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -623,10 +630,10 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[3]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_INT32(42, nodes[6]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_INT32(42, nodes[7]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -638,12 +645,12 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[3]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_INT32(42, nodes[6]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_INT32(42, nodes[7]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -655,10 +662,10 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[7]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -713,9 +720,9 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[3]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -839,17 +846,17 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> DECL_LIST(any, DECL(g, FUNCTION_STATIC(int32, (int32 a), { return a; }))) */
-        TEST_ASSERT_EQUAL_UINT(14, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_STATIC_OLD, nodes[5]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[7]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION, nodes[8]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[11]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[12]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[12]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(15, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_STATIC_OLD, nodes[6]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[8]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION, nodes[9]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[12]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[13]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, nodes[13]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -862,14 +869,14 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> DECL_LIST(function, DECL(f, FUNCTION_STATIC(void, (int32 a), { return; }))) */
-        TEST_ASSERT_EQUAL_UINT(13, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_STATIC_OLD, nodes[5]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[7]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[11]->term.type);
+        TEST_ASSERT_EQUAL_UINT(14, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_STATIC_OLD, nodes[6]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[8]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[12]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -892,11 +899,11 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> DECL_LIST(any, DECL(h, REFERENCE(function))) */
-        TEST_ASSERT_EQUAL_UINT(6, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_VARIABLE, nodes[5]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(7, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_VARIABLE, nodes[6]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -923,14 +930,14 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> DECL_LIST(int32, DECL(a = 1), DECL(b = 2), DECL(c)) */
-        TEST_ASSERT_EQUAL_UINT(11, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_INT32(1, nodes[5]->value.v.int32_v);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_INT32(2, nodes[8]->value.v.int32_v);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[9]->term.type);
-        TEST_ASSERT_NULL(nodes[9]->children->next);
+        TEST_ASSERT_EQUAL_UINT(12, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_INT32(1, nodes[6]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_INT32(2, nodes[9]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[10]->term.type);
+        TEST_ASSERT_NULL(nodes[10]->children->next);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -956,9 +963,9 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(5, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(6, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[4]->term.type);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SEMICOLON_MISSING, parser.errors[0].code);
         free_parse(&parser, src, tree);
@@ -982,13 +989,13 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> ASSIGN(x, BINARY(*(BINARY(+)(a, b), 2))) */
-        TEST_ASSERT_EQUAL_UINT(8, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BINARY, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARITHMETIC_STAR, nodes[3]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(9, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_BINARY, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARITHMETIC_PLUS, nodes[4]->term.subtype);
-        TEST_ASSERT_EQUAL_INT32(2, nodes[7]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARITHMETIC_STAR, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BINARY, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARITHMETIC_PLUS, nodes[5]->term.subtype);
+        TEST_ASSERT_EQUAL_INT32(2, nodes[8]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1001,12 +1008,12 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> ASSIGN(x, CAST(int32, a)) - cast spans from '(' at offset 4 */
-        TEST_ASSERT_EQUAL_UINT(6, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CAST, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(4, nodes[3]->term.start);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(7, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CAST, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(4, nodes[4]->term.start);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[6]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1041,15 +1048,15 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> ASSIGN(a, b, c, 0) - targets followed by the value */
-        TEST_ASSERT_EQUAL_UINT(6, n);
+        TEST_ASSERT_EQUAL_UINT(7, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN_PLAIN, nodes[1]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN_PLAIN, nodes[2]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_INT32(0, nodes[5]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_INT32(0, nodes[6]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1095,11 +1102,11 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(6, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CAST, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(7, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CAST, nodes[4]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[6]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1112,10 +1119,10 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> ASSIGN(a, BINARY(*(b, 2))) - no CAST node */
-        TEST_ASSERT_EQUAL_UINT(6, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BINARY, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARITHMETIC_STAR, nodes[3]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(7, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BINARY, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARITHMETIC_STAR, nodes[4]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1127,9 +1134,9 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(4, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(5, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1151,10 +1158,10 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(6, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(7, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[4]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1180,13 +1187,13 @@ test_parser(void)
             TEST_ASSERT_NOT_NULL(tree);
             AZONode *nodes[16];
             unsigned int n = azo_node_flatten(tree, nodes, 16);
-            TEST_ASSERT_EQUAL_UINT(4, n);
-            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_CONSTANT, nodes[3]->term.type, cases[i].src);
-            TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].az_type, nodes[3]->term.subtype, cases[i].src);
-            if (cases[i].az_type == AZ_TYPE_INT32) TEST_ASSERT_EQUAL_INT32_MESSAGE((int32_t) cases[i].val, nodes[3]->value.v.int32_v, cases[i].src);
-            else if (cases[i].az_type == AZ_TYPE_UINT32) TEST_ASSERT_EQUAL_UINT32_MESSAGE((uint32_t) cases[i].val, nodes[3]->value.v.uint32_v, cases[i].src);
-            else if (cases[i].az_type == AZ_TYPE_INT64) TEST_ASSERT_EQUAL_INT64_MESSAGE(cases[i].val, nodes[3]->value.v.int64_v, cases[i].src);
-            else if (cases[i].az_type == AZ_TYPE_UINT64) TEST_ASSERT_EQUAL_UINT64_MESSAGE((uint64_t) cases[i].val, nodes[3]->value.v.uint64_v, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT(5, n);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_CONSTANT, nodes[4]->term.type, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].az_type, nodes[4]->term.subtype, cases[i].src);
+            if (cases[i].az_type == AZ_TYPE_INT32) TEST_ASSERT_EQUAL_INT32_MESSAGE((int32_t) cases[i].val, nodes[4]->value.v.int32_v, cases[i].src);
+            else if (cases[i].az_type == AZ_TYPE_UINT32) TEST_ASSERT_EQUAL_UINT32_MESSAGE((uint32_t) cases[i].val, nodes[4]->value.v.uint32_v, cases[i].src);
+            else if (cases[i].az_type == AZ_TYPE_INT64) TEST_ASSERT_EQUAL_INT64_MESSAGE(cases[i].val, nodes[4]->value.v.int64_v, cases[i].src);
+            else if (cases[i].az_type == AZ_TYPE_UINT64) TEST_ASSERT_EQUAL_UINT64_MESSAGE((uint64_t) cases[i].val, nodes[4]->value.v.uint64_v, cases[i].src);
             TEST_ASSERT_EQUAL_UINT_MESSAGE(0, parser.n_errors, cases[i].src);
             free_parse(&parser, src, tree);
         }
@@ -1200,11 +1207,11 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> ASSIGN(x, PREFIX(-, 5)) */
-        TEST_ASSERT_EQUAL_UINT(5, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_PREFIX, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_PREFIX_MINUS, nodes[3]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_INT32(5, nodes[4]->value.v.int32_v);
+        TEST_ASSERT_EQUAL_UINT(6, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_PREFIX, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_PREFIX_MINUS, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_INT32(5, nodes[5]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1217,14 +1224,14 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> CALL(MEMBER(NEW(MyObject, args), someMethod), args) */
-        TEST_ASSERT_EQUAL_UINT(8, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[2]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_NEW, nodes[3]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(9, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[3]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_NEW, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[6]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1236,10 +1243,10 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(12, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_NEW, nodes[3]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[9]->term.type);
+        TEST_ASSERT_EQUAL_UINT(13, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_NEW, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[10]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1252,11 +1259,11 @@ test_parser(void)
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> ASSIGN(x, MEMBER(FUNCTION(...), class)) */
-        TEST_ASSERT_EQUAL_UINT(9, n);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[3]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(10, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[5]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1275,9 +1282,9 @@ test_parser(void)
             TEST_ASSERT_NOT_NULL(tree);
             AZONode *nodes[16];
             unsigned int n = azo_node_flatten(tree, nodes, 16);
-            TEST_ASSERT_EQUAL_UINT(6, n);
-            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_CAST, nodes[3]->term.type, cases[i].src);
-            TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].flags, nodes[3]->term.flags, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT(7, n);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_CAST, nodes[4]->term.type, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].flags, nodes[4]->term.flags, cases[i].src);
             TEST_ASSERT_EQUAL_UINT_MESSAGE(0, parser.n_errors, cases[i].src);
             free_parse(&parser, src, tree);
         }
@@ -1313,9 +1320,9 @@ test_parser(void)
             TEST_ASSERT_NOT_NULL(tree);
             AZONode *nodes[16];
             unsigned int n = azo_node_flatten(tree, nodes, 16);
-            TEST_ASSERT_EQUAL_UINT(6, n);
-            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type, cases[i].src);
-            TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].flags, nodes[1]->term.flags, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT(7, n);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].flags, nodes[2]->term.flags, cases[i].src);
             TEST_ASSERT_EQUAL_UINT_MESSAGE(0, parser.n_errors, cases[i].src);
             free_parse(&parser, src, tree);
         }
@@ -1328,13 +1335,13 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(8, n);
+        TEST_ASSERT_EQUAL_UINT(9, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_ATTRIBUTE, nodes[5]->term.subtype);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[7]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_MEMBER, nodes[7]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_ATTRIBUTE, nodes[6]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[8]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_MEMBER, nodes[8]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
@@ -1347,13 +1354,13 @@ test_parser(void)
         azo_node_print_info(tree, stderr, src, 0);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(11, n);
+        TEST_ASSERT_EQUAL_UINT(12, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[6]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_ATTRIBUTE, nodes[6]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[7]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_ATTRIBUTE, nodes[7]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }

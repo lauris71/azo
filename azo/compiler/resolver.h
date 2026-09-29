@@ -7,7 +7,7 @@
 * Copyright (C) Lauris Kaplinski 2016-2026
 */
 
-typedef struct _AZOResolveCtx AZOResolveCtx;
+typedef struct _AZOCompilerContext AZOResolveCtx;
 
 #include <azo/node.h>
 #include <azo/compiler/compiler.h>
@@ -15,14 +15,6 @@ typedef struct _AZOResolveCtx AZOResolveCtx;
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-struct _AZOResolveCtx {
-    const AZImplementation *this_impl;
-    const void *this_inst;
-    unsigned int ret_type;
-
-    unsigned int ret_is_last;
-};
 
 unsigned int azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr);
 

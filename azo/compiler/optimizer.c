@@ -427,31 +427,38 @@ optimize_property(AZOOptimizer *opt, AZONode *expr, const AZClass *klass, const 
 }
 
 static int
-optimize_children(AZOOptimizer *opt, AZONode *children, unsigned int flags)
+optimize_chain(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	for (AZONode *child = children; child; child = child->next) {
-		int result = optimize_node(opt, child, flags);
+	while (node) {
+		int result = optimize_node(opt, node, flags);
 		if (result) return result;
+		node = node->next;
 	}
 	return 0;
 }
 
 static int
+optimize_children(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+{
+	return optimize_chain(opt, node->children, flags);
+}
+
+static int
 optimize_program(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	return optimize_children(opt, node->children, flags);
+	return optimize_chain(opt, node->children->next, flags);
 }
 
 static int
 optimize_block(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	return optimize_children(opt, node->children, flags);
+	return optimize_children(opt, node, flags);
 }
 
 static int
 optimize_group(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	return optimize_children(opt, node->children, flags);
+	return optimize_children(opt, node, flags);
 }
 
 static int
@@ -480,7 +487,7 @@ optimize_declaration_list(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
 	int result = optimize_node(opt, node->children, flags);
 	if (result) return result;
-	return optimize_children(opt, node->children->next, flags);
+	return optimize_chain(opt, node->children->next, flags);
 }
 
 static int
@@ -522,7 +529,7 @@ optimize_function(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 		AZONode *body = args->next;
 		// fixme: Think out the frame/context management
 		AZOFrame *current = opt->comp->current;
-		azo_compiler_set_frame(opt->comp, node->frame);
+		azo_compiler_set_frame(opt->comp, opt->comp->frames[node->frame]);
 		result = optimize_node(opt, body, flags);
 		azo_compiler_set_frame(opt->comp, current);
 		if (result) return result;
@@ -536,7 +543,7 @@ optimize_function(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 		AZONode *body = args->next;
 		// fixme: Think out the frame/context management
 		AZOFrame *current = opt->comp->current;
-		azo_compiler_set_frame(opt->comp, node->frame);
+		azo_compiler_set_frame(opt->comp, opt->comp->frames[node->frame]);
 		result = optimize_node(opt, body, flags);
 		azo_compiler_set_frame(opt->comp, current);
 		if (result) return result;
@@ -656,7 +663,7 @@ optimize_array_element(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 static int
 optimize_list(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	return optimize_children(opt, node->children, flags);
+	return optimize_children(opt, node, flags);
 }
 
 static int
@@ -685,7 +692,7 @@ optimize_reference(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 static int
 optimize_literal_array(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 {
-	int result = optimize_children(opt, node->children, flags);
+	int result = optimize_children(opt, node, flags);
 	if (result) return result;
 
 	unsigned int size = 0;

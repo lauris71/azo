@@ -38,12 +38,12 @@ main(int argc, const char *argv[])
     AZOCompilerContext ctx = {0};
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, globals, src);
-	azo_compiler_push_frame(&comp, NULL, NULL, 0, AZ_TYPE_NONE);
     AZOResolveCtx rctx = {
         .this_impl = NULL,
         .this_inst = NULL,
         .ret_type = AZ_TYPE_NONE
     };
+	rctx.frame = azo_compiler_push_frame(&comp, NULL, NULL, 0, AZ_TYPE_NONE);
 	int result = azo_compiler_resolve_frame(&comp, &rctx, expr);
     azo_node_print_info(expr, stdout, src, 0);
 

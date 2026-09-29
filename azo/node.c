@@ -253,8 +253,10 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		fprintf (ofs, "EMPTY ");
 		break;
 	case AZO_TERM_PROGRAM:
-		fprintf (ofs, "BEGIN_PROGRAM\n");
-		azo_node_print_list (expr->children, ofs, "\n");
+		fprintf (ofs, "BEGIN_PROGRAM ");
+		azo_node_print(expr->children, ofs);
+		fprintf(ofs, "\n");
+		azo_node_print_list (expr->children->next, ofs, "\n");
 		fprintf (ofs, "\nEND_PROGRAM\n");
 		break;
 	case AZO_TERM_BLOCK:
@@ -505,8 +507,10 @@ print_line (AZONode *expr, FILE *ofs)
 		fprintf (ofs, "EMPTY;");
 		break;
 	case AZO_TERM_PROGRAM:
-		fprintf (ofs, "BEGIN_PROGRAM\n");
-		print_sentences (expr->children, ofs);
+		fprintf (ofs, "BEGIN_PROGRAM ");
+		azo_node_print(expr->children, ofs);
+		fprintf(ofs, "\n");
+		print_sentences (expr->children->next, ofs);
 		fprintf (ofs, "END_PROGRAM");
 		break;
 	default:

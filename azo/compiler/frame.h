@@ -46,6 +46,7 @@ struct _AZOFrame {
 	 */
 	const AZImplementation *this_impl;
 	void *this_inst;
+	AZONode *this_node;
 	/**
 	 * @brief The number of arguments (i.e. reserved variable positions)
 	 * 

@@ -31,13 +31,20 @@ extern "C" {
  */
 struct _AZOCompilerContext {
 	/**
-	 * @brief Program context
+	 * @brief General context
 	 * 
 	 */
 	const AZImplementation *this_impl;
 	void *this_inst;
 	unsigned int ret_type;
-	/* The number of stack variables */
+	/* The current frame */
+	AZOFrame *frame;
+
+	/* Resolver */
+    unsigned int ret_is_last;
+
+	/* Compiler */
+	/* The number of variables pushed into stack */
 	unsigned int n_stack;
 };
 
@@ -106,7 +113,7 @@ AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOCompilerContext *ctx, AZ
  * @param this_inst The instance of this (or NULL if none/not defined).
  * @param ret_type The return type of the code.
  */
-unsigned int azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type);
+AZOFrame *azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type);
 /**
  * @brief Set the new current frame, removing all references to parent
  * 
@@ -120,11 +127,12 @@ AZOFrame *azo_compiler_set_frame (AZOCompiler *comp, AZOFrame *frame);
 
 void azo_compiler_write_ic (AZOCompiler *comp, unsigned int ic, const AZONode *expr);
 
+void azo_compiler_write_EXCEPTION (AZOCompiler *comp, AZOCompilerContext *ctx, uint32_t type, const AZONode *node);
+void azo_compiler_write_EXCEPTION_COND (AZOCompiler *comp, AZOCompilerContext *ctx, unsigned int tc, uint32_t type, const AZONode *node);
+
 void azo_compiler_write_DEBUG_STACK (AZOCompiler *comp);
 void azo_compiler_write_DEBUG_STRING (AZOCompiler *comp, const char *text, const AZONode *expr);
 
-void azo_compiler_write_EXCEPTION (AZOCompiler *comp, uint32_t type, const AZONode *expr);
-void azo_compiler_write_EXCEPTION_C (AZOCompiler *comp, unsigned int tc, uint32_t type);
 void azo_compiler_write_POP (AZOCompiler *comp, uint32_t n_values, const AZONode *expr);
 void azo_compiler_write_REMOVE (AZOCompiler *comp, unsigned int first, unsigned int n_values, const AZONode *expr);
 void azo_compiler_write_PUSH_IMMEDIATE (AZOCompiler *comp, unsigned int type, const AZValue *value, const AZONode *expr);

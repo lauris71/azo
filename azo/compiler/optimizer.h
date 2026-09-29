@@ -9,6 +9,7 @@
 
 typedef struct _AZOCompiler AZOCompiler;
 typedef struct _AZOOptimizer AZOOptimizer;
+typedef struct _AZOCompilerContext AZOOptimizerCtx;
 
 #include <azo/node.h>
 #include <azo/source.h>
@@ -30,7 +31,7 @@ void azo_optimizer_release(AZOOptimizer *opt);
 
 int azo_compiler_optimize(AZOOptimizer *opt, AZONode *root, unsigned int flags);
 
-int azo_compiler_calculate_constant_binary(AZOOptimizer *opt, AZONode *expr);
+int azo_compiler_calculate_constant_binary(AZOOptimizer *opt, AZONode *node);
 int azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZONode *node);
 
 #ifdef __cplusplus

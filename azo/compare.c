@@ -255,7 +255,7 @@ azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, AZOCompilerContex
 	azo_compiler_update_JMP_32 (comp, lhs_type_gt_cdouble);
 	azo_compiler_update_JMP_32 (comp, rhs_type_lt_i8);
 	azo_compiler_update_JMP_32 (comp, rhs_type_gt_cdouble);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 
 	/* finished */
 	azo_compiler_update_JMP_32 (comp, finished_1);
@@ -291,7 +291,7 @@ compile_comparison_any_const_eq (AZOCompiler *comp, AZOCompilerContext *ctx, con
 		finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 		azo_compiler_update_JMP_32 (comp, lhs_type_lt_i8);
 		azo_compiler_update_JMP_32 (comp, lhs_type_gt_cdouble);
-		azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
+		azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 		azo_compiler_update_JMP_32 (comp, finished);
 		return 1;
 	} else {
@@ -300,7 +300,7 @@ compile_comparison_any_const_eq (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	}
 	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 	azo_compiler_update_JMP_32 (comp, invalid_type);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 	azo_compiler_update_JMP_32 (comp, finished);
 	return 1;
 }
@@ -427,7 +427,7 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContex
 	azo_compiler_update_JMP_32 (comp, lhs_type_gt_double);
 	azo_compiler_update_JMP_32 (comp, rhs_type_lt_i8);
 	azo_compiler_update_JMP_32 (comp, rhs_type_gt_double);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 
 
 	/* finished */
@@ -507,7 +507,7 @@ compile_comparison_any_const_lg (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	/* Invalid_type */
 	azo_compiler_update_JMP_32 (comp, lhs_type_lt_i8);
 	azo_compiler_update_JMP_32 (comp, lhs_type_gt_double);
-	azo_compiler_write_EXCEPTION (comp, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 
 
 	/* finished */
