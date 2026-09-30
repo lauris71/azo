@@ -246,7 +246,7 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		}
 	}
 	/* Either attribute or member of this */
-	if (rctx->this_impl) {
+	if (rctx->this_node && rctx->this_node->term.type != AZO_TERM_EMPTY) {
 		// fixme: It is either property or attribute, need a special node for this
 		AZONode *this_node = azo_node_new(AZO_TERM_KEYWORD, AZO_KEYWORD_THIS, expr->term.start, expr->term.end);
 		AZONode *prop_node = azo_node_new(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER, expr->term.start, expr->term.end);

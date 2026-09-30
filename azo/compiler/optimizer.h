@@ -29,7 +29,7 @@ struct _AZOOptimizer {
 void azo_optimizer_setup(AZOOptimizer *opt, AZOCompiler *comp);
 void azo_optimizer_release(AZOOptimizer *opt);
 
-int azo_compiler_optimize(AZOOptimizer *opt, AZONode *root, unsigned int flags);
+int azo_compiler_optimize_program(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *root, unsigned int flags);
 
 int azo_compiler_calculate_constant_binary(AZOOptimizer *opt, AZONode *node);
 int azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZONode *node);

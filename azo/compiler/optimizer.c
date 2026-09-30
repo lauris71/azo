@@ -45,7 +45,7 @@ typedef struct _AZOOptimizer AZOOptimizer;
 #define DBG_REPLACE(S, args...)
 #endif
 
-static int optimize_node(AZOOptimizer *opt, AZONode *node, unsigned int flags);
+static int optimize_node(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags);
 
 void
 azo_optimizer_setup(AZOOptimizer *opt, AZOCompiler *comp)
@@ -427,10 +427,10 @@ optimize_property(AZOOptimizer *opt, AZONode *expr, const AZClass *klass, const 
 }
 
 static int
-optimize_chain(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_chain(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	while (node) {
-		int result = optimize_node(opt, node, flags);
+		int result = optimize_node(opt, ctx, node, flags);
 		if (result) return result;
 		node = node->next;
 	}
@@ -438,31 +438,31 @@ optimize_chain(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 static int
-optimize_children(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_children(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	return optimize_chain(opt, node->children, flags);
+	return optimize_chain(opt, ctx, node->children, flags);
 }
 
 static int
-optimize_program(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_program(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	return optimize_chain(opt, node->children->next, flags);
+	return optimize_chain(opt, ctx, node->children->next, flags);
 }
 
 static int
-optimize_block(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_block(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	return optimize_children(opt, node, flags);
+	return optimize_children(opt, ctx, node, flags);
 }
 
 static int
-optimize_group(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_group(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	return optimize_children(opt, node, flags);
+	return optimize_children(opt, ctx, node, flags);
 }
 
 static int
-optimize_keyword(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_keyword(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	if (node->term.subtype == AZO_KEYWORD_THIS) {
 		if (opt->comp->current->this_impl && opt->comp->current->this_inst) {
@@ -483,68 +483,68 @@ optimize_keyword(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 static int
-optimize_declaration_list(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_declaration_list(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	int result = optimize_node(opt, node->children, flags);
+	int result = optimize_node(opt, ctx, node->children, flags);
 	if (result) return result;
-	return optimize_chain(opt, node->children->next, flags);
+	return optimize_chain(opt, ctx, node->children->next, flags);
 }
 
 static int
-optimize_declaration(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_declaration(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	AZONode *name = node->children;
 	assert(name->term.subtype == AZO_TERM_REFERENCE_VARIABLE);
 	if (name->next) {
-		int result = optimize_node(opt, name->next, flags);
+		int result = optimize_node(opt, ctx, name->next, flags);
 		if (result) return result;
 	}
 	return 0;
 }
 
 static int
-optimize_argument_declaration(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_argument_declaration(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	AZONode *type = node->children;
 	AZONode *name = type->next;
-	int result = optimize_node(opt, type, flags);
+	int result = optimize_node(opt, ctx, type, flags);
 	if (result) return result;
 	assert(AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE));
 	return 0;
 }
 
 static int
-optimize_function(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_function(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	if (node->term.subtype == AZO_TERM_FUNCTION_MEMBER_OLD) {
 		AZONode *type = node->children;
-		int result = optimize_node(opt, type, flags);
+		int result = optimize_node(opt, ctx, type, flags);
 		if (result) return result;
 		AZONode *obj = type->next;
-		result = optimize_node(opt, obj, flags);
+		result = optimize_node(opt, ctx, obj, flags);
 		if (result) return result;
 		AZONode *args = obj->next;
-		result = optimize_node(opt, args, flags);
+		result = optimize_node(opt, ctx, args, flags);
 		if (result) return result;
 		AZONode *body = args->next;
 		// fixme: Think out the frame/context management
 		AZOFrame *current = opt->comp->current;
 		azo_compiler_set_frame(opt->comp, opt->comp->frames[node->frame]);
-		result = optimize_node(opt, body, flags);
+		result = optimize_node(opt, ctx, body, flags);
 		azo_compiler_set_frame(opt->comp, current);
 		if (result) return result;
 	} else {
 		AZONode *type = node->children;
-		int result = optimize_node(opt, type, flags);
+		int result = optimize_node(opt, ctx, type, flags);
 		if (result) return result;
 		AZONode *args = type->next;
-		result = optimize_node(opt, args, flags);
+		result = optimize_node(opt, ctx, args, flags);
 		if (result) return result;
 		AZONode *body = args->next;
 		// fixme: Think out the frame/context management
 		AZOFrame *current = opt->comp->current;
 		azo_compiler_set_frame(opt->comp, opt->comp->frames[node->frame]);
-		result = optimize_node(opt, body, flags);
+		result = optimize_node(opt, ctx, body, flags);
 		azo_compiler_set_frame(opt->comp, current);
 		if (result) return result;
 	}
@@ -552,15 +552,15 @@ optimize_function(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 static int
-optimize_function_call(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_function_call(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	AZONode *ref = node->children;
 	assert (ref != NULL);
 	AZONode *args = ref->next;
 	assert(args != NULL);
-	int result = optimize_node(opt, ref, flags);
+	int result = optimize_node(opt, ctx, ref, flags);
 	if (result) return result;
-	result = optimize_node(opt, args, flags);
+	result = optimize_node(opt, ctx, args, flags);
 	if (result) return result;
 
 	/* If reference is already constant we have nothing to do */
@@ -647,27 +647,27 @@ optimize_function_call(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 static int
-optimize_array_element(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_array_element(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	AZONode *ref = node->children;
 	assert(ref != NULL);
-	int result = optimize_node(opt, ref, flags);
+	int result = optimize_node(opt, ctx, ref, flags);
 	if (result) return result;
 	AZONode *idx = ref->next;
 	assert(idx != NULL);
-	result = optimize_node(opt, idx, flags);
+	result = optimize_node(opt, ctx, idx, flags);
 	if (result) return result;
 	return 0;
 }
 
 static int
-optimize_list(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_list(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	return optimize_children(opt, node, flags);
+	return optimize_children(opt, ctx, node, flags);
 }
 
 static int
-optimize_reference(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_reference(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	/* REFERENCE_VARIBLE has to be resolved to CONSTANT, VARIABLE, REFERENCE_PROPERTY or REFERENCE_ATTRIBUTE */
 	/* REFERENCE_MEMBER is never seen alone */
@@ -675,7 +675,7 @@ optimize_reference(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 	AZONode *parent = node->children;
 	AZONode *member = parent->next;
 	assert(AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER));
-	int result = optimize_node(opt, parent, flags);
+	int result = optimize_node(opt, ctx, parent, flags);
 	if (result) return result;
 	if (parent->term.type == AZO_TERM_CONSTANT) {
 		void *inst;
@@ -690,9 +690,9 @@ optimize_reference(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 static int
-optimize_literal_array(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_literal_array(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	int result = optimize_children(opt, node, flags);
+	int result = optimize_children(opt, ctx, node, flags);
 	if (result) return result;
 
 	unsigned int size = 0;
@@ -715,12 +715,12 @@ optimize_literal_array(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 static int
-optimize_cast(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_cast(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	assert(node->children);
 	assert(node->children->term.type == AZO_TERM_TYPE);
 	AZONode *expr = node->children->next;
-	int result = optimize_node(opt, expr, flags);
+	int result = optimize_node(opt, ctx, expr, flags);
 	if (result) return result;
 	return 0;
 }
@@ -744,15 +744,15 @@ optimize_prefix(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 static int
-optimize_binary(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_binary(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	AZONode *lhs = node->children;
 	assert(lhs);
 	AZONode *rhs = lhs->next;
 	assert(rhs);
-	int result = optimize_node(opt, lhs, flags);
+	int result = optimize_node(opt, ctx, lhs, flags);
 	if (result) return result;
-	result = optimize_node(opt, rhs, flags);
+	result = optimize_node(opt, ctx, rhs, flags);
 	if (result) return result;
 	if ((lhs->term.type == AZO_TERM_CONSTANT) && (rhs->term.type == AZO_TERM_CONSTANT) && (flags & AZO_OPTIMIZER_FLAG_CALC_CONST_EXPRESSIONS)) {
 		/* Calculate result */
@@ -769,24 +769,24 @@ optimize_comparison(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 static int
-optimize_assign(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_assign(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	AZONode *ref = node->children;
 	AZONode *val = ref->next;
-	return optimize_node(opt, val, flags);
+	return optimize_node(opt, ctx, val, flags);
 }
 
 static int
-optimize_test(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_test(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	/* fixme: */
 	return 0;
 }
 
 static int
-optimize_select(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_select(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	int result = optimize_children(opt, node, flags);
+	int result = optimize_children(opt, ctx, node, flags);
 	if (result) return result;
 	AZONode *cond = node->children;
 	AZONode *if_true = cond->next;
@@ -838,7 +838,7 @@ optimize_type(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 static int
-optimize_node(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_node(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	switch (node->term.type) {
 		case AZO_TERM_INVALID:
@@ -847,47 +847,47 @@ optimize_node(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 		case AZO_TERM_EMPTY:
 			return 0;
 		case AZO_TERM_PROGRAM:
-			return optimize_program(opt, node, flags);
+			return optimize_program(opt, ctx, node, flags);
 		case AZO_TERM_BLOCK:
-			return optimize_block(opt, node, flags);
+			return optimize_block(opt, ctx, node, flags);
 		case AZO_TERM_STATEMENT_GROUP:
-			return optimize_group(opt, node, flags);
+			return optimize_group(opt, ctx, node, flags);
 		case AZO_TERM_KEYWORD:
-			return optimize_keyword(opt, node, flags);
+			return optimize_keyword(opt, ctx, node, flags);
 		case AZO_TERM_DECLARATION_LIST:
-			return optimize_declaration_list(opt, node, flags);
+			return optimize_declaration_list(opt, ctx, node, flags);
 		case AZO_TERM_DECLARATION:
-			return optimize_declaration(opt, node, flags);
+			return optimize_declaration(opt, ctx, node, flags);
 		case AZO_TERM_ARGUMENT_DECLARATION:
-			return optimize_argument_declaration(opt, node, flags);
+			return optimize_argument_declaration(opt, ctx, node, flags);
 		case AZO_TERM_FUNCTION:
-			return optimize_function(opt, node, flags);
+			return optimize_function(opt, ctx, node, flags);
 		case AZO_TERM_FUNCTION_CALL:
-			return optimize_function_call(opt, node, flags);
+			return optimize_function_call(opt, ctx, node, flags);
 		case AZO_TERM_ARRAY_ELEMENT:
-			return optimize_array_element(opt, node, flags);
+			return optimize_array_element(opt, ctx, node, flags);
 		case AZO_TERM_LIST:
-			return optimize_list(opt, node, flags);
+			return optimize_list(opt, ctx, node, flags);
 		case AZO_TERM_REFERENCE:
-			return optimize_reference(opt, node, flags);
+			return optimize_reference(opt, ctx, node, flags);
 		case AZO_TERM_LITERAL_ARRAY:
-			return optimize_literal_array(opt, node, flags);
+			return optimize_literal_array(opt, ctx, node, flags);
 		case AZO_TERM_CAST:
-			return optimize_cast(opt, node, flags);
+			return optimize_cast(opt, ctx, node, flags);
 		case AZO_TERM_SUFFIX:
 			return optimize_suffix(opt, node, flags);
 		case AZO_TERM_PREFIX:
 			return optimize_prefix(opt, node, flags);
 		case AZO_TERM_BINARY:
-			return optimize_binary(opt, node, flags);
+			return optimize_binary(opt, ctx, node, flags);
 		case AZO_TERM_COMPARISON:
 			return optimize_comparison(opt, node, flags);
 		case AZO_TERM_ASSIGN:
-			return optimize_assign(opt, node, flags);
+			return optimize_assign(opt, ctx, node, flags);
 		case AZO_TERM_TEST:
-			return optimize_test(opt, node, flags);
+			return optimize_test(opt, ctx, node, flags);
 		case AZO_TERM_SELECT:
-			return optimize_select(opt, node, flags);
+			return optimize_select(opt, ctx, node, flags);
 		case  AZO_TERM_CONSTANT:
 			return optimize_constant(opt, node, flags);
 		case AZO_TERM_VARIABLE:
@@ -901,13 +901,15 @@ optimize_node(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 int
-azo_compiler_optimize (AZOOptimizer *opt, AZONode *root, unsigned int flags)
+azo_compiler_optimize_program(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *root, unsigned int flags)
 {
+	assert(AZO_NODE_IS(root, AZO_TERM_PROGRAM, AZO_TERM_GENERIC));
 	unsigned int iter = 0;
 	do {
 		fprintf(stderr, "---- Optimizer iteration %d ------\n", iter++);
+		ctx->this_node = root->children;
 		opt->n_const_subst = 0;
-		int result = optimize_node(opt, root, flags);
+		int result = optimize_chain(opt, ctx, root->children->next, flags);
 		if (result) return result;
 		// fprintf(stderr, "----------before--------------\n");
 		//azo_node_print_info(root, stderr, opt->comp->src, 0);

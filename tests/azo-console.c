@@ -39,18 +39,19 @@ main(int argc, const char *argv[])
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, globals, src);
     AZOResolveCtx rctx = {
-        .this_impl = NULL,
-        .this_inst = NULL,
         .ret_type = AZ_TYPE_NONE
     };
 	rctx.frame = azo_compiler_push_frame(&comp, NULL, NULL, 0, AZ_TYPE_NONE);
-	int result = azo_compiler_resolve_frame(&comp, &rctx, expr);
+	int result = azo_compiler_resolve_program(&comp, &rctx, expr, NULL, NULL);
     azo_node_print_info(expr, stdout, src, 0);
 
     fprintf(stderr, "-------- OPTIMIZING --------\n");
     AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
-	result = azo_compiler_optimize(&opt, expr, AZO_OPTIMIZER_FLAG_ALL);
+    AZOOptimizerCtx opt_ctx = {
+        .ret_type = AZ_TYPE_NONE
+    };
+	result = azo_compiler_optimize_program(&opt, &opt_ctx, expr, AZO_OPTIMIZER_FLAG_ALL);
     azo_node_print_info(expr, stdout, src, 0);
 
     azo_optimizer_release(&opt);

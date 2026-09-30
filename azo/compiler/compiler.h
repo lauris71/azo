@@ -34,11 +34,11 @@ struct _AZOCompilerContext {
 	 * @brief General context
 	 * 
 	 */
-	const AZImplementation *this_impl;
-	void *this_inst;
 	unsigned int ret_type;
 	/* The current frame */
 	AZOFrame *frame;
+
+	AZONode *this_node;
 
 	/* Resolver */
     unsigned int ret_is_last;
@@ -89,7 +89,6 @@ void azo_compiler_release (AZOCompiler *compiler);
  * @brief Resolves references and types in parsed tree
  * 
  * Argumets must be already declared as variables.
- * The frame will be linked to node.
  * 
  * References are replaced with either VARIABLE or CONSTANT nodes
  * All type expressions must resolve to constants
@@ -97,9 +96,11 @@ void azo_compiler_release (AZOCompiler *compiler);
  * @param comp A compiler
  * @param rctx Resolve context
  * @param root The root node of the parsed tree
+ * @param impl The implementation of the code being compiled
+ * @param inst The instance of the implementation
  * @return 0 if successful, non-zero otherwise
  */
-int azo_compiler_resolve_frame (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node);
+int azo_compiler_resolve_program(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, const AZImplementation *this_impl, void *this_inst);
 
 AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOCompilerContext *ctx, AZONode *root, AZOSource *src);
 

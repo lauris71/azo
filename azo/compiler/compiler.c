@@ -1072,12 +1072,10 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	AZOFrame *func_frame = comp->frames[node->frame];
 	AZOFrame *prev_frame = azo_compiler_set_frame(comp, func_frame);
 
-	AZOCompilerContext func_ctx = {
-		.this_impl = ctx->this_impl,
-		.this_inst = ctx->this_inst,
-		.ret_type = ret_type,
-		.frame = func_frame
-	};
+	AZOCompilerContext func_ctx = *ctx;
+	func_ctx.this_node = obj;
+	func_ctx.ret_type = ret_type;
+	func_ctx.frame = func_frame;
 	
 	prog = azo_compiler_compile(comp, &func_ctx, body, src);
 	/* Restore the previous frame */
@@ -1664,6 +1662,19 @@ azo_compiler_compile (AZOCompiler *comp, AZOCompilerContext *ctx, AZONode *root,
 		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", root->term.type);
 		return NULL;
 	}
+#if 0
+	if (comp->current->this_impl) {
+		if (comp->current->this_inst) {
+			assert(root->children->term.type == AZO_TERM_CONSTANT);
+			assert(comp->current->this_impl == root->children->value.impl);
+		} else {
+			assert(AZO_NODE_IS(root->children, AZO_TERM_TYPE, AZO_TERM_GENERIC));
+			assert(AZ_IMPL_TYPE(comp->current->this_impl) == root->children->term.subtype);
+		}
+	} else {
+		assert(AZO_NODE_IS(root->children, AZO_TERM_EMPTY, AZO_TERM_GENERIC));
+	}
+#endif
 	prog = azo_program_new(comp->globals, comp->current, root, src);
 
 	return prog;

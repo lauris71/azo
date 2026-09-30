@@ -111,8 +111,6 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	//azo_node_print_info(expr, stderr, src, 0);
 
 	AZOCompilerContext comp_ctx = {
-		.this_impl = this_impl,
-		.this_inst = this_inst,
 		.ret_type = ret_type
 	};
 	AZOCompiler comp;
@@ -128,7 +126,7 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 		// fixme: fail
 	}
 	comp_ctx.frame = frame;
-	int result = azo_compiler_resolve_frame(&comp, &comp_ctx, expr);
+	int result = azo_compiler_resolve_program(&comp, &comp_ctx, expr, this_impl, this_inst);
 	if (result != 0) {
 		azo_parser_release (&parser);
 		azo_source_unref(src);
@@ -138,7 +136,11 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	//azo_node_print_info(expr, stderr, src, 0);
 	AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
-	result = azo_compiler_optimize(&opt, expr, AZO_OPTIMIZER_FLAG_ALL);
+	comp_ctx = (AZOCompilerContext) {
+		.ret_type = ret_type
+	};
+	comp_ctx.frame = frame;
+	result = azo_compiler_optimize_program(&opt, &comp_ctx, expr, AZO_OPTIMIZER_FLAG_ALL);
 	azo_optimizer_release(&opt);
 	if (result != 0) {
 		azo_parser_release (&parser);
@@ -148,8 +150,6 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	}
 
 	comp_ctx = (AZOCompilerContext) {
-		.this_impl = this_impl,
-		.this_inst = this_inst,
 		.ret_type = ret_type
 	};
 	comp_ctx.frame = frame;
