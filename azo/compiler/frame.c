@@ -26,12 +26,6 @@ azo_frame_init(AZOFrame *frame, AZOFrame *parent, const AZImplementation *this_i
 	frame->ret_type = ret_type;
 	frame->this_impl = this_impl;
 	frame->this_inst = this_inst;
-	if (this_impl) {
-		frame->this_node = azo_node_new(AZO_TERM_CONSTANT, AZ_IMPL_TYPE(this_impl), 0, 0);
-		az_packed_value_set_from_impl_instance(&frame->this_node->value, this_impl, this_inst);
-	} else {
-		frame->this_node = azo_node_new(AZO_TERM_EMPTY, AZO_TERM_GENERIC, 0, 0);
-	}
 	frame->n_args = n_args;
 
 	frame->n_captures = (this_impl) ? 1 : 0;
@@ -47,7 +41,6 @@ azo_frame_finalize(AZOFrame *frame)
 	while (frame->scope) {
 		azo_frame_pop_scope (frame);
 	}
-	azo_node_free_tree(frame->this_node);
 	azo_code_clear(&frame->code);
 	azo_var_list_free(frame->parent_vars);
 }

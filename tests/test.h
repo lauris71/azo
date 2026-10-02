@@ -18,6 +18,9 @@ AZONode *parse_text(const char *text, AZOParser *parser, AZOSource **src);
 void free_parse(AZOParser *parser, AZOSource *src, AZONode *tree);
 
 /* Test entry points (called from main in test.c) */
+void test_tokenizer(void);
+void test_parser(void);
+void test_resolver(void);
 void test_compile(void);
 void test_assign(void);
 void test_comparison(void);
@@ -26,7 +29,5 @@ void test_function(void);
 #ifdef HAS_FUNCTION_KEYWORD
 void test_legacy_function(void);
 #endif
-void test_tokenizer(void);
-void test_parser(void);
 
 #endif /* AZO_TEST_H */

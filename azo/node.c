@@ -77,6 +77,24 @@ azo_node_clear_children (AZONode *expr)
 	}
 }
 
+AZONode *
+azo_node_duplicate_tee(AZONode *node)
+{
+	AZONode *new_node = azo_node_new (node->term.type, node->term.subtype, node->term.start, node->term.end);
+	az_packed_value_transfer (&new_node->value, &node->value);
+	AZONode *prev = NULL;
+	for (AZONode *child = node->children; child; child = child->next) {
+		AZONode *child_copy = azo_node_duplicate_tee(child);
+		if (!prev) {
+			new_node->children = child_copy;
+		} else {
+			prev->next = child_copy;
+		}
+		prev = child_copy;
+	}
+	return new_node;
+}
+
 static unsigned int
 node_flatten (AZONode *node, AZONode **nodes, unsigned int max_nodes, unsigned int pos)
 {
@@ -252,24 +270,21 @@ azo_node_print (AZONode *expr, FILE *ofs)
 	case AZO_TERM_EMPTY:
 		fprintf (ofs, "EMPTY ");
 		break;
+	case AZO_TERM_CONTEXT:
+		fprintf (ofs, "CONTEXT ");
+		azo_node_print (expr->children, ofs);
+		fprintf (ofs, "{\n");
+		azo_node_print_list (expr->children->children, ofs, "\n");
+		fprintf (ofs, "} CONTEXT}n");
+		break;
 	case AZO_TERM_PROGRAM:
 		fprintf (ofs, "BEGIN_PROGRAM ");
-		azo_node_print(expr->children, ofs);
-		fprintf(ofs, "\n");
-		azo_node_print_list (expr->children->next, ofs, "\n");
+		azo_node_print_list (expr->children, ofs, "\n");
 		fprintf (ofs, "\nEND_PROGRAM\n");
 		break;
 	case AZO_TERM_BLOCK:
-		child = expr->children;
-		if (expr->term.subtype == AZO_TERM_BLOCK_STATIC) {
-			fprintf (ofs, "static ");
-		} else if (expr->term.subtype == AZO_TERM_BLOCK_REFERENCE) {
-			azo_node_print (child, ofs);
-			fprintf(stderr, " ");
-			child = child->next;
-		}
 		fprintf (ofs, "{\n");
-		azo_node_print_list (child, ofs, "\n");
+		azo_node_print_list (expr->children, ofs, "\n");
 		fprintf (ofs, "}\n");
 		break;
 	case AZO_TERM_STATEMENT_GROUP:
@@ -508,9 +523,7 @@ print_line (AZONode *expr, FILE *ofs)
 		break;
 	case AZO_TERM_PROGRAM:
 		fprintf (ofs, "BEGIN_PROGRAM ");
-		azo_node_print(expr->children, ofs);
-		fprintf(ofs, "\n");
-		print_sentences (expr->children->next, ofs);
+		print_sentences (expr->children, ofs);
 		fprintf (ofs, "END_PROGRAM");
 		break;
 	default:
@@ -524,16 +537,8 @@ print_sentence (AZONode *expr, FILE *ofs)
 	AZONode *child;
 	switch (expr->term.type) {
 	case AZO_TERM_BLOCK:
-		child = expr->children;
-		if (expr->term.subtype == AZO_TERM_BLOCK_STATIC) {
-			fprintf (ofs, "static ");
-		} else if (expr->term.subtype == AZO_TERM_BLOCK_REFERENCE) {
-			azo_node_print (child, ofs);
-			fprintf(stderr, " ");
-			child = child->next;
-		}
 		fprintf (ofs, "{\n");
-		print_sentences (child, ofs);
+		print_sentences (expr->children, ofs);
 		fprintf (ofs, "}\n");
 		break;
 	case AZO_TERM_KEYWORD:
@@ -604,6 +609,7 @@ azo_node_print_list (AZONode *expr, FILE *ofs, const char *separator)
 const char *expr_names[] = {
 	"INVALID",
 	"EMPTY",
+	"CONTEXT",
 	"PROGRAM",
 	"BLOCK",
 	"STATEMENT_GROUP",

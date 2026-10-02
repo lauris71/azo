@@ -41,10 +41,18 @@ enum {
 	AZO_TERM_EMPTY,
 
 	/**
+	 * @brief Forces specific context to children
+	 * 
+	 * CONTEXT
+	 *   REFERENCE | EMPTY
+	 *   SENTENCES | EXPRESSION
+	 */
+	AZO_TERM_CONTEXT,
+
+	/**
 	 * @brief Full program
 	 * 
 	 * PROGRAM
-	 *   CONSTANT | EMPTY
 	 *   [SENTENCE ...]
 	 */
 	AZO_TERM_PROGRAM,
@@ -198,13 +206,6 @@ enum {
 
 /* Unspecified subtype */
 #define AZO_TERM_GENERIC 0
-
-/* Block subtypes */
-enum {
-	AZO_TERM_BLOCK_PLAIN,
-	AZO_TERM_BLOCK_STATIC,
-	AZO_TERM_BLOCK_REFERENCE
-};
 
 /* Reference subtypes */
 enum {
@@ -414,6 +415,7 @@ AZONode *azo_node_new_with_children(unsigned int type, unsigned int subtype, uns
 void azo_node_free (AZONode *expr);
 void azo_node_free_tree (AZONode *expr);
 void azo_node_clear_children (AZONode *expr);
+AZONode *azo_node_duplicate_tee(AZONode *node);
 
 /**
  * @brief Flatten a node tree into an array

@@ -12,6 +12,7 @@ add_executable(azo_test
     test.c
     test_tokenizer.c
     test_parser.c
+    test_resolver.c
 )
 
 target_compile_definitions(azo_test PRIVATE UNITY_INCLUDE_DOUBLE)
@@ -32,10 +33,11 @@ if(MATH_LIBRARY)
     target_link_libraries(azo_test PRIVATE ${MATH_LIBRARY})
 endif()
 
+add_test(NAME tokenizer COMMAND azo_test tokenizer)
+add_test(NAME parser COMMAND azo_test parser)
+add_test(NAME resolver COMMAND azo_test resolver)
 add_test(NAME compile COMMAND azo_test compile)
 add_test(NAME assign COMMAND azo_test assign)
 add_test(NAME comparison COMMAND azo_test comparison)
 add_test(NAME cycles COMMAND azo_test cycles)
 add_test(NAME function COMMAND azo_test function)
-add_test(NAME tokenizer COMMAND azo_test tokenizer)
-add_test(NAME parser COMMAND azo_test parser)

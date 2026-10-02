@@ -465,10 +465,10 @@ static int
 optimize_keyword(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	if (node->term.subtype == AZO_KEYWORD_THIS) {
-		if (opt->comp->current->this_impl && opt->comp->current->this_inst) {
+		if (ctx->this_node && (ctx->this_node->term.type == AZO_TERM_CONSTANT)) {
 			node->term.type = AZO_TERM_CONSTANT;
-			node->term.subtype = AZ_IMPL_TYPE(opt->comp->current->this_impl);
-			az_packed_value_set_autobox(&node->value, opt->comp->current->this_impl, opt->comp->current->this_inst);
+			node->term.subtype = ctx->this_node->term.subtype;
+			az_packed_value_copy(&node->value, &ctx->this_node->value);
 			fprintf(stderr, "resolve_member: Replaced 'this' with ");
 			azo_node_print(node, stderr);
 			fprintf(stderr, "\n");
@@ -593,12 +593,6 @@ optimize_function_call(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, u
 		impl = parent->value.impl;
 		inst = az_value_get_inst(parent->value.impl, &parent->value.v);
 		str = member->value.v.string;
-	} else if (ref->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
-		if (!opt->comp->current->this_impl) return 0;
-		klass = AZ_CLASS_FROM_IMPL(opt->comp->current->this_impl);
-		impl = opt->comp->current->this_impl;
-		inst = opt->comp->current->this_inst;
-		str = ref->value.v.string;
 	} else {
 		fprintf (stderr, "azo_compiler_resolve_function_call: unknown reference subtype\n");
 		return 1;
@@ -840,12 +834,23 @@ optimize_type(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 static int
 optimize_node(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
+	int result = 0;
 	switch (node->term.type) {
 		case AZO_TERM_INVALID:
 			fprintf(stderr, "optimize_node: type = INVALID\n");
 			return 1;
 		case AZO_TERM_EMPTY:
 			return 0;
+		case AZO_TERM_CONTEXT: {
+			AZONode *this_node = node->children;
+			unsigned int lresult = optimize_node(opt, ctx, this_node, flags);
+			if (lresult) result = 1;
+			AZOResolveCtx lctx = *ctx;
+			lctx.this_node = this_node;
+			lresult = optimize_chain(opt, &lctx, this_node->next, flags);
+			if (lresult) result = 1;
+			return result;
+		}
 		case AZO_TERM_PROGRAM:
 			return optimize_program(opt, ctx, node, flags);
 		case AZO_TERM_BLOCK:
@@ -907,9 +912,8 @@ azo_compiler_optimize_program(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *
 	unsigned int iter = 0;
 	do {
 		fprintf(stderr, "---- Optimizer iteration %d ------\n", iter++);
-		ctx->this_node = root->children;
 		opt->n_const_subst = 0;
-		int result = optimize_chain(opt, ctx, root->children->next, flags);
+		int result = optimize_chain(opt, ctx, root->children, flags);
 		if (result) return result;
 		// fprintf(stderr, "----------before--------------\n");
 		//azo_node_print_info(root, stderr, opt->comp->src, 0);

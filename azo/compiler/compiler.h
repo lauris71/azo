@@ -40,9 +40,6 @@ struct _AZOCompilerContext {
 
 	AZONode *this_node;
 
-	/* Resolver */
-    unsigned int ret_is_last;
-
 	/* Compiler */
 	/* The number of variables pushed into stack */
 	unsigned int n_stack;

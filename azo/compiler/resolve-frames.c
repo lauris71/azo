@@ -51,7 +51,7 @@ resolve_children (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 unsigned int
 resolve_sentence (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
-	rctx->ret_is_last = 0;
+	comp->current->ret_is_last = 0;
 	return azo_compiler_resolve_node(comp, rctx, node);
 }
 
@@ -73,7 +73,7 @@ azo_compiler_resolve_frame(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node
 	int result = resolve_sentences(comp, rctx, node->children);
 	if (result) return result;
 
-	if (rctx->frame->ret_type && !rctx->ret_is_last) {
+	if (rctx->frame->ret_type && !comp->current->ret_is_last) {
 		fprintf (stderr, "azo_compiler_resolve_frame: Missing return statement\n");
 		return 1;
 	}
@@ -182,19 +182,19 @@ resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
 	AZOVariable *var;
 	unsigned int result;
-	AZONode *id = node->children;
-	AZONode *value = id->next;
-	if (azo_scope_lookup_local_var (comp->current->scope, id->value.v.string)) {
-		fprintf (stderr, "resolve_declaration: Variable %s already declared in scope\n", id->value.v.string->str);
+	AZONode *name = node->children;
+	AZONode *value = name->next;
+	if (azo_scope_lookup_local_var (comp->current->scope, name->value.v.string)) {
+		fprintf (stderr, "resolve_declaration: Variable %s already declared in scope\n", name->value.v.string->str);
 		return 1;
 	}
-	// fixme: Use type
-	var = azo_frame_declare_variable (comp->current, id->value.v.string, AZ_TYPE_ANY, &result);
-	if (result) return result;
+	/* Value has to be solved first so it cannot refer to name */
 	if (value) {
 		result = azo_compiler_resolve_node (comp, rctx, value);
 		if (result) return result;
 	}
+	// fixme: Use type
+	azo_frame_declare_variable (comp->current, name->value.v.string, AZ_TYPE_ANY, &result);
 	return 0;
 }
 
@@ -266,6 +266,18 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	unsigned int ret_type = type->term.subtype;
 
 	/* This type */
+	AZONode *this_node = NULL;
+	if (obj) {
+		this_node = azo_node_duplicate_tee(obj);
+	} else if (expr->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD) {
+		this_node = azo_node_new(AZO_TERM_TYPE, AZ_TYPE_ANY, body->term.start, body->term.end);
+	}
+	if (this_node) {
+		AZONode *ctx_node = azo_node_new(AZO_TERM_CONTEXT, AZO_TERM_GENERIC, body->term.start, body->term.end);
+		ctx_node->children = this_node;
+		this_node->next = body->children;
+		body->children = ctx_node;
+	}
 	const AZImplementation *this_impl = (expr->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD)
 		//|| (expr->term.subtype == AZO_TERM_LAMBDA)
 		? (const AZImplementation *) az_type_get_class (AZ_TYPE_ANY) : NULL;
@@ -373,12 +385,31 @@ static unsigned int
 resolve_plain_assign(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
 	assert(AZO_NODE_IS(node, AZO_TERM_ASSIGN, AZO_TERM_ASSIGN_PLAIN));
-	AZONode *left = node->children;
-	AZONode *right = left->next;
-	unsigned int result = azo_compiler_resolve_node (comp, rctx, left);
-	if (result) return result;
-	result = azo_compiler_resolve_node (comp, rctx, right);
-	if (result) return result;
+	AZONode *this_node = NULL;
+	for (AZONode *child = node->children; child; child = child->next) {
+		if (child->next) {
+			int result = azo_compiler_resolve_node (comp, rctx, child);
+			if (result) return result;
+			if (AZO_NODE_IS(child, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY) || AZO_NODE_IS(child, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_ATTRIBUTE)) {
+				/* Keep track of context */
+				this_node = child->children;
+			}
+		} else {
+			if (this_node && AZO_NODE_IS(child, AZO_TERM_FUNCTION, AZO_TERM_LAMBDA)) {
+				AZONode *type = child->children;
+				AZONode *args = type->next;
+				AZONode *body = args->next;
+				/* Add context node to lambda body */
+				this_node = azo_node_duplicate_tee(this_node);
+				AZONode *ctx_node = azo_node_new(AZO_TERM_CONTEXT, AZO_TERM_GENERIC, child->term.start, child->term.end);
+				ctx_node->children = this_node;
+				this_node->next = body;
+				args->next = ctx_node;
+			}
+			int result = azo_compiler_resolve_node (comp, rctx, child);
+			if (result) return result;
+		}
+	}
 	return 0;
 }
 
@@ -463,7 +494,7 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 			result = 1;
 		}
 	}
-	rctx->ret_is_last = 1;
+	comp->current->ret_is_last = 1;
 	return result;
 }
 
@@ -499,7 +530,7 @@ azo_compiler_resolve_cast (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr
 static int
 resolve_this(AZOCompiler *comp, AZOResolveCtx *ctx, AZONode *node)
 {
-	if (!ctx->this_node) {
+	if (!ctx->this_node || (ctx->this_node->term.type == AZO_TERM_EMPTY)) {
 		fprintf(stderr, "resolve_this: 'this' used outside of class context\n");
 		return 1;
 	}
@@ -512,23 +543,7 @@ resolve_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	int result;
 	/* Create new scope */
 	azo_frame_push_scope(comp->current);
-	if (node->term.subtype == AZO_TERM_BLOCK_PLAIN) {
-		result = resolve_children(comp, rctx, node);
-	} else if (node->term.subtype == AZO_TERM_BLOCK_STATIC) {
-		AZOResolveCtx lctx = *rctx;
-		lctx.this_node = NULL;
-		result = resolve_children(comp, &lctx, node);
-	} else if (node->term.subtype == AZO_TERM_BLOCK_REFERENCE) {
-		AZONode *expr = node->children;
-		result = azo_compiler_resolve_node(comp, rctx, expr);
-		AZOResolveCtx lctx = *rctx;
-		lctx.this_node = expr;
-		unsigned int lresult = resolve_chain(comp, &lctx, expr->next);
-		if (lresult) result = 1;
-	} else {
-		fprintf(stderr, "resolve_block: Invalid block subtype %u\n", node->term.subtype);
-		return 1;
-	}
+	result = resolve_children(comp, rctx, node);
 	azo_frame_pop_scope(comp->current);
 	return result;
 }
@@ -543,6 +558,16 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 			return 1;
 		case AZO_TERM_EMPTY:
 			return 0;
+		case AZO_TERM_CONTEXT: {
+			AZONode *this_node = node->children;
+			unsigned int lresult = azo_compiler_resolve_node(comp, rctx, this_node);
+			if (lresult) result = 1;
+			AZOResolveCtx lctx = *rctx;
+			lctx.this_node = this_node;
+			lresult = resolve_chain(comp, &lctx, this_node->next);
+			if (lresult) result = 1;
+			return result;
+		}
 		case AZO_TERM_PROGRAM:
 			fprintf(stderr, "resolve_node: type = PROGRAM\n");
 			return 1;
@@ -573,7 +598,8 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		case AZO_TERM_DECLARATION_LIST:
 			return resolve_declaration_list (comp, rctx, node);
 		case AZO_TERM_DECLARATION:
-			return resolve_children(comp, rctx, node);
+			/* Should not be called directly */
+			assert(0);
 		case AZO_TERM_ARGUMENT_DECLARATION:
 			return resolve_argument_declaration(comp, rctx, node);
 		case AZO_TERM_FUNCTION:
@@ -606,9 +632,10 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		case AZO_TERM_SELECT:
 		case AZO_TERM_CONSTANT:
 			return resolve_children(comp, rctx, node);
-		/* The following two should not be in parse tree */
-		case AZO_TERM_VARIABLE:
 		case AZO_TERM_TYPE:
+		case AZO_TERM_VARIABLE:
+			/* Already final */
+			return 0;
 		default:
 			assert(0);
 	}
@@ -619,18 +646,19 @@ int
 azo_compiler_resolve_program(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, const AZImplementation *this_impl, void *this_inst)
 {
 	assert(AZO_NODE_IS(node, AZO_TERM_PROGRAM, AZO_TERM_GENERIC));
-	AZONode *this_node = node->children;
-	assert(AZO_NODE_IS(this_node, AZO_TERM_EMPTY, AZO_TERM_GENERIC));
 	if (this_impl) {
+		/* We have to wrap the whole program in context node */
+		AZONode *ctx_node = azo_node_new(AZO_TERM_CONTEXT, AZO_TERM_GENERIC, node->term.start, node->term.end);
+		AZONode *this_node;
 		if (this_inst) {
-			this_node->term.type = AZO_TERM_CONSTANT;
-			this_node->term.subtype = AZ_IMPL_TYPE(this_impl);
+			this_node = azo_node_new(AZO_TERM_CONSTANT, AZ_IMPL_TYPE(this_impl), node->term.start, node->term.start);
 			az_packed_value_set_autobox(&this_node->value, this_impl, this_inst);
 		} else {
-			this_node->term.type = AZO_TERM_TYPE;
-			this_node->term.subtype = AZ_IMPL_TYPE(this_impl);
+			this_node = azo_node_new(AZO_TERM_TYPE, AZ_IMPL_TYPE(this_impl), node->term.start, node->term.start);
 		}
+		ctx_node->children = this_node;
+		this_node->next = node->children;
+		node->children = ctx_node;
 	}
-	rctx->this_node = this_node;
 	return azo_compiler_resolve_frame(comp, rctx, node);
 }

@@ -7,6 +7,8 @@
 #include <azo/context.h>
 #include <azo/source.h>
 #include <azo/program.h>
+#include <azo/compiler/compiler.h>
+#include <azo/compiler/optimizer.h>
 
 #include "unity/unity.h"
 #include "test.h"
@@ -24,7 +26,13 @@ main(int argc, const char *argv[])
 {
     UNITY_BEGIN();
     for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "compile")) {
+        if (!strcmp(argv[i], "tokenizer")) {
+            RUN_TEST(test_tokenizer);
+        } else if (!strcmp(argv[i], "parser")) {
+            RUN_TEST(test_parser);
+        } else if (!strcmp(argv[i], "resolver")) {
+            RUN_TEST(test_resolver);
+        } else if (!strcmp(argv[i], "compile")) {
             RUN_TEST(test_compile);
         } else if (!strcmp(argv[i], "assign")) {
             RUN_TEST(test_assign);
@@ -35,10 +43,6 @@ main(int argc, const char *argv[])
 #ifdef HAS_FUNCTION_KEYWORD
             RUN_TEST(test_legacy_function);
 #endif
-        } else if (!strcmp(argv[i], "tokenizer")) {
-            RUN_TEST(test_tokenizer);
-        } else if (!strcmp(argv[i], "parser")) {
-            RUN_TEST(test_parser);
         } else if (!strcmp(argv[i], "cycles")) {
             RUN_TEST(test_cycles);
         }
@@ -51,10 +55,58 @@ static AZODataBlock static_data = {0};
 static int
 test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, const AZImplementation **ret_impl, AZValue *ret_val)
 {
+    az_init();
+    AZOContext *globals = azo_context_new();
+    azo_context_define_basic_types(globals);
+
     AZOSource *src = azo_source_new_static((const uint8_t *) "test-source", (const uint8_t *) text, strlen(text));
-	AZOProgram *prog = azo_program_compile_from_text(ctx, (const uint8_t *) text, NULL, NULL,
-        ret_type, 0, NULL, NULL, src->cdata, src->csize);
+
+	AZOParser parser;
+	azo_parser_setup (&parser, src);
+	AZONode *tree = azo_parser_parse(&parser);
+	azo_node_print_info(tree, stderr, src, 0);
+
+	AZOCompilerContext comp_ctx = {
+		.ret_type = AZ_TYPE_INT32
+	};
+	AZOCompiler comp;
+	azo_compiler_setup(&comp, globals, src);
+	comp.debug = 1;
+
+	AZOFrame *frame = azo_compiler_push_frame(&comp, NULL, NULL, 0, AZ_TYPE_INT32);
+
+    comp_ctx.frame = frame;
+	int result = azo_compiler_resolve_program(&comp, &comp_ctx, tree, NULL, NULL);
+	if (result != 0) {
+		azo_parser_release (&parser);
+		azo_source_unref(src);
+		azo_compiler_release(&comp);
+		return 1;
+	}
+	azo_node_print_info(tree, stderr, src, 0);
+	AZOOptimizer opt;
+	azo_optimizer_setup(&opt, &comp);
+	comp_ctx = (AZOCompilerContext) {
+		.ret_type = AZ_TYPE_INT32
+	};
+	comp_ctx.frame = frame;
+	result = azo_compiler_optimize_program(&opt, &comp_ctx, tree, AZO_OPTIMIZER_FLAG_ALL);
+	azo_optimizer_release(&opt);
+	if (result != 0) {
+		azo_parser_release (&parser);
+		azo_source_unref(src);
+		azo_compiler_release(&comp);
+		return 1;
+	}
+
+	comp_ctx = (AZOCompilerContext) {
+		.ret_type = AZ_TYPE_INT32
+	};
+	comp_ctx.frame = frame;
+	AZOProgram *prog = azo_compiler_compile (&comp, &comp_ctx, tree, src);
+
     if (!prog) return 1;
+    azo_program_print_bytecode(prog);
 	azo_program_interpret(prog, ctx->intr, &static_data, 0, NULL, NULL, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
     azo_program_unref(prog);
     az_object_unref((AZObject *) src);
@@ -66,6 +118,9 @@ static const char *compile_src = ""
 "int32 b = 2;\n"
 "int32 c = (int32) (a + b);\n"
 "return c;\n"
+"";
+static const char *_compile_src = ""
+"return 3;\n"
 "";
 
 void

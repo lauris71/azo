@@ -38,6 +38,7 @@ struct _AZOFrame {
 	 * NULL for void block.
 	 */
 	unsigned int ret_type;
+	unsigned int ret_is_last;
 	/**
 	 * @brief Reference to this
 	 * 
@@ -46,7 +47,6 @@ struct _AZOFrame {
 	 */
 	const AZImplementation *this_impl;
 	void *this_inst;
-	AZONode *this_node;
 	/**
 	 * @brief The number of arguments (i.e. reserved variable positions)
 	 * 

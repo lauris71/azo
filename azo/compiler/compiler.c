@@ -1390,7 +1390,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 		azo_compiler_compile_expression (comp, ctx, value, src);
 	} else {
 		/* fixme: Implement runtime (or at least compile-time) type */
-		azo_compiler_write_PUSH_EMPTY (comp, AZ_TYPE_NONE, node);
+		azo_compiler_write_PUSH_EMPTY (comp, type, node);
 		//azo_compiler_write_PUSH_EMPTY (comp, type);
 	}
 	ctx->n_stack += 1;
@@ -1453,11 +1453,6 @@ static unsigned int
 compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
 	AZONode *child = node->children;
-	if (node->term.subtype == AZO_TERM_BLOCK_REFERENCE) {
-		// fixme: Should we push reference?
-		// Then variables should be adjusted accordingly during resolve
-		child = child->next;
-	}
 	unsigned int n_stack = ctx->n_stack;
 	unsigned int result = compile_sentences(comp, ctx, child, src);
 	/* Clear scope */
@@ -1603,7 +1598,9 @@ compile_if (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZO
 static unsigned int
 compile_sentence (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
-	if (AZO_NODE_IS(node, AZO_TERM_BLOCK, 0)) {
+	if (AZO_NODE_IS(node, AZO_TERM_CONTEXT, 0)) {
+		if (!compile_sentences(comp, ctx, node->children->next, src)) return 0;
+	} else if (AZO_NODE_IS(node, AZO_TERM_BLOCK, 0)) {
 		if (!compile_block (comp, ctx, node, src)) return 0;
 	} else if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_FOR)) {
 		if (!compile_for (comp, ctx, node, src)) return 0;
@@ -1643,7 +1640,7 @@ compile_sentences (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *no
 static unsigned int
 compile_program (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src)
 {
-	compile_sentences(comp, ctx, expr->children->next, src);
+	compile_sentences(comp, ctx, expr->children, src);
 	return 1;
 }
 
@@ -1656,6 +1653,9 @@ azo_compiler_compile (AZOCompiler *comp, AZOCompilerContext *ctx, AZONode *root,
 		/* Programs are lists of sentences */
 		if (!compile_program (comp, ctx, root, src)) return NULL;
 	} else if (root->term.type == AZO_TERM_BLOCK) {
+		/* Function bodies are blocks */
+		if (!compile_sentence (comp, ctx, root, src)) return NULL;
+	} else if (root->term.type == AZO_TERM_CONTEXT) {
 		/* Function bodies are blocks */
 		if (!compile_sentence (comp, ctx, root, src)) return NULL;
 	} else {
