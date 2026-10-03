@@ -1,5 +1,6 @@
 SET(SOURCES
     arithmetic.c arithmetic.h
+    helpers.c helpers.h
     compiler.c compiler.h
     frame.c frame.h
     calculate-constants.c

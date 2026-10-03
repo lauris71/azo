@@ -144,7 +144,7 @@ resolve_attribute_reference (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *ex
 		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER)) {
 			void *inst;
 			const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
-			return resolve_attribute (comp->current, rctx, expr, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string);
+			return resolve_attribute (rctx->frame, rctx, expr, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string);
 		}
 	}
 	return 0;
@@ -197,7 +197,7 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	 *
 	 * REFERENCE -> VARIABLE, local
 	 */
-	AZOVariable *var = azo_frame_lookup_local_var (comp->current, expr->value.v.string);
+	AZOVariable *var = azo_frame_lookup_local_var (rctx->frame, expr->value.v.string);
 	if (var) {
 		DBG_PRINTF("resolve_variable: Local %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
@@ -211,7 +211,7 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	 *
 	 * REFERENCE -> VARIABLE, parent
 	 */
-	var = azo_frame_lookup_parent_var (comp->current, expr->value.v.string);
+	var = azo_frame_lookup_parent_var (rctx->frame, expr->value.v.string);
 	if (var) {
 		DBG_PRINTF("resolve_variable: Parent %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
@@ -225,17 +225,17 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	 *
 	 * REFERENCE -> VARIABLE, parent
 	 */
-	if (comp->current->parent) {
+	if (rctx->frame->parent) {
 		/*
 		 * The variable was not found neither in local nor already known parent variables
 		 * Try chained lookup through all parent frames
 		 */
-		if (azo_frame_lookup_chained (comp->current->parent, expr->value.v.string)) {
+		if (azo_frame_lookup_chained (rctx->frame->parent, expr->value.v.string)) {
 			/*
 			 * Ensure that variable is defined (as parent) in this and all intermediate frames
 			 * so it's value is passed through function calls to current frame
 			 */
-			var = azo_frame_ensure_variable (comp->current, expr->value.v.string);
+			var = azo_frame_ensure_variable (rctx->frame, expr->value.v.string);
 			assert(var != NULL);
 			DBG_PRINTF("resolve_variable: Created parent variable %s at pos %u\n", expr->value.v.string->str, var->pos);
 			expr->term.type = AZO_TERM_VARIABLE;

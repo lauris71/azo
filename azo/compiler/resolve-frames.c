@@ -51,7 +51,7 @@ resolve_children (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 unsigned int
 resolve_sentence (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
-	comp->current->ret_is_last = 0;
+	rctx->frame->ret_is_last = 0;
 	return azo_compiler_resolve_node(comp, rctx, node);
 }
 
@@ -73,7 +73,7 @@ azo_compiler_resolve_frame(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node
 	int result = resolve_sentences(comp, rctx, node->children);
 	if (result) return result;
 
-	if (rctx->frame->ret_type && !comp->current->ret_is_last) {
+	if (rctx->frame->ret_type && !rctx->frame->ret_is_last) {
 		fprintf (stderr, "azo_compiler_resolve_frame: Missing return statement\n");
 		return 1;
 	}
@@ -93,7 +93,7 @@ resolve_for (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	AZONode *step = test->next;
 	AZONode *content = step->next;
 	/* for: create new scope */
-	azo_frame_push_scope (comp->current);
+	azo_frame_push_scope (rctx->frame);
 	unsigned int lresult = azo_compiler_resolve_node (comp, rctx, init);
 	if (lresult) result = 1;
 	lresult = azo_compiler_resolve_node (comp, rctx, test);
@@ -102,7 +102,7 @@ resolve_for (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	if (lresult) result = 1;
 	lresult = azo_compiler_resolve_node (comp, rctx, content);
 	if (lresult) result = 1;
-	azo_frame_pop_scope (comp->current);
+	azo_frame_pop_scope (rctx->frame);
 	return result;
 }
 
@@ -184,7 +184,7 @@ resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	unsigned int result;
 	AZONode *name = node->children;
 	AZONode *value = name->next;
-	if (azo_scope_lookup_local_var (comp->current->scope, name->value.v.string)) {
+	if (azo_scope_lookup_local_var (rctx->frame->scope, name->value.v.string)) {
 		fprintf (stderr, "resolve_declaration: Variable %s already declared in scope\n", name->value.v.string->str);
 		return 1;
 	}
@@ -194,7 +194,7 @@ resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		if (result) return result;
 	}
 	// fixme: Use type
-	azo_frame_declare_variable (comp->current, name->value.v.string, AZ_TYPE_ANY, &result);
+	azo_frame_declare_variable (rctx->frame, name->value.v.string, AZ_TYPE_ANY, &result);
 	return 0;
 }
 
@@ -326,7 +326,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		type = child->children;
 		AZONode *name = type->next;
 		// fixme: Use type
-		if (!azo_frame_declare_variable (comp->current, name->value.v.string, AZ_TYPE_ANY, &result)) {
+		if (!azo_frame_declare_variable (func_frame, name->value.v.string, AZ_TYPE_ANY, &result)) {
 			fprintf (stderr, "resolve_function: Repeated variable name %s\n", name->value.v.string->str);
 			return result;
 		}

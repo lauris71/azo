@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char *compile_src = ""
+static const char *binary_arithmetic_src = ""
 "int32 a = 1, b = 2, c = 3 + (4 + 5i);\n"
 "a = b + 4;\n"
 "b = a + (b + c) + 5;\n"
@@ -21,7 +21,7 @@ int
 main(int argc, const char *argv[])
 {
     az_init();
-    AZOSource *src = azo_source_new_static((const uint8_t *) "test-source", (const uint8_t *) compile_src, strlen(compile_src));
+    AZOSource *src = azo_source_new_static((const uint8_t *) "test-source", (const uint8_t *) binary_arithmetic_src, strlen(binary_arithmetic_src));
     AZOParser parser;
     azo_parser_setup(&parser, src);
     fprintf(stderr, "-------- PARSING --------\n");

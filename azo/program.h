@@ -33,7 +33,6 @@ struct _AZOProgram {
 
 	unsigned int n_args;
 	unsigned int ret_type;
-	unsigned int this_type;
 	unsigned int n_captures;
 	unsigned int n_static;
 	unsigned int n_const;

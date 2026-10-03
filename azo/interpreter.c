@@ -600,7 +600,7 @@ interpret_TYPE_OF (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int pos;
 	pos = ip[1];
 	if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, pos + 1)) return NULL;
-	if ((ip[0] & 127) == TYPE_OF) {
+	if ((ip[0] & 127) == AZO_TC_TYPE_OF) {
 		type = azo_stack_type_bw (&intr->stack, pos);
 		azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE(AZ_TYPE_UINT32), &type);
 	} else {
@@ -1315,7 +1315,7 @@ interpret_MIN_MAX_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 	} else {
 		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
-	if (ip[0] == MAX_TYPED) remove = !remove;
+	if (ip[0] == AZO_TC_MAX_TYPED) remove = !remove;
 	azo_stack_remove (&intr->stack, intr->stack.length - 1 - remove, 1);
 	return ip + 2;
 }
@@ -1846,7 +1846,7 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 		case AZO_TC_PUSH_EMPTY:
 			ipc = interpret_PUSH_EMPTY (intr, ipc);
 			break;
-		case PUSH_IMMEDIATE:
+		case AZO_TC_PUSH_IMMEDIATE:
 			ipc = interpret_PUSH_IMMEDIATE (intr, ipc);
 			break;
 		case AZO_TC_PUSH_VALUE:
@@ -1887,7 +1887,7 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 		case AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE:
 			ipc = interpret_TYPE_IMMEDIATE (intr, ipc);
 			break;
-		case TYPE_OF:
+		case AZO_TC_TYPE_OF:
 		case AZO_TC_TYPE_OF_CLASS:
 			ipc = interpret_TYPE_OF (intr, ipc);
 			break;
@@ -1905,7 +1905,7 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 			break;
 
 		/* Conversions */
-		case PROMOTE:
+		case AZO_TC_PROMOTE:
 			ipc = interpret_PROMOTE (intr, ipc);
 			break;
 		case AZO_TC_CONVERT_TYPE:
@@ -1913,13 +1913,13 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 			break;
 
 		/* Comparisons */
-		case EQUAL_TYPED:
+		case AZO_TC_EQUAL_TYPED:
 			ipc = interpret_EQUAL_TYPED (intr, ipc);
 			break;
 		case EQUAL:
 			ipc = interpret_EQUAL (intr, ipc);
 			break;
-		case COMPARE_TYPED:
+		case AZO_TC_COMPARE_TYPED:
 			ipc = interpret_COMPARE_TYPED (intr, ipc);
 			break;
 		case COMPARE:
@@ -1974,8 +1974,8 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 			ipc = interpret_MODULO (intr, ipc);
 			break;
 
-		case MIN_TYPED:
-		case MAX_TYPED:
+		case AZO_TC_MIN_TYPED:
+		case AZO_TC_MAX_TYPED:
 			ipc = interpret_MIN_MAX_TYPED (intr, ipc);
 			break;
 

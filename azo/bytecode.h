@@ -14,6 +14,7 @@ extern "C" {
 #endif
 
 #define AZO_TC_CHECK_ARGS 128
+#define MAX_TYPED AZO_TC_MAX_TYPED
 
 enum {
 	NOP = 0,
@@ -62,7 +63,7 @@ enum {
 	/* PUSH TYPE(U8) VALUE */
 	/* Push immediate primitive value into stack */
 	/* Size of value is determined by klass->value_size */
-	PUSH_IMMEDIATE,
+	AZO_TC_PUSH_IMMEDIATE,
 	/* PUSH_VALUE LOCATION(U32) */
 	AZO_TC_PUSH_VALUE,
 	AZO_TC_STORE_VALUE,
@@ -129,7 +130,7 @@ enum {
 	 * TYPE_OF u8:POS
 	 * [val, ..., type]
 	 */
-	TYPE_OF,
+	AZO_TC_TYPE_OF,
 	/**
 	 * @brief Get type from class
 	 * 
@@ -154,7 +155,7 @@ enum {
 	/* PROMOTE POS(U8) */
 	/* Promote given element in-place to type specified by stack(0) */
 	/* Only arithmetic types are allowed */
-	PROMOTE,
+	AZO_TC_PROMOTE,
 	/* CONVERT TYPE(U32) */
 	/* Convert the topmost element in stack to specified type */
 	AZO_TC_CONVERT_TYPE,
@@ -163,7 +164,7 @@ enum {
 	/* EQUAL TYPE(U8) */
 	/* Allowed types - primitives and block (block subtypes are tested as block) */
 	/* Do not remove compared elements */
-	EQUAL_TYPED,
+	AZO_TC_EQUAL_TYPED,
 	/* EQUAL */
 	/* Allowed types - primitives and block (block subtypes are tested as block) */
 	/* Do not remove compared elements */
@@ -171,7 +172,7 @@ enum {
 	/* COMPARE TYPE(U8) */
 	/* Allowed types - integers and reals */
 	/* Result is negative if stack(1) < stack(0) */
-	COMPARE_TYPED,
+	AZO_TC_COMPARE_TYPED,
 	/* COMPARE */
 	/* Allowed types - integers and reals, type is determined from stack(0) */
 	/* Result is negative if stack(1) < stack(0) */
@@ -208,8 +209,8 @@ enum {
 
 	/* MIN TYPE(U8) */
 	/* Allowed types integers and reals */
-	MIN_TYPED,
-	MAX_TYPED,
+	AZO_TC_MIN_TYPED,
+	AZO_TC_MAX_TYPED,
 
 	/* Interface */
 	/* GET_INTERFACE_IMMEDIATE TYPE(U32) */

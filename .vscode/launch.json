@@ -1,0 +1,45 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Test parser",
+            "program": "${workspaceFolder}/build/tests/azo_test",
+            "args": ["parser"],
+            "cwd": "${workspaceFolder}/build/tests/"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Test resolver",
+            "program": "${workspaceFolder}/build/tests/azo_test",
+            "args": ["resolver"],
+            "cwd": "${workspaceFolder}/build/tests/"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Test compile",
+            "program": "${workspaceFolder}/build/tests/azo_test",
+            "args": ["compile"],
+            "cwd": "${workspaceFolder}/build/tests/"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Test cycles",
+            "program": "${workspaceFolder}/build/tests/azo_test",
+            "args": ["cycles"],
+            "cwd": "${workspaceFolder}/build/tests/"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Test calculate",
+            "program": "${workspaceFolder}/build/tests/azo_test",
+            "args": ["calculate"],
+            "cwd": "${workspaceFolder}/build/tests/"
+        }
+    ]
+}

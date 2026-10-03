@@ -58,9 +58,8 @@ azo_program_new(AZOContext *ctx, AZOFrame *frame, AZONode *tree, AZOSource *src)
 	prog->tcode = code->bc;
 	prog->tcode_length = code->bc_len;
 
-	prog->n_args = frame->n_args;
+	prog->n_args = (frame->this_impl == NULL) ? frame->n_args : frame->n_args + 1;
 	prog->ret_type = frame->ret_type;
-	prog->this_type = (frame->this_impl != NULL) ? AZ_IMPL_TYPE(frame->this_impl) : AZ_TYPE_NONE;
 	prog->n_captures = frame->n_captures;
 	prog->n_static = frame->n_static;
 	prog->n_const = code->data_len;
@@ -120,7 +119,7 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	AZOFrame *frame = azo_compiler_push_frame(&comp, this_impl, this_inst, n_args, ret_type);
 	for (unsigned int i = 0; i < n_args; i++) {
 		unsigned int result = 0;
-		if (!azo_frame_declare_variable(comp.current, arg_names[i], arg_types[i], &result)) {
+		if (!azo_frame_declare_variable(frame, arg_names[i], arg_types[i], &result)) {
 			fprintf(stderr, "Variable %s is already defined in current scope\n", arg_names[i]->str);
 		}
 		// fixme: fail

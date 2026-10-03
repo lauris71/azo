@@ -13,6 +13,7 @@ add_executable(azo_test
     test_tokenizer.c
     test_parser.c
     test_resolver.c
+    test_calculate.c
 )
 
 target_compile_definitions(azo_test PRIVATE UNITY_INCLUDE_DOUBLE)
@@ -41,3 +42,4 @@ add_test(NAME assign COMMAND azo_test assign)
 add_test(NAME comparison COMMAND azo_test comparison)
 add_test(NAME cycles COMMAND azo_test cycles)
 add_test(NAME function COMMAND azo_test function)
+add_test(NAME calculate COMMAND azo_test calculate)

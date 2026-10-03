@@ -23,6 +23,12 @@ typedef struct _AZOCompilerContext AZOCompilerContext;
 extern "C" {
 #endif
 
+enum {
+	THIS_IS_VARIABLE,
+	THIS_IS_CAPTURE,
+	THIS_IS_ARGUMENT,
+	THIS_IS_STATIC
+};
 /**
  * @brief Compiler context
  * 
@@ -38,6 +44,27 @@ struct _AZOCompilerContext {
 	/* The current frame */
 	AZOFrame *frame;
 
+	/**
+	 * @brief This handling
+	 * 
+	 * This may be resolved in 4 different ways
+	 * - As just one variable (happens in member block)
+	 * - As a captured variable (happens in lambda)
+	 * - As the first program argument (if program is compiled as a member of class)
+	 * - As a static constant (if program is compiled as a member of specific instance)
+	 *
+	 * During resolve explici or implici 'this' is replaced by specific access variant (VARIABLE or CONSTANT)
+	 */
+	unsigned int this_variant;
+	union {
+		/* For variable */
+		unsigned int this_var_pos;
+		/* For capture */
+		unsigned int this_capture_pos;
+		/* Argument is always 0 */
+		/* For static constant */
+		unsigned int this_static_pos;
+	};
 	AZONode *this_node;
 
 	/* Compiler */

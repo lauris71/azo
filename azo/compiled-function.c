@@ -130,7 +130,7 @@ azo_compiled_function_new(AZOProgram *prog)
 
 	cfunc->prog = prog;
 	azo_program_ref(prog);
-	cfunc->signature = az_function_signature_new_any(prog->this_type, prog->ret_type, prog->n_args);
+	cfunc->signature = az_function_signature_new_any(AZ_TYPE_NONE, prog->ret_type, prog->n_args);
 
 	azo_datablock_init(&cfunc->static_data, prog->n_captures, prog->n_captures + prog->n_static);
 	return cfunc;

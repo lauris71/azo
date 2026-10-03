@@ -9,23 +9,11 @@
 #include <azo/bytecode.h>
 
 #include <azo/compare.h>
+#include <azo/compiler/helpers.h>
 
 static const uint32_t false_value = 0;
 static const uint32_t true_value = 1;
 static const void *null_ptr = NULL;
-
-static void
-compile_type_is_in_range (AZOCompiler *comp, unsigned int pos, uint32_t min_type, uint32_t max_type, unsigned int *jmp_lt, unsigned int *jmp_gt)
-{
-	azo_compiler_write_TYPE_OF (comp, pos);
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_UINT32, (const AZValue *) &min_type, NULL);
-	azo_compiler_write_COMPARE_TYPED (comp, AZ_TYPE_UINT32);
-	*jmp_lt = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NEGATIVE, 0, NULL);
-	azo_compiler_write_TYPE_OF (comp, pos);
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_UINT32, (const AZValue *) &max_type, NULL);
-	azo_compiler_write_COMPARE_TYPED (comp, AZ_TYPE_UINT32);
-	*jmp_gt = azo_compiler_write_JMP_32 (comp, JMP_32_IF_POSITIVE, 0, NULL);
-}
 
 /* Compare whether stack(0) is equal to None */
 /* On exception the tested element is left in stack */
@@ -215,9 +203,9 @@ azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, AZOCompilerContex
 	rhs_is_block = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
 
 	/* Test LHS is in range */
-	compile_type_is_in_range (comp, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
+	azo_code_compile_type_is_in_range (&comp->current->code, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
 	/* Test RHS is in range */
-	compile_type_is_in_range (comp, 0, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, &rhs_type_lt_i8, &rhs_type_gt_cdouble);
+	azo_code_compile_type_is_in_range (&comp->current->code, 0, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &rhs_type_lt_i8, &rhs_type_gt_cdouble);
 	/* Compare */
 	compile_comparison_eq_arithmetic_arithmetic (comp, comp_type);
 	finished_5 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
@@ -286,7 +274,7 @@ compile_comparison_any_const_eq (AZOCompiler *comp, AZOCompilerContext *ctx, con
 		unsigned int lhs_type_lt_i8, lhs_type_gt_cdouble;
 		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 		if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
-		compile_type_is_in_range (comp, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
+		azo_code_compile_type_is_in_range (&comp->current->code, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
 		compile_comparison_eq_arithmetic_arithmetic (comp, comp_type);
 		finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
 		azo_compiler_update_JMP_32 (comp, lhs_type_lt_i8);
@@ -334,9 +322,9 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContex
 	//}
 
 	/* Test LHS is in range */
-	compile_type_is_in_range (comp, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, &lhs_type_lt_i8, &lhs_type_gt_double);
+	azo_code_compile_type_is_in_range (&comp->current->code, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_double);
 	/* Test RHS is in range */
-	compile_type_is_in_range (comp, 0, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, &rhs_type_lt_i8, &rhs_type_gt_double);
+	azo_code_compile_type_is_in_range (&comp->current->code, 0, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, expr, &rhs_type_lt_i8, &rhs_type_gt_double);
 	/*
 	if LHS.type == RHS.type goto types_equal
 	*/
@@ -448,7 +436,7 @@ compile_comparison_any_const_lg (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 	azo_compiler_write_PUSH_IMMEDIATE (comp, (uint8_t) AZ_PACKED_VALUE_TYPE(&rhs->value), &rhs->value.v, NULL);
 	/* Test LHS is in range */
-	compile_type_is_in_range (comp, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, &lhs_type_lt_i8, &lhs_type_gt_double);
+	azo_code_compile_type_is_in_range (&comp->current->code, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_double);
 	/* if LHS.type == RHS.type goto types_equal */
 	azo_compiler_write_TYPE_OF (comp, 1);
 	azo_compiler_write_TYPE_OF (comp, 1);

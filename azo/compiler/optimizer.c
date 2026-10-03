@@ -528,10 +528,11 @@ optimize_function(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsign
 		if (result) return result;
 		AZONode *body = args->next;
 		// fixme: Think out the frame/context management
-		AZOFrame *current = opt->comp->current;
 		azo_compiler_set_frame(opt->comp, opt->comp->frames[node->frame]);
-		result = optimize_node(opt, ctx, body, flags);
-		azo_compiler_set_frame(opt->comp, current);
+		AZOOptimizerCtx new_ctx = *ctx;
+		new_ctx.frame = opt->comp->frames[node->frame];
+		result = optimize_node(opt, &new_ctx, body, flags);
+		azo_compiler_set_frame(opt->comp, ctx->frame);
 		if (result) return result;
 	} else {
 		AZONode *type = node->children;
@@ -542,10 +543,11 @@ optimize_function(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsign
 		if (result) return result;
 		AZONode *body = args->next;
 		// fixme: Think out the frame/context management
-		AZOFrame *current = opt->comp->current;
 		azo_compiler_set_frame(opt->comp, opt->comp->frames[node->frame]);
-		result = optimize_node(opt, ctx, body, flags);
-		azo_compiler_set_frame(opt->comp, current);
+		AZOOptimizerCtx new_ctx = *ctx;
+		new_ctx.frame = opt->comp->frames[node->frame];
+		result = optimize_node(opt, &new_ctx, body, flags);
+		azo_compiler_set_frame(opt->comp, ctx->frame);
 		if (result) return result;
 	}
 	return 0;
