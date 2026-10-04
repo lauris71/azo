@@ -19,156 +19,156 @@ static const void *null_ptr = NULL;
 /* On exception the tested element is left in stack */
 
 static void
-compile_compare_eq_any_none (AZOCompiler *comp, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
+compile_compare_eq_any_none (AZOCode *code, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
 {
 	unsigned int none_cmp_none, block_cmp_none, finished_1, finished_2;
 	/* null - null */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
-	none_cmp_none = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
+	none_cmp_none = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 	/* block - null */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IS_IMMEDIATE, 0, AZ_TYPE_BLOCK, expr);
-	block_cmp_none = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IS_IMMEDIATE, 0, AZ_TYPE_BLOCK, expr);
+	block_cmp_none = azo_code_write_JMP32 (code, JMP_32_IF, 0, NULL);
 	/* pointer - null */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_POINTER, expr);
-	*invalid_type = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_POINTER, (const AZValue *) &null_ptr, NULL);
-	azo_compiler_write_EQUAL_TYPED (comp, AZ_TYPE_POINTER);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_POINTER, expr);
+	*invalid_type = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
+	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_POINTER, (const AZValue *) &null_ptr, expr);
+	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_POINTER, expr);
 	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_NOT, NULL);
+		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
 	}
-	finished_1 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	finished_1 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	/* Equal */
-	azo_compiler_update_JMP_32 (comp, none_cmp_none);
-	azo_compiler_write_POP (comp, 1, NULL);
+	azo_code_update_JMP32 (code, none_cmp_none);
+	azo_code_write_POP (code, 1, expr);
 	if (comp_type == AZO_TERM_COMPARISON_E) {
-		azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_BOOLEAN, (const AZValue *) &true_value, NULL);
+		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &true_value, expr);
 	} else {
-		azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_BOOLEAN, (const AZValue *) &false_value, NULL);
+		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &false_value, expr);
 	}
-	finished_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	finished_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	/* Not equal */
-	azo_compiler_update_JMP_32 (comp, block_cmp_none);
-	azo_compiler_write_POP (comp, 1, NULL);
+	azo_code_update_JMP32 (code, block_cmp_none);
+	azo_code_write_POP (code, 1, expr);
 	if (comp_type == AZO_TERM_COMPARISON_E) {
-		azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_BOOLEAN, (const AZValue *) &false_value, NULL);
+		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &false_value, expr);
 	} else {
-		azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_BOOLEAN, (const AZValue *) &true_value, NULL);
+		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &true_value, expr);
 	}
-	azo_compiler_update_JMP_32 (comp, finished_1);
-	azo_compiler_update_JMP_32 (comp, finished_2);
+	azo_code_update_JMP32 (code, finished_1);
+	azo_code_update_JMP32 (code, finished_2);
 }
 
 static void
-compile_compare_eq_any_boolean (AZOCompiler *comp, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
+compile_compare_eq_any_boolean (AZOCode *code, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
 {
 	unsigned int lhs_is_boolean;
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_BOOLEAN, expr);
-	lhs_is_boolean = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
-	azo_compiler_write_POP (comp, 2, NULL);
-	*invalid_type = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
-	azo_compiler_update_JMP_32 (comp, lhs_is_boolean);
-	azo_compiler_write_EQUAL_TYPED (comp, AZ_TYPE_BOOLEAN);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_BOOLEAN, expr);
+	lhs_is_boolean = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
+	azo_code_write_POP (code, 2, expr);
+	*invalid_type = azo_code_write_JMP32 (code, JMP_32, 0, expr);
+	azo_code_update_JMP32 (code, lhs_is_boolean);
+	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_BOOLEAN, expr);
 	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_NOT, NULL);
+		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
 	}
 }
 
 /* On exception the tested elements are left in stack */
 
 static void
-compile_compare_eq_any_pointer (AZOCompiler *comp, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
+compile_compare_eq_any_pointer (AZOCode *code, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
 {
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_POINTER, expr);
-	*invalid_type = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
-	azo_compiler_write_EQUAL_TYPED (comp, AZ_TYPE_POINTER);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_POINTER, expr);
+	*invalid_type = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
+	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_POINTER, expr);
 	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_NOT, NULL);
+		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
 	}
 }
 
 /* On exception the tested element is left in stack */
 
 static void
-compile_comparison_eq_any_const_pointer (AZOCompiler *comp, const void *ptr, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
+compile_comparison_eq_any_const_pointer (AZOCode *code, const void *ptr, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
 {
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_POINTER, expr);
-	*invalid_type = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_POINTER, (const AZValue *) ptr, NULL);
-	azo_compiler_write_EQUAL_TYPED (comp, AZ_TYPE_POINTER);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_POINTER, expr);
+	*invalid_type = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
+	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_POINTER, (const AZValue *) ptr, expr);
+	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_POINTER, expr);
 	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_NOT, NULL);
+		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
 	}
 }
 
 /* On exception the tested elements are left in stack */
 
 static void
-compile_compare_eq_any_block (AZOCompiler *comp, unsigned int comp_type, unsigned int *invalid_type)
+compile_compare_eq_any_block (AZOCode *code, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
 {
 	unsigned int rhs_is_subtype;
 
-	azo_compiler_write_TYPE_OF (comp, 0);
-	azo_compiler_write_TEST_TYPE (comp, AZO_TC_TYPE_IS, 2);
-	rhs_is_subtype = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
-	azo_compiler_write_TYPE_OF (comp, 0);
-	azo_compiler_write_TEST_TYPE (comp, AZO_TC_TYPE_IS, 1);
-	*invalid_type = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
-	azo_compiler_update_JMP_32 (comp, rhs_is_subtype);
-	azo_compiler_write_EQUAL_TYPED (comp, AZ_TYPE_BLOCK);
+	azo_code_write_TYPE_OF (code, 0, expr);
+	azo_code_write_TEST_TYPE (code, AZO_TC_TYPE_IS, 2, expr);
+	rhs_is_subtype = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
+	azo_code_write_TYPE_OF (code, 0, expr);
+	azo_code_write_TEST_TYPE (code, AZO_TC_TYPE_IS, 1, expr);
+	*invalid_type = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
+	azo_code_update_JMP32 (code, rhs_is_subtype);
+	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_BLOCK, expr);
 	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_NOT, NULL);
+		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
 	}
 }
 
 /* On exception the tested element is left in stack */
 
 static void
-compile_comparison_eq_any_const_block (AZOCompiler *comp, unsigned int type, const void *block, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
+compile_comparison_eq_any_const_block (AZOCode *code, unsigned int type, const void *block, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
 {
 	unsigned int is_subtype;
 	/* RHS is const block */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IS_IMMEDIATE, 0, type, expr);
-	is_subtype = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IS_SUPER_IMMEDIATE, 0, type, expr);
-	*invalid_type = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
-	azo_compiler_update_JMP_32 (comp, is_subtype);
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_BLOCK, (const AZValue *) block, NULL);
-	azo_compiler_write_EQUAL_TYPED (comp, AZ_TYPE_BLOCK);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IS_IMMEDIATE, 0, type, expr);
+	is_subtype = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IS_SUPER_IMMEDIATE, 0, type, expr);
+	*invalid_type = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
+	azo_code_update_JMP32 (code, is_subtype);
+	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BLOCK, (const AZValue *) block, expr);
+	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_BLOCK, expr);
 	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_NOT, NULL);
+		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
 	}
 }
 
 /* Expects argument types to be checked */
 
 static void
-compile_comparison_eq_arithmetic_arithmetic (AZOCompiler *comp, unsigned int comp_type)
+compile_comparison_eq_arithmetic_arithmetic (AZOCode *code, unsigned int comp_type, const AZONode *expr)
 {
 	unsigned int types_equal_1, types_equal_2, lhs_type_gt_rhs_type;
 	/* if LHS.type == RHS.type goto types_equal */
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_EQUAL_TYPED (comp, AZ_TYPE_UINT32);
-	types_equal_1 = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_UINT32, expr);
+	types_equal_1 = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 	/* if LHS.type > RHS.type goto lhs_gt_rhs */
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_COMPARE_TYPED (comp, AZ_TYPE_UINT32);
-	lhs_type_gt_rhs_type = azo_compiler_write_JMP_32 (comp, JMP_32_IF_POSITIVE, 0, NULL);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_COMPARE_TYPED (code, AZ_TYPE_UINT32, expr);
+	lhs_type_gt_rhs_type = azo_code_write_JMP32 (code, JMP_32_IF_POSITIVE, 0, expr);
 	/* Promote LHS and goto types_equal */
-	azo_compiler_write_TYPE_OF (comp, 0);
-	azo_compiler_write_PROMOTE (comp, 2);
-	types_equal_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_write_TYPE_OF (code, 0, expr);
+	azo_code_write_PROMOTE (code, 2, expr);
+	types_equal_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	/* Promote RHS */
-	azo_compiler_update_JMP_32 (comp, lhs_type_gt_rhs_type);
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_PROMOTE (comp, 1);
+	azo_code_update_JMP32 (code, lhs_type_gt_rhs_type);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_PROMOTE (code, 1, expr);
 	/* types_equal */
-	azo_compiler_update_JMP_32 (comp, types_equal_1);
-	azo_compiler_update_JMP_32 (comp, types_equal_2);
-	azo_compiler_write_ic (comp, EQUAL, NULL);
+	azo_code_update_JMP32 (code, types_equal_1);
+	azo_code_update_JMP32 (code, types_equal_2);
+	azo_code_write_ic (code, EQUAL, expr);
 	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_NOT, NULL);
+		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
 	}
 }
 
@@ -181,76 +181,77 @@ azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, AZOCompilerContex
 	unsigned int rhs_is_block, invalid_type_cmp_block;
 	unsigned int lhs_type_lt_i8, lhs_type_gt_cdouble, rhs_type_lt_i8, rhs_type_gt_cdouble;
 	unsigned int finished_1, finished_2, finished_3, finished_4, finished_5;
+	AZOCode *code = &ctx->frame->code;
 
 	/* Stack: LHS RHS */
 	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
 
 	/* if (RHS.type == None) goto rhs_is_none */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
-	rhs_is_none = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
+	rhs_is_none = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 	/* if (LHS.type == None) goto lhs_is_none */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_NONE, expr);
-	lhs_is_none = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_NONE, expr);
+	lhs_is_none = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 	/* if (RHS.type == Boolean) goto rhs_is_boolean */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_BOOLEAN, expr);
-	rhs_is_boolean = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_BOOLEAN, expr);
+	rhs_is_boolean = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 	/* if (RHS.type == Pointer) goto rhs_is_pointer */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_POINTER, expr);
-	rhs_is_pointer = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_POINTER, expr);
+	rhs_is_pointer = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 	/* if (RHS.type == Block) goto rhs_is_block */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IS_IMMEDIATE, 0, AZ_TYPE_BLOCK, expr);
-	rhs_is_block = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IS_IMMEDIATE, 0, AZ_TYPE_BLOCK, expr);
+	rhs_is_block = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 
 	/* Test LHS is in range */
-	azo_code_compile_type_is_in_range (&comp->current->code, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
+	azo_code_compile_type_is_in_range (code, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
 	/* Test RHS is in range */
-	azo_code_compile_type_is_in_range (&comp->current->code, 0, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &rhs_type_lt_i8, &rhs_type_gt_cdouble);
+	azo_code_compile_type_is_in_range (code, 0, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &rhs_type_lt_i8, &rhs_type_gt_cdouble);
 	/* Compare */
-	compile_comparison_eq_arithmetic_arithmetic (comp, comp_type);
-	finished_5 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	compile_comparison_eq_arithmetic_arithmetic (code, comp_type, expr);
+	finished_5 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 
 	/* lhs_is_none */
-	azo_compiler_update_JMP_32 (comp, lhs_is_none);
-	azo_compiler_write_EXCHANGE (comp, 1);
+	azo_code_write_JMP32 (code, JMP_32, 0, expr);
+	azo_code_write_EXCHANGE (code, 1, expr);
 	/* rhs_is_none */
-	azo_compiler_update_JMP_32 (comp, rhs_is_none);
-	azo_compiler_write_POP (comp, 1, NULL);
-	compile_compare_eq_any_none (comp, comp_type, &invalid_type_cmp_none, expr);
-	finished_1 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_write_JMP32 (code, JMP_32, 0, expr);
+	azo_code_write_POP (code, 1, expr);
+	compile_compare_eq_any_none (code, comp_type, &invalid_type_cmp_none, expr);
+	finished_1 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 
 	/* rhs_is_boolean */
-	azo_compiler_update_JMP_32 (comp, rhs_is_boolean);
-	compile_compare_eq_any_boolean (comp, comp_type, &invalid_type_cmp_boolean, expr);
-	finished_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_write_JMP32 (code, JMP_32, 0, expr);
+	compile_compare_eq_any_boolean (code, comp_type, &invalid_type_cmp_boolean, expr);
+	finished_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 
 	/* rhs_is_pointer */
-	azo_compiler_update_JMP_32 (comp, rhs_is_pointer);
-	compile_compare_eq_any_boolean (comp, comp_type, &invalid_type_cmp_pointer, expr);
-	finished_3 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_write_JMP32 (code, JMP_32, 0, expr);
+	compile_compare_eq_any_pointer (code, comp_type, &invalid_type_cmp_pointer, expr);
+	finished_3 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 
 	/* rhs_is_block */
-	azo_compiler_update_JMP_32 (comp, rhs_is_block);
-	compile_compare_eq_any_block (comp, comp_type, &invalid_type_cmp_block);
-	finished_4 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_write_JMP32 (code, JMP_32, 0, expr);
+	compile_compare_eq_any_block (code, comp_type, &invalid_type_cmp_block, expr);
+	finished_4 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 
 	/* invalid_type */
-	azo_compiler_update_JMP_32 (comp, invalid_type_cmp_none);
-	azo_compiler_update_JMP_32 (comp, invalid_type_cmp_boolean);
-	azo_compiler_update_JMP_32 (comp, invalid_type_cmp_pointer);
-	azo_compiler_update_JMP_32 (comp, invalid_type_cmp_block);
-	azo_compiler_update_JMP_32 (comp, lhs_type_lt_i8);
-	azo_compiler_update_JMP_32 (comp, lhs_type_gt_cdouble);
-	azo_compiler_update_JMP_32 (comp, rhs_type_lt_i8);
-	azo_compiler_update_JMP_32 (comp, rhs_type_gt_cdouble);
-	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_code_update_JMP32 (code, invalid_type_cmp_none);
+	azo_code_update_JMP32 (code, invalid_type_cmp_boolean);
+	azo_code_update_JMP32 (code, invalid_type_cmp_pointer);
+	azo_code_update_JMP32 (code, invalid_type_cmp_block);
+	azo_code_update_JMP32 (code, lhs_type_lt_i8);
+	azo_code_update_JMP32 (code, lhs_type_gt_cdouble);
+	azo_code_update_JMP32 (code, rhs_type_lt_i8);
+	azo_code_update_JMP32 (code, rhs_type_gt_cdouble);
+	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
 
 	/* finished */
-	azo_compiler_update_JMP_32 (comp, finished_1);
-	azo_compiler_update_JMP_32 (comp, finished_2);
-	azo_compiler_update_JMP_32 (comp, finished_3);
-	azo_compiler_update_JMP_32 (comp, finished_4);
-	azo_compiler_update_JMP_32 (comp, finished_5);
+	azo_code_update_JMP32 (code, finished_1);
+	azo_code_update_JMP32 (code, finished_2);
+	azo_code_update_JMP32 (code, finished_3);
+	azo_code_update_JMP32 (code, finished_4);
+	azo_code_update_JMP32 (code, finished_5);
 
 	return 1;
 }
@@ -260,36 +261,37 @@ static unsigned int
 compile_comparison_any_const_eq (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
 {
 	unsigned int invalid_type, finished;
+	AZOCode *code = &ctx->frame->code;
 	if (!rhs->value.impl) {
 		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-		compile_compare_eq_any_none (comp, comp_type, &invalid_type, expr);
+		compile_compare_eq_any_none (code, comp_type, &invalid_type, expr);
 		return 1;
 	} else if (AZ_PACKED_VALUE_TYPE(&rhs->value) == AZ_TYPE_POINTER) {
 		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-		compile_comparison_eq_any_const_pointer (comp, rhs->value.v.pointer_v, comp_type, &invalid_type, expr);
+		compile_comparison_eq_any_const_pointer (code, rhs->value.v.pointer_v, comp_type, &invalid_type, expr);
 	} else if (AZ_IMPL_TYPE(rhs->value.impl) == AZ_TYPE_BLOCK) {
 		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-		compile_comparison_eq_any_const_block (comp, AZ_IMPL_TYPE(rhs->value.impl), rhs->value.v.block, comp_type, &invalid_type, expr);
+		compile_comparison_eq_any_const_block (code, AZ_IMPL_TYPE(rhs->value.impl), rhs->value.v.block, comp_type, &invalid_type, expr);
 	} else if (AZ_TYPE_IS_ARITHMETIC(AZ_PACKED_VALUE_TYPE(&rhs->value))) {
 		unsigned int lhs_type_lt_i8, lhs_type_gt_cdouble;
 		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 		if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
-		azo_code_compile_type_is_in_range (&comp->current->code, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
-		compile_comparison_eq_arithmetic_arithmetic (comp, comp_type);
-		finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
-		azo_compiler_update_JMP_32 (comp, lhs_type_lt_i8);
-		azo_compiler_update_JMP_32 (comp, lhs_type_gt_cdouble);
-		azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
-		azo_compiler_update_JMP_32 (comp, finished);
+		azo_code_compile_type_is_in_range (code, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
+		compile_comparison_eq_arithmetic_arithmetic (code, comp_type, expr);
+		finished = azo_code_write_JMP32 (code, JMP_32, 0, expr);
+		azo_code_update_JMP32 (code, lhs_type_lt_i8);
+		azo_code_update_JMP32 (code, lhs_type_gt_cdouble);
+		azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
+		azo_code_update_JMP32 (code, finished);
 		return 1;
 	} else {
 		fprintf (stderr, "compile_comparison_any_const_eq: invalid type %u\n", AZ_IMPL_TYPE(rhs->value.impl));
 		return 0;
 	}
-	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
-	azo_compiler_update_JMP_32 (comp, invalid_type);
-	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
-	azo_compiler_update_JMP_32 (comp, finished);
+	finished = azo_code_write_JMP32 (code, JMP_32, 0, expr);
+	azo_code_update_JMP32 (code, invalid_type);
+	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
+	azo_code_update_JMP32 (code, finished);
 	return 1;
 }
 
@@ -312,6 +314,7 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContex
 	unsigned int types_equal_1, types_equal_2, lhs_type_gt_rhs_type;
 	unsigned int is_true, is_false;
 	unsigned int finished_1, finished_2;
+	AZOCode *code = &ctx->frame->code;
 	/* Stack: LHS RHS */
 	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
@@ -322,16 +325,16 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContex
 	//}
 
 	/* Test LHS is in range */
-	azo_code_compile_type_is_in_range (&comp->current->code, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_double);
+	azo_code_compile_type_is_in_range (code, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_double);
 	/* Test RHS is in range */
-	azo_code_compile_type_is_in_range (&comp->current->code, 0, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, expr, &rhs_type_lt_i8, &rhs_type_gt_double);
+	azo_code_compile_type_is_in_range (code, 0, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, expr, &rhs_type_lt_i8, &rhs_type_gt_double);
 	/*
 	if LHS.type == RHS.type goto types_equal
 	*/
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_EQUAL_TYPED (comp, AZ_TYPE_UINT32);
-	types_equal_1 = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_UINT32, expr);
+	types_equal_1 = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 	/*
 	if LHS.type > RHS.type goto lhs_gt_rhs
 	// LHS < RHS
@@ -339,30 +342,30 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContex
 	PROMOTE LHS RHS.type
 	goto types_equal
 	*/
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_COMPARE_TYPED (comp, AZ_TYPE_UINT32);
-	lhs_type_gt_rhs_type = azo_compiler_write_JMP_32 (comp, JMP_32_IF_POSITIVE, 0, NULL);
-	azo_compiler_write_TYPE_OF (comp, 0);
-	azo_compiler_write_PROMOTE (comp, 2);
-	types_equal_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_COMPARE_TYPED (code, AZ_TYPE_UINT32, expr);
+	lhs_type_gt_rhs_type = azo_code_write_JMP32 (code, JMP_32_IF_POSITIVE, 0, expr);
+	azo_code_write_TYPE_OF (code, 0, expr);
+	azo_code_write_PROMOTE (code, 2, expr);
+	types_equal_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	/*
 	lhs_gt_rhs:
 	// LHS > RHS
 	PROMOTE RHS LHS
 	*/
 
-	azo_compiler_update_JMP_32 (comp, lhs_type_gt_rhs_type);
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_PROMOTE (comp, 1);
+	azo_code_update_JMP32 (code, lhs_type_gt_rhs_type);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_PROMOTE (code, 1, expr);
 
 	/*
 	types_equal:
 	COMPARE RHS.type LHS RHS
 	goto finished
 	*/
-	azo_compiler_update_JMP_32 (comp, types_equal_1);
-	azo_compiler_update_JMP_32 (comp, types_equal_2);
+	azo_code_update_JMP32 (code, types_equal_1);
+	azo_code_update_JMP32 (code, types_equal_2);
 
 #if 0
 	if (comp->debug) {
@@ -371,7 +374,7 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContex
 	}
 #endif
 
-	azo_compiler_write_ic (comp, COMPARE, NULL);
+	azo_code_write_ic (code, COMPARE, expr);
 
 #if 0
 	if (comp->debug) {
@@ -381,20 +384,20 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContex
 #endif
 	switch (expr->term.subtype) {
 	case AZO_TERM_COMPARISON_LT:
-		is_true = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NEGATIVE, 0, NULL);
-		is_false = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+		is_true = azo_code_write_JMP32 (code, JMP_32_IF_NEGATIVE, 0, expr);
+		is_false = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 		break;
 	case AZO_TERM_COMPARISON_LE:
-		is_false = azo_compiler_write_JMP_32 (comp, JMP_32_IF_POSITIVE, 0, NULL);
-		is_true = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+		is_false = azo_code_write_JMP32 (code, JMP_32_IF_POSITIVE, 0, expr);
+		is_true = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 		break;
 	case AZO_TERM_COMPARISON_GE:
-		is_false = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NEGATIVE, 0, NULL);
-		is_true = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+		is_false = azo_code_write_JMP32 (code, JMP_32_IF_NEGATIVE, 0, expr);
+		is_true = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 		break;
 	case AZO_TERM_COMPARISON_GT:
-		is_true = azo_compiler_write_JMP_32 (comp, JMP_32_IF_POSITIVE, 0, NULL);
-		is_false = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+		is_true = azo_code_write_JMP32 (code, JMP_32_IF_POSITIVE, 0, expr);
+		is_false = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 		break;
 	default:
 		fprintf (stderr, "azo_compiler_compile_comparison_lg_any_any: Invalid subtype %u\n", expr->term.subtype);
@@ -402,25 +405,25 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContex
 	}
 
 	/* True */
-	azo_compiler_update_JMP_32 (comp, is_true);
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_BOOLEAN, (const AZValue *) &true_value, NULL);
-	finished_1 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_update_JMP32 (code, is_true);
+	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &true_value, expr);
+	finished_1 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	/* False */
-	azo_compiler_update_JMP_32 (comp, is_false);
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_BOOLEAN, (const AZValue *) &false_value, NULL);
-	finished_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_update_JMP32 (code, is_false);
+	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &false_value, expr);
+	finished_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 
 	/* Invalid_type */
-	azo_compiler_update_JMP_32 (comp, lhs_type_lt_i8);
-	azo_compiler_update_JMP_32 (comp, lhs_type_gt_double);
-	azo_compiler_update_JMP_32 (comp, rhs_type_lt_i8);
-	azo_compiler_update_JMP_32 (comp, rhs_type_gt_double);
-	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_code_update_JMP32 (code, lhs_type_lt_i8);
+	azo_code_update_JMP32 (code, lhs_type_gt_double);
+	azo_code_update_JMP32 (code, rhs_type_lt_i8);
+	azo_code_update_JMP32 (code, rhs_type_gt_double);
+	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
 
 
 	/* finished */
-	azo_compiler_update_JMP_32 (comp, finished_1);
-	azo_compiler_update_JMP_32 (comp, finished_2);
+	azo_code_update_JMP32 (code, finished_1);
+	azo_code_update_JMP32 (code, finished_2);
 
 	return 1;
 }
@@ -432,50 +435,51 @@ compile_comparison_any_const_lg (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	unsigned int types_equal_1, types_equal_2, lhs_type_gt_rhs_type;
 	unsigned int is_true, is_false;
 	unsigned int finished_1, finished_2;
+	AZOCode *code = &ctx->frame->code;
 	/* Stack: LHS RHS */
 	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-	azo_compiler_write_PUSH_IMMEDIATE (comp, (uint8_t) AZ_PACKED_VALUE_TYPE(&rhs->value), &rhs->value.v, NULL);
+	azo_code_write_PUSH_IMMEDIATE (code, AZ_PACKED_VALUE_TYPE(&rhs->value), &rhs->value.v, expr);
 	/* Test LHS is in range */
-	azo_code_compile_type_is_in_range (&comp->current->code, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_double);
+	azo_code_compile_type_is_in_range (code, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_double);
 	/* if LHS.type == RHS.type goto types_equal */
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_EQUAL_TYPED (comp, AZ_TYPE_UINT32);
-	types_equal_1 = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
+	azo_code_write_TYPE_OF (code, 1,expr);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_UINT32, expr);
+	types_equal_1 = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 	/* if LHS.type > RHS.type goto lhs_gt_rhs */
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_COMPARE_TYPED (comp, AZ_TYPE_UINT32);
-	lhs_type_gt_rhs_type = azo_compiler_write_JMP_32 (comp, JMP_32_IF_POSITIVE, 0, NULL);
-	/* Promothe LHS */
-	azo_compiler_write_TYPE_OF (comp, 0);
-	azo_compiler_write_PROMOTE (comp, 2);
-	types_equal_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_COMPARE_TYPED (code, AZ_TYPE_UINT32, expr);
+	lhs_type_gt_rhs_type = azo_code_write_JMP32 (code, JMP_32_IF_POSITIVE, 0, expr);
+	/* Promote LHS */
+	azo_code_write_TYPE_OF (code, 0, expr);
+	azo_code_write_PROMOTE (code, 2, expr);
+	types_equal_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	/* Promote RHS */
-	azo_compiler_update_JMP_32 (comp, lhs_type_gt_rhs_type);
-	azo_compiler_write_TYPE_OF (comp, 1);
-	azo_compiler_write_PROMOTE (comp, 1);
+	azo_code_update_JMP32 (code, lhs_type_gt_rhs_type);
+	azo_code_write_TYPE_OF (code, 1, expr);
+	azo_code_write_PROMOTE (code, 1, expr);
 	/* Compare */
-	azo_compiler_update_JMP_32 (comp, types_equal_1);
-	azo_compiler_update_JMP_32 (comp, types_equal_2);
-	azo_compiler_write_ic (comp, COMPARE, NULL);
+	azo_code_update_JMP32 (code, types_equal_1);
+	azo_code_update_JMP32 (code, types_equal_2);
+	azo_code_write_ic (code, COMPARE, expr);
 
 	switch (expr->term.subtype) {
 	case AZO_TERM_COMPARISON_LT:
-		is_true = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NEGATIVE, 0, NULL);
-		is_false = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+		is_true = azo_code_write_JMP32 (code, JMP_32_IF_NEGATIVE, 0, expr);
+		is_false = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 		break;
 	case AZO_TERM_COMPARISON_LE:
-		is_false = azo_compiler_write_JMP_32 (comp, JMP_32_IF_POSITIVE, 0, NULL);
-		is_true = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+		is_false = azo_code_write_JMP32 (code, JMP_32_IF_POSITIVE, 0, expr);
+		is_true = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 		break;
 	case AZO_TERM_COMPARISON_GE:
-		is_false = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NEGATIVE, 0, NULL);
-		is_true = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+		is_false = azo_code_write_JMP32 (code, JMP_32_IF_NEGATIVE, 0, expr);
+		is_true = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 		break;
 	case AZO_TERM_COMPARISON_GT:
-		is_true = azo_compiler_write_JMP_32 (comp, JMP_32_IF_POSITIVE, 0, NULL);
-		is_false = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+		is_true = azo_code_write_JMP32 (code, JMP_32_IF_POSITIVE, 0, expr);
+		is_false = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 		break;
 	default:
 		fprintf (stderr, "compile_comparison_any_const_lg: Invalid subtype %u\n", expr->term.subtype);
@@ -484,23 +488,23 @@ compile_comparison_any_const_lg (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	}
 
 	/* True */
-	azo_compiler_update_JMP_32 (comp, is_true);
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_BOOLEAN, (const AZValue *) &true_value, NULL);
-	finished_1 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_update_JMP32 (code, is_true);
+	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &true_value, expr);
+	finished_1 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	/* False */
-	azo_compiler_update_JMP_32 (comp, is_false);
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_BOOLEAN, (const AZValue *) &false_value, NULL);
-	finished_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	azo_code_update_JMP32 (code, is_false);
+	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &false_value, expr);
+	finished_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 
 	/* Invalid_type */
-	azo_compiler_update_JMP_32 (comp, lhs_type_lt_i8);
-	azo_compiler_update_JMP_32 (comp, lhs_type_gt_double);
-	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_code_update_JMP32 (code, lhs_type_lt_i8);
+	azo_code_update_JMP32 (code, lhs_type_gt_double);
+	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
 
 
 	/* finished */
-	azo_compiler_update_JMP_32 (comp, finished_1);
-	azo_compiler_update_JMP_32 (comp, finished_2);
+	azo_code_update_JMP32 (code, finished_1);
+	azo_code_update_JMP32 (code, finished_2);
 
 	return 1;
 }

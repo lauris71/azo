@@ -117,7 +117,7 @@ test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, con
     return 0;
 }
 
-static const char *binary_arithmetic_src = ""
+static const char *binary_arithmetic_i32_src = ""
 "int32 a = 1;\n"
 "int32 b = 2;\n"
 "int32 c = (int32) (a + b);\n"
@@ -135,7 +135,7 @@ test_compile(void)
     azo_context_define_basic_types(ctx);
     const AZImplementation *ret_impl;
     AZValue ret_val;
-    TEST_ASSERT(test_program(ctx, binary_arithmetic_src, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT(test_program(ctx, binary_arithmetic_i32_src, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
     TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
     TEST_ASSERT_EQUAL_INT(3, ret_val.int32_v);
     azo_context_delete(ctx);

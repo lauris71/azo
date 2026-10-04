@@ -158,22 +158,10 @@ void azo_compiler_write_EXCEPTION_COND (AZOCompiler *comp, AZOCompilerContext *c
 void azo_compiler_write_DEBUG_STACK (AZOCompiler *comp);
 void azo_compiler_write_DEBUG_STRING (AZOCompiler *comp, const char *text, const AZONode *expr);
 
-void azo_compiler_write_POP (AZOCompiler *comp, uint32_t n_values, const AZONode *expr);
-void azo_compiler_write_REMOVE (AZOCompiler *comp, unsigned int first, unsigned int n_values, const AZONode *expr);
-void azo_compiler_write_PUSH_IMMEDIATE (AZOCompiler *comp, unsigned int type, const AZValue *value, const AZONode *expr);
 void azo_compiler_write_PUSH_EMPTY (AZOCompiler *comp, uint32_t type, const AZONode *expr);
-void azo_compiler_write_DUPLICATE (AZOCompiler *comp, unsigned int pos, const AZONode *expr);
-void azo_compiler_write_EXCHANGE (AZOCompiler *comp, unsigned int pos);
-void azo_compiler_write_TEST_TYPE (AZOCompiler *comp, unsigned int typecode, unsigned int pos);
-void azo_compiler_write_TEST_TYPE_IMMEDIATE (AZOCompiler *comp, unsigned int typecode, unsigned int pos, unsigned int type, const AZONode *expr);
-void azo_compiler_write_TYPE_OF (AZOCompiler *comp, unsigned int pos);
-unsigned int azo_compiler_write_JMP_32 (AZOCompiler *comp, unsigned int typecode, unsigned int to, const AZONode *expr);
-void azo_compiler_update_JMP_32 (AZOCompiler *comp, unsigned int from);
-void azo_compiler_write_PROMOTE (AZOCompiler *comp, uint8_t pos);
 void azo_compiler_write_EQUAL_TYPED (AZOCompiler *comp, uint32_t type);
 void azo_compiler_write_COMPARE_TYPED (AZOCompiler *comp, uint32_t type);
 void azo_compiler_write_ARITHMETIC_TYPED (AZOCompiler *comp, unsigned int typecode, uint32_t type);
-void azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint32_t type);
 
 unsigned int azo_compiler_compile_expression (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src);
 

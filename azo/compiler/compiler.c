@@ -31,6 +31,7 @@ static const int debug = 0;
 #include <azo/errors.h>
 
 #include <azo/compiler/arithmetic.h>
+#include <azo/compiler/helpers.h>
 #include <azo/compare.h>
 
 #include <azo/compiler/compiler.h>
@@ -124,20 +125,6 @@ write_tc_u32 (AZOCompiler *comp, unsigned int ic, uint32_t val, const AZONode *e
 	azo_code_write_ic_u32 (&comp->current->code, ic, val, expr);
 }
 
-static void
-write_tc_i32 (AZOCompiler *comp, unsigned int ic, int32_t val, const AZONode *expr)
-{
-	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
-	azo_code_write_ic_i32 (&comp->current->code, ic, val, expr);
-}
-
-static void
-write_tc_u8_u32 (AZOCompiler *comp, unsigned int ic, uint8_t val1, uint32_t val2, const AZONode *expr)
-{
-	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
-	azo_code_write_ic_u8_u32(&comp->current->code, ic, val1, val2, expr);
-}
-
 #define write_DEBUG_STACK azo_compiler_write_DEBUG_STACK
 #define write_DEBUG_STRING azo_compiler_write_DEBUG_STRING
 
@@ -184,90 +171,9 @@ azo_compiler_write_PUSH_FRAME (AZOCompiler *comp, unsigned int pos)
 }
 
 void
-azo_compiler_write_POP (AZOCompiler *comp, uint32_t n_values, const AZONode *expr)
-{
-	write_tc_u32 (comp, AZO_TC_POP, n_values, expr);
-}
-
-void
-azo_compiler_write_REMOVE (AZOCompiler *comp, unsigned int first, unsigned int n_values, const AZONode *expr)
-{
-	unsigned int ic = AZO_TC_REMOVE;
-	if (comp->check_args) ic |= AZO_TC_CHECK_ARGS;
-	azo_code_write_ic_u32_u32(&comp->current->code, ic, first, n_values, expr);
-}
-
-void
 azo_compiler_write_PUSH_EMPTY (AZOCompiler *comp, uint32_t type, const AZONode *expr)
 {
 	write_tc_u32 (comp, AZO_TC_PUSH_EMPTY, type, expr);
-}
-
-void
-azo_compiler_write_PUSH_IMMEDIATE (AZOCompiler *comp, unsigned int type, const AZValue *val, const AZONode *expr)
-{
-	uint8_t ic8 = AZO_TC_PUSH_IMMEDIATE;
-	if (comp->check_args) ic8 |= AZO_TC_CHECK_ARGS;
-	azo_code_write_bc(&comp->current->code, &ic8, 1, expr);
-	uint8_t t8 = type;
-	azo_code_write_bc(&comp->current->code, &t8, 1, expr);
-	if (type) {
-		unsigned int val_size = az_class_value_size(AZ_CLASS_FROM_TYPE(type));
-		if (val_size) {
-			azo_code_write_bc(&comp->current->code, val, val_size, expr);
-		}
-	}
-}
-
-void
-azo_compiler_write_DUPLICATE (AZOCompiler *comp, unsigned int pos, const AZONode *expr)
-{
-	azo_code_write_ic_u32(&comp->current->code, AZO_TC_DUPLICATE, pos, expr);
-}
-
-void
-azo_compiler_write_EXCHANGE (AZOCompiler *comp, unsigned int pos)
-{
-	write_tc_u32 (comp, AZO_TC_EXCHANGE, pos, NULL);
-}
-
-void
-azo_compiler_write_TEST_TYPE (AZOCompiler *comp, unsigned int typecode, unsigned int pos)
-{
-	write_tc_u8 (comp, typecode, (uint8_t) pos, NULL);
-}
-
-void
-azo_compiler_write_TEST_TYPE_IMMEDIATE (AZOCompiler *comp, unsigned int typecode, unsigned int pos, unsigned int type, const AZONode *expr)
-{
-	azo_code_write_ic_u8_u32(&comp->current->code, typecode, pos, type, expr);
-}
-
-void
-azo_compiler_write_TYPE_OF (AZOCompiler *comp, unsigned int pos)
-{
-	write_tc_u8 (comp, AZO_TC_TYPE_OF, (uint8_t) pos, NULL);
-}
-
-unsigned int
-azo_compiler_write_JMP_32 (AZOCompiler *comp, unsigned int ic, unsigned int to, const AZONode *expr)
-{
-	unsigned int pos = comp->current->code.bc_len;
-	int32_t raddr = (int) to - (int) (pos + 5);
-	write_tc_i32 (comp, ic, raddr, expr);
-	return pos;
-}
-
-void
-azo_compiler_update_JMP_32 (AZOCompiler *comp, unsigned int from)
-{
-	azo_frame_update_JMP_to (comp->current, from);
-}
-
-void
-azo_compiler_write_PROMOTE (AZOCompiler *comp, uint8_t pos)
-{
-	write_tc_u8 (comp, AZO_TC_PROMOTE, pos, NULL);
 }
 
 void
@@ -288,12 +194,6 @@ azo_compiler_write_ARITHMETIC_TYPED (AZOCompiler *comp, unsigned int typecode, u
 	write_tc_u8 (comp, typecode, type & 0xff, NULL);
 }
 
-void
-azo_compiler_write_MINMAX_TYPED (AZOCompiler *comp, unsigned int typecode, uint32_t type)
-{
-	write_tc_u8 (comp, typecode, type & 0xff, NULL);
-}
-
 static void
 write_GET_FUNCTION(AZOCompiler *comp, AZOCompilerContext *ctx, unsigned int n_args, const AZONode *node)
 {
@@ -310,18 +210,6 @@ static void
 write_GET_STATIC_FUNCTION(AZOCompiler *comp, AZOCompilerContext *ctx, unsigned int n_args, const AZONode *node)
 {
 	write_tc_u8(comp, AZO_TC_GET_STATIC_FUNCTION, n_args, node);
-}
-
-static void
-write_GET_ATTRIBUTE(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node)
-{
-	azo_compiler_write_ic(comp, AZO_TC_GET_ATTRIBUTE, node);
-}
-
-static void
-write_SET_ATTRIBUTE (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node)
-{
-	azo_compiler_write_ic(comp, AZO_TC_SET_ATTRIBUTE, node);
 }
 
 /* End new stack methods */
@@ -346,17 +234,17 @@ compile_PUSH_VALUE_const(AZOCompiler *comp, unsigned int type, const AZValue *va
 }
 
 static void
-compile_PUSH_VALUE_const_string(AZOCompiler *comp, AZString *str, const AZONode *node)
+compile_PUSH_VALUE_const_string(AZOCompiler *comp, AZOCompilerContext *ctx, AZString *str, const AZONode *node)
 {
-	unsigned int pos = azo_frame_append_string (comp->current, str);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, node);
+	unsigned int pos = azo_frame_append_string (ctx->frame, str);
+	azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_PUSH_VALUE, pos, node);
 }
 
 static void
-compile_PUSH_VALUE_const_object(AZOCompiler *comp, AZObject *obj, const AZONode *node)
+compile_PUSH_VALUE_const_object(AZOCompiler *comp, AZOCompilerContext *ctx, AZObject *obj, const AZONode *node)
 {
-	unsigned int pos = azo_frame_append_object (comp->current, obj);
-	write_tc_u32 (comp, AZO_TC_PUSH_VALUE, pos, node);
+	unsigned int pos = azo_frame_append_object (ctx->frame, obj);
+	azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_PUSH_VALUE, pos, node);
 }
 
 /* End temporary */
@@ -367,17 +255,18 @@ static unsigned int compile_sentence (AZOCompiler *comp, AZOCompilerContext *ctx
 /* Expressions */
 
 static unsigned int
-azo_compiler_compile_constant (AZOCompiler *comp, const AZONode *expr, AZOSource *src)
+azo_compiler_compile_constant (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src)
 {
+	AZOCode *code = &ctx->frame->code;
 	if (expr->term.subtype == AZ_TYPE_NONE) {
 		/* Constant none is NULL */
-		azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_NONE, NULL, expr);
+		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_NONE, NULL, expr);
 	} else if (AZ_TYPE_IS_PRIMITIVE (expr->term.subtype)) {
-		azo_compiler_write_PUSH_IMMEDIATE (comp, expr->term.subtype, &expr->value.v, expr);
+		azo_code_write_PUSH_IMMEDIATE (code, expr->term.subtype, &expr->value.v, expr);
 	} else if (expr->term.subtype == AZ_TYPE_STRING) {
-		compile_PUSH_VALUE_const_string (comp, expr->value.v.string, expr);
+		compile_PUSH_VALUE_const_string (comp, ctx, expr->value.v.string, expr);
 	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_OBJECT)) {
-		compile_PUSH_VALUE_const_object (comp, ( AZObject *) expr->value.v.reference, expr);
+		compile_PUSH_VALUE_const_object (comp, ctx, ( AZObject *) expr->value.v.reference, expr);
 	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_REFERENCE)) {
 		/* fixme: Implement lookup if already pushed */
 		compile_PUSH_VALUE_const (comp, expr->term.subtype, &expr->value.v, expr);
@@ -411,31 +300,32 @@ compile_this(AZOCompiler *comp, const AZONode *node, AZOSource *src)
 static unsigned int
 compile_assign_to_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, LValue *lval, const AZONode *expr)
 {
+	AZOCode *code = &ctx->frame->code;
 	if (lval->type == LVALUE_STACK) {
 		/* [..., prev, ..., value] */
 		write_tc_u32 (comp, AZO_TC_EXCHANGE_FRAME, lval->pos, expr);
 		/* [..., value, ..., prev] */
-		azo_compiler_write_POP (comp, 1, expr);
+		azo_code_write_POP (code, 1, expr);
 		/* [..., value, ...] */
 	} else if (lval->type == LVALUE_PROPERTY) {
 		/* [instance, key, value] */
 		write_SET_PROPERTY(comp, ctx, expr);
 		/* [true] */
 		/* [instance, key, value, false] */
-		unsigned int finished = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, expr);
+		unsigned int finished = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 		/* [instance, key, value] */
-		write_SET_ATTRIBUTE(comp, ctx, expr);
+		azo_code_write_SET_ATTRIBUTE (code, expr);
 		/* [] */
-		azo_compiler_update_JMP_32 (comp, finished);
+		azo_code_update_JMP32 (code, finished);
 	} else if (lval->type == LVALUE_ATTRIBUTE) {
 		/* [instance, key, value] */
-		write_SET_ATTRIBUTE(comp, ctx, expr);
+		azo_code_write_SET_ATTRIBUTE (code, expr);
 		/* [] */
 	} else if (lval->type == LVALUE_ELEMENT) {
 		/* [array, index, value] */
-		azo_compiler_write_ic (comp, WRITE_ARRAY_ELEMENT, expr);
+		azo_code_write_ic (code, WRITE_ARRAY_ELEMENT, expr);
 		/* [array] */
-		azo_compiler_write_POP (comp, 1, expr);
+		azo_code_write_POP (code, 1, expr);
 		/* [] */
 	} else {
 		fprintf (stderr, "Unassignable lvalue type\n");
@@ -483,7 +373,7 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			/* Interpret as this member */
 			lvalue->type = LVALUE_PROPERTY;
 			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, 0, expr);
-			compile_PUSH_VALUE_const_string (comp, expr->value.v.string, expr);
+			compile_PUSH_VALUE_const_string (comp, ctx, expr->value.v.string, expr);
 			lvalue->n_elements = 2;
 			return 1;
 		} else if (expr->term.subtype == AZO_TERM_REFERENCE_PROPERTY) {
@@ -491,14 +381,14 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			AZONode *left = expr->children;
 			AZONode *right = left->next;
 			if (!azo_compiler_compile_expression (comp, ctx, left, src)) return 0;
-			compile_PUSH_VALUE_const_string (comp, right->value.v.string, expr);
+			compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, expr);
 			lvalue->n_elements = 2;
 		} else if (expr->term.subtype == AZO_TERM_REFERENCE_ATTRIBUTE) {
 			lvalue->type = LVALUE_ATTRIBUTE;
 			AZONode *left = expr->children;
 			AZONode *right = left->next;
 			if (!azo_compiler_compile_expression (comp, ctx, left, src)) return 0;
-			compile_PUSH_VALUE_const_string (comp, right->value.v.string, expr);
+			compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, expr);
 			lvalue->n_elements = 2;
 		} else {
 			fprintf (stderr, "compile_lvalue: Invalid expression subtype %u\n", expr->term.subtype);
@@ -538,6 +428,7 @@ compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, c
 	unsigned int is_function;
 	unsigned int n_args;
 	AZONode *child;
+	AZOCode *code = &ctx->frame->code;
 	/* [func] */
 #if 0
 	azo_compiler_write_DEBUG_STRING (comp, "compile_call 1");
@@ -545,16 +436,16 @@ compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, c
 #endif
 	/* [func] */
 	if (test_implementation) {
-		azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, NULL);
-		is_function = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, NULL);
-		azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
-		azo_compiler_update_JMP_32 (comp, is_function);
+		azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, func);
+		is_function = azo_code_write_JMP32 (code, JMP_32_IF, 0, func);
+		azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, func);
+		azo_code_update_JMP32 (code, is_function);
 	}
 	n_args = 0;
 	if (has_this) {
 		// has_this indicates that this is one element BEFORE function
 		// e.g. [this, function]
-		azo_compiler_write_DUPLICATE (comp, 1, NULL);
+		azo_code_write_DUPLICATE (code, 1, func);
 		n_args += 1;
 	} else {
 		azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, 0, func);
@@ -575,9 +466,9 @@ compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, c
 	/* [func : this, arg1...] */
 	write_tc_u8 (comp, AZO_TC_INVOKE, n_args, NULL);
 	/* [func : this, arg1..., result] */
-	azo_compiler_write_ic (comp, AZO_TC_POP_FRAME, NULL);
+	azo_code_write_ic (code, AZO_TC_POP_FRAME, NULL);
 	/* [func, this, arg1..., result] */
-	azo_compiler_write_REMOVE (comp, 1, n_args + 1, NULL);
+	azo_code_write_REMOVE (code, 1, n_args + 1, NULL);
 	/* [result] */
 	return 0;
 }
@@ -585,41 +476,23 @@ compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, c
 static void
 compile_call_inst_func_args (AZOCompiler *comp, unsigned int n_args, const AZONode *expr)
 {
+	AZOCode *code = &comp->current->code;
 	/* [inst, funcobj, arg1...] */
-	azo_code_write_ic_u32(&comp->current->code, AZO_TC_PUSH_FRAME, n_args, expr);
+	azo_code_write_ic_u32(code, AZO_TC_PUSH_FRAME, n_args, expr);
 	/* [inst, funcobj : arg1...] */
 	write_tc_u8 (comp, AZO_TC_INVOKE, n_args, expr);
 	/* [inst, funcobj : arg1..., retval] */
-	azo_compiler_write_ic (comp, AZO_TC_POP_FRAME, expr);
+	azo_code_write_ic (code, AZO_TC_POP_FRAME, expr);
 	/* [inst, funcobj, arg1..., retval] */
-	azo_compiler_write_REMOVE (comp, 1, n_args + 2, expr);
+	azo_code_write_REMOVE (code, 1, n_args + 2, expr);
 	/* [retval] */
-}
-
-static void
-compile_TEST_TYPE_IMMEDIATE (AZOCompiler *comp, unsigned int tc, unsigned int pos, unsigned int type, unsigned int *jmp_if, unsigned int *jmp_if_not, const AZONode *expr)
-{
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, tc, pos, type, expr);
-	if (jmp_if) {
-		*jmp_if = azo_compiler_write_JMP_32 (comp, JMP_32_IF, 0, expr);
-		if (jmp_if_not) {
-			*jmp_if_not = azo_compiler_write_JMP_32 (comp, JMP_32, 0, expr);
-		}
-	} else if (jmp_if_not) {
-		*jmp_if_not = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, expr);
-	}
-}
-
-static void
-compile_IS_NONE (AZOCompiler *comp, unsigned int *jmp_if, unsigned int *jmp_if_not, const AZONode *expr)
-{
-	compile_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, jmp_if, jmp_if_not, expr);
 }
 
 static unsigned int
 compile_call_property (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, const AZONode *list, AZOSource *src)
 {
 	unsigned int is_member_function, is_class, not_active_obj, no_static_function, invalid_type, finished, finished_2, finished_3;
+	AZOCode *code = &ctx->frame->code;
 
 	/* Instance, Key */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, 1, func);
@@ -634,64 +507,64 @@ compile_call_property (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 	/* Instance, String, Arguments */
 	write_GET_FUNCTION(comp, ctx, n_args, func);
 	/* Instance, String, Arguments, Function|null */
-	compile_IS_NONE (comp, NULL, &is_member_function, func);
+	azo_code_compile_last_is_none (code, NULL, &is_member_function, func);
 
 	/* Instance, String, Arguments, null */
-	azo_compiler_write_POP (comp, 1, func);
+	azo_code_write_POP (code, 1, func);
 	/* Instance, String, Arguments */
-	compile_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, n_args + 1, AZ_TYPE_CLASS, &is_class, NULL, func);
+	azo_code_compile_type_is_immediate (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, n_args + 1, AZ_TYPE_CLASS, &is_class, NULL, func);
 
 	/* Try GET_ATTRIBUTE */
 	/* Instance, String, Arguments */
-	compile_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, n_args + 1, AZ_TYPE_ATTRIBUTE_DICT, NULL, &not_active_obj, func);
+	azo_code_compile_type_is_immediate (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, n_args + 1, AZ_TYPE_ATTRIBUTE_DICT, NULL, &not_active_obj, func);
 	/* ActiveObj, String, Arguments */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, func);
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, func);
-	write_GET_ATTRIBUTE(comp, ctx, func);
+	azo_code_write_GET_ATTRIBUTE(code, func);
 	/* ActiveObj, String, Arguments, Value|null */
-	compile_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, NULL, &invalid_type, func);
+	azo_code_compile_type_is_immediate (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, NULL, &invalid_type, func);
 	/* ActiveObj, String, Arguments, Function */
 
 	/* Invoke member function */
-	azo_compiler_update_JMP_32 (comp, is_member_function);
+	azo_code_update_JMP32 (code, is_member_function);
 	/* Instance, String, Arguments, Function */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_EXCHANGE, n_args + 1, func);
 	/* Instance, Function, Arguments, String */
-	azo_compiler_write_POP (comp, 1, func);
+	azo_code_write_POP (code, 1, func);
 	/* Instance, Function, Arguments */
 	compile_call_inst_func_args (comp, n_args, func);
 	/* Retval */
-	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, func);
+	finished = azo_code_write_JMP32 (code, JMP_32, 0, func);
 
 	/* Try GET_STATIC_FUNCTION */
-	azo_compiler_update_JMP_32 (comp, is_class);
+	azo_code_update_JMP32 (code, is_class);
 	n_args -= 1;
 	/* Class, String, Class, Arguments */
-	azo_compiler_write_REMOVE (comp, n_args, 1, func);
+	azo_code_write_REMOVE (code, n_args, 1, func);
 	/* Class, String, Arguments */
 	write_GET_STATIC_FUNCTION(comp, ctx, n_args, func);
 	/* Class, String, Arguments, Function | null */
-	compile_IS_NONE (comp, &no_static_function, NULL, func);
+	azo_code_compile_last_is_none (code, &no_static_function, NULL, func);
 
 	/* Class, String, Arguments, Function */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_EXCHANGE, n_args + 1, func);
 	/* Class, Function, Arguments, String */
-	azo_compiler_write_POP (comp, 1, func);
+	azo_code_write_POP (code, 1, func);
 	/* Class, Function, Arguments */
 	compile_call_inst_func_args (comp, n_args, func);
 	/* Retval */
-	finished_2 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, func);
+	finished_2 = azo_code_write_JMP32 (code, JMP_32, 0, func);
 
 	/* Value */
-	azo_compiler_update_JMP_32 (comp, no_static_function);
-	azo_compiler_update_JMP_32 (comp, not_active_obj);
+	azo_code_update_JMP32 (code, no_static_function);
+	azo_code_update_JMP32 (code, not_active_obj);
 	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_PROPERTY, func);
-	finished_3 = azo_compiler_write_JMP_32 (comp, JMP_32, 0, func);
-	azo_compiler_update_JMP_32 (comp, invalid_type);
+	finished_3 = azo_code_write_JMP32 (code, JMP_32, 0, func);
+	azo_code_update_JMP32 (code, invalid_type);
 	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, func);
-	azo_compiler_update_JMP_32 (comp, finished);
-	azo_compiler_update_JMP_32 (comp, finished_2);
-	azo_compiler_update_JMP_32 (comp, finished_3);
+	azo_code_update_JMP32 (code, finished);
+	azo_code_update_JMP32 (code, finished_2);
+	azo_code_update_JMP32 (code, finished_3);
 	return 1;
 }
 
@@ -705,6 +578,7 @@ static unsigned int
 compile_call_attribute (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, const AZONode *list, AZOSource *src)
 {
 	unsigned int not_active_obj, invalid_type, finished;
+	AZOCode *code = &ctx->frame->code;
 
 	/* Instance, Key */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, 1, func);
@@ -715,28 +589,28 @@ compile_call_attribute (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 		n_args += 1;
 	}
 	/* Instance, Key, Arguments */
-	compile_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, n_args + 1, AZ_TYPE_ATTRIBUTE_DICT, NULL, &not_active_obj, func);
+	azo_code_compile_type_is_immediate (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, n_args + 1, AZ_TYPE_ATTRIBUTE_DICT, NULL, &not_active_obj, func);
 	/* AttribDict, String, Arguments */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, func);
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, func);
 	/* AttribDict, String, Arguments, AttribDict, String */
-	write_GET_ATTRIBUTE(comp, ctx, func);
+	azo_code_write_GET_ATTRIBUTE(code, func);
 	/* AttribDict, String, Arguments, Value|null */
-	compile_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, NULL, &invalid_type, func);
+	azo_code_compile_type_is_immediate (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, NULL, &invalid_type, func);
 	/* AttribDict, String, Arguments, Function */
 
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_EXCHANGE, n_args + 1, func);
 	/* Instance, Function, Arguments, String */
-	azo_compiler_write_POP (comp, 1, func);
+	azo_code_write_POP (code, 1, func);
 	/* Instance, Function, Arguments */
 	compile_call_inst_func_args (comp, n_args, func);
 	/* Retval */
-	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, func);
-	azo_compiler_update_JMP_32 (comp, not_active_obj);
+	finished = azo_code_write_JMP32 (code, JMP_32, 0, func);
+	azo_code_update_JMP32 (code, not_active_obj);
 	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_PROPERTY, func);
-	azo_compiler_update_JMP_32 (comp, invalid_type);
+	azo_code_update_JMP32 (code, invalid_type);
 	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, func);
-	azo_compiler_update_JMP_32 (comp, finished);
+	azo_code_update_JMP32 (code, finished);
 	return 1;
 }
 
@@ -747,6 +621,8 @@ compile_new (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *klass, c
 {
 	AZONode *child;
 	unsigned int invalid_type_2, finished;
+	AZOCode *code = &ctx->frame->code;
+
 	static AZString *newstr = NULL;
 	unsigned int n_args = 0;
 	if (!newstr) newstr = az_string_new ((const unsigned char *) "new");
@@ -761,7 +637,7 @@ compile_new (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *klass, c
 	compile_PUSH_VALUE_const(comp, AZ_TYPE_CLASS, (const AZValue *) &tklass, klass);
 
 	/* [Class] */
-	compile_PUSH_VALUE_const_string (comp, newstr, klass);
+	compile_PUSH_VALUE_const_string (comp, ctx, newstr, klass);
 	/* [Class, "new"] */
 	for (child = list->children; child; child = child->next) {
 		azo_compiler_compile_expression (comp, ctx, child, src);
@@ -774,19 +650,19 @@ compile_new (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *klass, c
 	/* [Class, "new", arg1...] */
 	write_GET_STATIC_FUNCTION(comp, ctx, n_args, NULL);
 	/* [Class, "new", arg1..., funcobj | null] */
-	compile_IS_NONE (comp, &invalid_type_2, NULL, klass);
+	azo_code_compile_last_is_none (code, &invalid_type_2, NULL, klass);
 	/* [Class, "new", arg1..., funcobj] */
-	azo_compiler_write_EXCHANGE (comp, n_args + 1);
+	azo_code_write_EXCHANGE (code, n_args + 1, list);
 	/* [Class, funcobj, arg1..., "new"] */
-	azo_compiler_write_POP (comp, 1, NULL);
+	azo_code_write_POP (code, 1, list);
 	/* [Class, funcobj, arg1...] */
 	compile_call_inst_func_args (comp, n_args, klass);
-	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	finished = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
 	/* Invalid type */
-	azo_compiler_update_JMP_32 (comp, invalid_type_2);
+	azo_code_update_JMP32 (code, invalid_type_2);
 	azo_compiler_write_EXCEPTION (comp, ctx, AZO_EXCEPTION_INVALID_TYPE, NULL);
 	/* Finished */
-	azo_compiler_update_JMP_32 (comp, finished);
+	azo_code_update_JMP32 (code, finished);
 
 	return 1;
 }
@@ -794,6 +670,7 @@ compile_new (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *klass, c
 static unsigned int
 compile_prefix_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, const AZONode *left, AZOSource *src, unsigned int silent)
 {
+	AZOCode *code = &ctx->frame->code;
 	LValue lval;
 	if (silent) {
 		if (!compile_lvalue (comp, ctx, left, src, &lval, 0)) return 0;
@@ -822,9 +699,9 @@ compile_prefix_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 			return 0;
 		}
 		/* null, [LValue], Value */
-		azo_compiler_write_EXCHANGE (comp, lval.n_elements + 1);
+		azo_code_write_EXCHANGE (code, lval.n_elements + 1, expr);
 		/* Value, [LValue], null */
-		azo_compiler_write_DUPLICATE (comp, lval.n_elements + 1, expr);
+		azo_code_write_DUPLICATE (code, lval.n_elements + 1, expr);
 		/* Value, [LValue], Value */
 		compile_assign_to_lvalue (comp, ctx, &lval, NULL);
 		/* Value */
@@ -836,15 +713,16 @@ compile_prefix_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 static unsigned int
 compile_prefix (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, const AZONode *left, AZOSource *src)
 {
+	AZOCode *code = &ctx->frame->code;
 	if (expr->term.subtype == AZO_TERM_PREFIX_PLUS) {
 		if (!azo_compiler_compile_expression (comp, ctx, left, src)) return 0;
 		/* NOP */
 	} else if (expr->term.subtype == AZO_TERM_PREFIX_MINUS) {
 		if (!azo_compiler_compile_expression (comp, ctx, left, src)) return 0;
-		azo_compiler_write_ic (comp, AZO_TC_NEGATE, NULL);
+		azo_code_write_ic (code, AZO_TC_NEGATE, expr);
 	} else if (expr->term.subtype == AZO_TERM_PREFIX_NOT) {
 		if (!azo_compiler_compile_expression (comp, ctx, left, src)) return 0;
-		azo_compiler_write_ic (comp, AZO_TC_LOGICAL_NOT, NULL);
+		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
 	} else if (expr->term.subtype == AZO_TERM_PREFIX_TILDE) {
 		if (!azo_compiler_compile_tilde (comp, ctx, left, src)) return 0;
 	} else if (expr->term.subtype == AZO_TERM_PREFIX_INCREMENT) {
@@ -900,33 +778,34 @@ static unsigned int
 compile_reference_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZString *str)
 {
 	unsigned int property_not_null, not_active_obj, finished;
+	AZOCode *code = &ctx->frame->code;
 
 	/* InstanceA */
-	azo_compiler_write_DUPLICATE (comp, 0, expr);
-	compile_PUSH_VALUE_const_string (comp, str, expr);
+	azo_code_write_DUPLICATE (code, 0, expr);
+	compile_PUSH_VALUE_const_string (comp, ctx, str, expr);
 	/* InstanceA, InstanceA, String */
-	azo_compiler_write_ic (comp, AZO_TC_GET_PROPERTY, NULL);
+	azo_code_write_ic (code, AZO_TC_GET_PROPERTY, expr);
 	/* InstanceA, Value|null */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
-	property_not_null = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
+	property_not_null = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
 
 	/* InstanceA, null */
-	azo_compiler_write_TEST_TYPE_IMMEDIATE (comp, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 1, AZ_TYPE_ATTRIBUTE_DICT, expr);
-	not_active_obj = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 1, AZ_TYPE_ATTRIBUTE_DICT, expr);
+	not_active_obj = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
 	/* ActiveObj, null */
-	azo_compiler_write_POP (comp, 1, NULL);
-	compile_PUSH_VALUE_const_string (comp, str, expr);
+	azo_code_write_POP (code, 1, expr);
+	compile_PUSH_VALUE_const_string (comp, ctx, str, expr);
 	/* ActiveObj, String */
-	write_GET_ATTRIBUTE(comp, ctx, expr);
+	azo_code_write_GET_ATTRIBUTE (code, expr);
 	/* Value */
-	finished = azo_compiler_write_JMP_32 (comp, JMP_32, 0, NULL);
+	finished = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
 
-	azo_compiler_update_JMP_32 (comp, property_not_null);
-	azo_compiler_update_JMP_32 (comp, not_active_obj);
+	azo_code_update_JMP32 (code, property_not_null);
+	azo_code_update_JMP32 (code, not_active_obj);
 	/* InstanceA, Value */
-	azo_compiler_write_REMOVE (comp, 1, 1, NULL);
+	azo_code_write_REMOVE (code, 1, 1, NULL);
 	/* Value */
-	azo_compiler_update_JMP_32 (comp, finished);
+	azo_code_update_JMP32 (code, finished);
 	return 1;
 }
 
@@ -949,6 +828,7 @@ compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 	AZONode *child;
 	unsigned int n_args, result;
 	LValue lval;
+	AZOCode *code = &ctx->frame->code;
 
 	// fixme: Handle in lvalue?
 	// fixme: Implement separate expression type for this handling?
@@ -961,18 +841,18 @@ compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 	if (func->term.type == AZO_TERM_CONSTANT) {
 		if (func->children) {
 			assert (func->children->term.type == AZO_TERM_CONSTANT);
-			if (!azo_compiler_compile_constant (comp, func->children, src)) return 0;
-			if (!azo_compiler_compile_constant (comp, func, src)) return 0;
+			if (!azo_compiler_compile_constant (comp, ctx, func->children, src)) return 0;
+			if (!azo_compiler_compile_constant (comp, ctx, func, src)) return 0;
 			result = compile_call (comp, ctx, func, list, src, 1, 0);
 			if (result) return 0;
-			azo_compiler_write_REMOVE (comp, 1, 1, NULL);
+			azo_code_write_REMOVE (code, 1, 1, func);
 		} else {
-			if (!azo_compiler_compile_constant (comp, func, src)) return 0;
+			if (!azo_compiler_compile_constant (comp, ctx, func, src)) return 0;
 			result = compile_call (comp, ctx, func, list, src, 0, 0);
 			if (result) return 0;
 		}
 		if (silent) {
-			azo_compiler_write_POP (comp, 1, NULL);
+			azo_code_write_POP (code, 1, func);
 		}
 		return 1;
 	}
@@ -996,9 +876,9 @@ compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 		break;
 	case LVALUE_ELEMENT:
 		/* Array, Index */
-		azo_compiler_write_ic (comp, LOAD_ARRAY_ELEMENT, NULL);
+		azo_code_write_ic (code, LOAD_ARRAY_ELEMENT, func);
 		/* Array, Value */
-		azo_compiler_write_REMOVE (comp, 1, 1, NULL);
+		azo_code_write_REMOVE (code, 1, 1, func);
 		/* Value */
 		/* fixme: Handle object.array[index](args) this types */
 		result = compile_call (comp, ctx, func, list, src, 0, 1);
@@ -1023,7 +903,7 @@ compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 		break;
 	}
 	if (silent) {
-		azo_compiler_write_POP (comp, 1, NULL);
+		azo_code_write_POP (code, 1, func);
 	}
 	return 1;
 }
@@ -1115,57 +995,37 @@ compile_array_literal (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 {
 	const AZONode *child;
 	unsigned int size = 0, idx = 0;
+	AZOCode *code = &ctx->frame->code;
+
 	for (child = node->children; child; child = child->next) size += 1;
 	/* Create new array */
-	azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_UINT32, (const AZValue *) &size, NULL);
-	azo_compiler_write_ic (comp, NEW_ARRAY, NULL);
+	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_UINT32, (const AZValue *) &size, node);
+	azo_code_write_ic (code, NEW_ARRAY, node);
 	for (child = node->children; child; child = child->next) {
-		azo_compiler_write_PUSH_IMMEDIATE (comp, AZ_TYPE_UINT32, (const AZValue *) &idx, NULL);
+		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_UINT32, (const AZValue *) &idx, node);
 		azo_compiler_compile_expression (comp, ctx, child, src);
-		azo_compiler_write_ic (comp, WRITE_ARRAY_ELEMENT, NULL);
+		azo_code_write_ic (code, WRITE_ARRAY_ELEMENT, node);
 		idx += 1;
 	}
 	return 1;
 }
 
-#define noDEBUG_TEST
-
 static unsigned int
 compile_test (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
-	AZONode *lhs, *rhs;
-	lhs = node->children;
-	rhs = lhs->next;
+	AZOCode *code = &ctx->frame->code;
+	AZONode *lhs = node->children;
+	AZONode *rhs = lhs->next;
 	/* fixme: Implement expression type? */
-#ifdef DEBUG_TEST
-	write_DEBUG_STRING (comp, "Test 1\n");
-	write_DEBUG_STACK (comp);
-#endif
 	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
-#ifdef DEBUG_TEST
-	write_DEBUG_STRING (comp, "Test 2\n");
-	write_DEBUG_STACK (comp);
-#endif
-	write_tc_u8 (comp, AZO_TC_TYPE_OF_CLASS, 0, node);
-#ifdef DEBUG_TEST
-	write_DEBUG_STRING (comp, "Test 3\n");
-	write_DEBUG_STACK (comp);
-#endif
+	azo_code_write_ic_u8(code, AZO_TC_TYPE_OF_CLASS, 0, node);
 	if (node->term.subtype == AZO_TERM_TEST_IS) {
-		azo_compiler_write_TEST_TYPE (comp, AZO_TC_TYPE_IS, 2);
+		azo_code_write_TEST_TYPE (code, AZO_TC_TYPE_IS, 2, node);
 	} else {
-		azo_compiler_write_TEST_TYPE (comp, AZO_TC_TYPE_IMPLEMENTS, 2);
+		azo_code_write_TEST_TYPE (code, AZO_TC_TYPE_IMPLEMENTS, 2, node);
 	}
-#ifdef DEBUG_TEST
-	write_DEBUG_STRING (comp, "Test 4\n");
-	write_DEBUG_STACK (comp);
-#endif
-	azo_compiler_write_REMOVE (comp, 1, 2, node);
-#ifdef DEBUG_TEST
-	write_DEBUG_STRING (comp, "Test 5\n");
-	write_DEBUG_STACK (comp);
-#endif
+	azo_code_write_REMOVE (code, 1, 2, node);
 	return 1;
 }
 
@@ -1199,7 +1059,7 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 			write_PUSH_CAPTURE (comp, node->var_pos, node);
 		}
 	} else if (node->term.type == AZO_TERM_CONSTANT) {
-		if (!azo_compiler_compile_constant (comp, node, src)) return 0;
+		if (!azo_compiler_compile_constant (comp, ctx, node, src)) return 0;
 	} else if (node->term.type == AZO_TERM_KEYWORD) {
 		if (node->term.subtype == AZO_KEYWORD_THIS) {
 			if (!compile_this (comp, node, src)) return 0;
@@ -1242,13 +1102,14 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 static unsigned int
 compile_array_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *array_ref, const AZONode *idx, AZOSource *src)
 {
+	AZOCode *code = &ctx->frame->code;
 	azo_compiler_compile_expression (comp, ctx, array_ref, src);
 	/* Array */
 	azo_compiler_compile_expression (comp, ctx, idx, src);
 	/* Array, Index */
-	azo_compiler_write_ic (comp, LOAD_ARRAY_ELEMENT, NULL);
+	azo_code_write_ic (code, LOAD_ARRAY_ELEMENT, array_ref);
 	/* Array, Value */
-	azo_compiler_write_REMOVE (comp, 1, 1, NULL);
+	azo_code_write_REMOVE (code, 1, 1, NULL);
 	return 1;
 }
 
@@ -1266,12 +1127,13 @@ compile_member_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZON
 static unsigned int
 compile_attribute_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src)
 {
+	AZOCode *code = &ctx->frame->code;
 	AZONode *left, *right;
 	left = expr->children;
 	right = left->next;
 	azo_compiler_compile_expression (comp, ctx, left, src);
-	compile_PUSH_VALUE_const_string (comp, right->value.v.string, expr);
-	write_GET_ATTRIBUTE(comp, ctx, expr);
+	compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, expr);
+	azo_code_write_GET_ATTRIBUTE (code, expr);
 	return 1;
 }
 
@@ -1429,14 +1291,15 @@ compile_step_statement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 static unsigned int
 compile_statement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
+	AZOCode *code = &ctx->frame->code;
 	if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_RETURN)) {
 		if (node->children) {
 			// fixme: Why it was rvalue here?
 			// if (!compile_expression_rvalue (comp, expr->children, src)) return 0;
 			if (!azo_compiler_compile_expression(comp, ctx, node->children, src)) return 0;
-			azo_compiler_write_ic (comp, AZO_TC_RETURN_VALUE, node);
+			azo_code_write_ic (code, AZO_TC_RETURN_VALUE, node);
 		} else {
-			azo_compiler_write_ic (comp, AZO_TC_RETURN, node);
+			azo_code_write_ic (code, AZO_TC_RETURN, node);
 		}
 		return 1;
 	} else if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_DEBUG)) {
@@ -1451,12 +1314,13 @@ compile_statement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *no
 static unsigned int
 compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
+	AZOCode *code = &ctx->frame->code;
 	AZONode *child = node->children;
 	unsigned int n_stack = ctx->n_stack;
 	unsigned int result = compile_sentences(comp, ctx, child, src);
 	/* Clear scope */
 	if (ctx->n_stack > n_stack) {
-		azo_compiler_write_POP (comp, ctx->n_stack - n_stack, NULL);
+		azo_code_write_POP (code, ctx->n_stack - n_stack, node);
 		ctx->n_stack = n_stack;
 	}
 	return result;
@@ -1470,6 +1334,7 @@ compile_cycle (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node,
 	AZOSource *src)
 {
 	unsigned int cycle_begin, cycle_end;
+	AZOCode *code = &ctx->frame->code;
 
 	unsigned int n_stack = ctx->n_stack;
 	/* Initialization */
@@ -1480,7 +1345,7 @@ compile_cycle (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node,
 	if (test_at_begin) {
 		compile_expression_boolean (comp, ctx, test_at_begin, src);
 		/* Jump out of cycle if condition was FALSE */
-		cycle_end = azo_compiler_write_JMP_32 (comp, JMP_32_IF_NOT, 0, NULL);
+		cycle_end = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, NULL);
 	}
 	/* Cycle content */
 	compile_sentence (comp, ctx, content, src);
@@ -1489,16 +1354,16 @@ compile_cycle (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node,
 	if (test_at_end) {
 		compile_expression_boolean (comp, ctx, test_at_end, src);
 		/* Jump back if condition is true */
-		azo_compiler_write_JMP_32 (comp, JMP_32_IF, cycle_begin, NULL);
+		azo_code_write_JMP32 (code, JMP_32_IF, cycle_begin, NULL);
 	} else {
 		/* Unconditionally jump back */
-		azo_compiler_write_JMP_32 (comp, JMP_32, cycle_begin, NULL);
+		azo_code_write_JMP32 (code, JMP_32, cycle_begin, NULL);
 	}
 	if (test_at_begin) {
-		azo_compiler_update_JMP_32 (comp, cycle_end);
+		azo_code_update_JMP32 (code, cycle_end);
 	}
 	if (ctx->n_stack > n_stack) {
-		azo_compiler_write_POP (comp, ctx->n_stack - n_stack, NULL);
+		azo_code_write_POP (code, ctx->n_stack - n_stack, node);
 		ctx->n_stack = n_stack;
 	}
 	return 1;
@@ -1565,22 +1430,23 @@ compile_if (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZO
 	AZONode *cond = node->children;
 	AZONode *iftrue = cond->next;
 	AZONode *iffalse = iftrue->next;
+	AZOCode *code = &ctx->frame->code;
 
 	compile_expression_boolean (comp, ctx, cond, src);
 	/* Jump conditionally to NOT TRUE statement */
-	unsigned int not_true = azo_compiler_write_JMP_32(comp, JMP_32_IF_NOT, 0, cond);
+	unsigned int not_true = azo_code_write_JMP32(code, JMP_32_IF_NOT, 0, cond);
 	/* TRUE sentence */
 	compile_sentence (comp, ctx, iftrue, src);
 	if (iffalse) {
 		/* Jump to end if TRUE */
-		unsigned int else_loc = azo_compiler_write_JMP_32(comp, JMP_32, 0, iftrue);
+		unsigned int else_loc = azo_code_write_JMP32(code, JMP_32, 0, iftrue);
 		/* Land here if FALSE */
-		azo_compiler_update_JMP_32 (comp, not_true);
+		azo_code_update_JMP32 (code, not_true);
 		compile_sentence (comp, ctx, iffalse, src);
-		azo_compiler_update_JMP_32 (comp, else_loc);
+		azo_code_update_JMP32 (code, else_loc);
 	} else {
 		/* Simply land here if FALSE */
-		azo_compiler_update_JMP_32 (comp, not_true);
+		azo_code_update_JMP32 (code, not_true);
 	}
 	return 1;
 }
