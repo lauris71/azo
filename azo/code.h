@@ -105,6 +105,12 @@ azo_code_write_EXCEPTION (AZOCode *code, uint32_t type, const AZONode *node)
 }
 
 static inline void
+azo_code_write_PUSH_FRAME (AZOCode *code, unsigned int pos, const AZONode *expr)
+{
+	azo_code_write_ic_u32(code, AZO_TC_PUSH_FRAME, pos, expr);
+}
+
+static inline void
 azo_code_write_POP (AZOCode *code, uint32_t n_values, const AZONode *expr)
 {
 	azo_code_write_ic_u32(code, AZO_TC_POP, n_values, expr);
@@ -117,6 +123,12 @@ azo_code_write_REMOVE (AZOCode *code, unsigned int first, unsigned int n_values,
 }
 
 static inline void
+azo_code_write_PUSH_EMPTY (AZOCode *code, uint32_t type, const AZONode *expr)
+{
+	azo_code_write_ic_u32 (code, AZO_TC_PUSH_EMPTY, type, expr);
+}
+
+static inline void
 azo_code_write_PUSH_IMMEDIATE (AZOCode *code, unsigned int type, const AZValue *val, const AZONode *node)
 {
 	azo_code_write_ic_u8(code, AZO_TC_PUSH_IMMEDIATE, type, node);
@@ -126,6 +138,12 @@ azo_code_write_PUSH_IMMEDIATE (AZOCode *code, unsigned int type, const AZValue *
 			azo_code_write_bc(code, val, val_size, node);
 		}
 	}
+}
+
+static inline void
+azo_code_write_PUSH_CAPTURE(AZOCode *code, unsigned int pos, const AZONode *node)
+{
+	azo_code_write_ic_u32(code, AZO_TC_PUSH_CAPTURE, pos, node);
 }
 
 static inline void
@@ -196,6 +214,24 @@ static inline void
 azo_code_write_MINMAX_TYPED (AZOCode *code, unsigned int typecode, uint32_t type, const AZONode *node)
 {
 	azo_code_write_ic_u8(code, typecode, type, node);
+}
+
+static inline void
+azo_code_write_GET_FUNCTION(AZOCode *code, unsigned int n_args, const AZONode *node)
+{
+	azo_code_write_ic_u8(code, AZO_TC_GET_FUNCTION, n_args, node);
+}
+
+static inline void
+azo_code_write_SET_PROPERTY(AZOCode *code, const AZONode *node)
+{
+	azo_code_write_ic(code, AZO_TC_SET_PROPERTY, node);
+}
+
+static inline void
+azo_code_write_GET_STATIC_FUNCTION(AZOCode *code, unsigned int n_args, const AZONode *node)
+{
+	azo_code_write_ic_u8(code, AZO_TC_GET_STATIC_FUNCTION, n_args, node);
 }
 
 static inline void

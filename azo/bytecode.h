@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+#define AZO_TC_HAS_DEBUG 1
+
 #define AZO_TC_CHECK_ARGS 128
 #define MAX_TYPED AZO_TC_MAX_TYPED
 
@@ -29,10 +31,12 @@ enum {
 	 */
 	AZO_TC_EXCEPTION_IF_TYPE_IS_NOT,
 
+#ifdef AZO_TC_HAS_DEBUG
 	/* DEBUG OP(U32) [STRING] */
-	AZO_TC_DEBUG,
+	AZO_TC_DEBUG_STACK,
 	/* DEBUG u32:LOC */
 	AZO_TC_DEBUG_STR,
+#endif
 
 	/* Stack management */
 

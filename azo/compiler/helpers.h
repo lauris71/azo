@@ -8,6 +8,7 @@
 */
 
 #include <azo/code.h>
+#include <azo/compiler/compiler.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,6 +23,34 @@ azo_code_compile_last_is_none (AZOCode *code, unsigned int *jmp_if, unsigned int
 	azo_code_compile_type_is_immediate (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, jmp_if, jmp_if_not, expr);
 }
 
+static unsigned int
+azo_code_compile_expression_and_type_check(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, unsigned int pos, unsigned int type, AZOSource *src)
+{
+	if (!azo_compiler_compile_expression (comp, ctx, expr, src)) return 0;
+	azo_code_write_ic_u32_u32 (&ctx->frame->code, AZO_TC_EXCEPTION_IF_TYPE_IS_NOT, pos, type, expr);
+	return 1;
+}
+
+#ifdef AZO_TC_HAS_DEBUG
+static inline void
+azo_compiler_write_DEBUG_STACK (AZOCompiler *comp, AZOCompilerContext *ctx, AZONode *node)
+{
+	azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_DEBUG_STACK, 0, NULL);
+}
+
+static inline void
+azo_compiler_write_DEBUG_STRING (AZOCompiler *comp, AZOCompilerContext *ctx, const char *text, const AZONode *node)
+{
+	AZString *str = az_string_new((const uint8_t *) text);
+	unsigned int pos = azo_frame_append_string(ctx->frame, str);
+	azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_DEBUG_STR, pos, node);
+	az_string_unref (str);
+}
+
+#else
+#define azo_code_write_DEBUG_STACK(comp, ctx, node)
+#define azo_code_write_DEBUG_STRING(comp, ctx, text, node)
+#endif
 
 #ifdef __cplusplus
 }

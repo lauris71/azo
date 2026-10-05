@@ -129,6 +129,26 @@ int azo_compiler_resolve_program(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode
 AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOCompilerContext *ctx, AZONode *root, AZOSource *src);
 
 /**
+ * @brief Create a new function frame
+ * 
+ * The argument are exactly as in function signature, e.g. for member functions this has to be
+ * explicitly added as the first argument.
+ * this_impl/this_inst are only for specifying constant this
+ *  
+ * @param comp The compiler instance 
+ * @param this_impl The implementation of constant this instance (or NULL for none).
+ * @param this_inst The constant instance of this (or NULL if none).
+ * @param n_args The number of arguments.
+ * @param arg_types The types of the arguments.
+ * @param arg_names The names of the arguments.
+ * @param ret_type The return type.
+ * @return AZOFrame* The new function frame.
+ */
+AZOFrame *azo_compiler_new_frame(AZOCompiler *comp,
+	const AZImplementation *this_impl, void *this_inst,
+	unsigned int n_args, const unsigned int arg_types[], const uint8_t *arg_names[],
+	unsigned int ret_type);
+/**
  * @brief Start new current frame, preserving link to parent
  *
  * I.e. start compiling an outermost program body or resolve function definition inside code
@@ -149,19 +169,6 @@ AZOFrame *azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *th
  * @return AZOFrame* The previous current frame.
  */
 AZOFrame *azo_compiler_set_frame (AZOCompiler *comp, AZOFrame *frame);
-
-void azo_compiler_write_ic (AZOCompiler *comp, unsigned int ic, const AZONode *expr);
-
-void azo_compiler_write_EXCEPTION (AZOCompiler *comp, AZOCompilerContext *ctx, uint32_t type, const AZONode *node);
-void azo_compiler_write_EXCEPTION_COND (AZOCompiler *comp, AZOCompilerContext *ctx, unsigned int tc, uint32_t type, const AZONode *node);
-
-void azo_compiler_write_DEBUG_STACK (AZOCompiler *comp);
-void azo_compiler_write_DEBUG_STRING (AZOCompiler *comp, const char *text, const AZONode *expr);
-
-void azo_compiler_write_PUSH_EMPTY (AZOCompiler *comp, uint32_t type, const AZONode *expr);
-void azo_compiler_write_EQUAL_TYPED (AZOCompiler *comp, uint32_t type);
-void azo_compiler_write_COMPARE_TYPED (AZOCompiler *comp, uint32_t type);
-void azo_compiler_write_ARITHMETIC_TYPED (AZOCompiler *comp, unsigned int typecode, uint32_t type);
 
 unsigned int azo_compiler_compile_expression (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src);
 

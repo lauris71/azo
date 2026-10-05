@@ -20,16 +20,6 @@
 #include <azo/keyword.h>
 #include <azo/compiler/resolver.h>
 
-static void
-analyze_variables (AZOCompiler *comp, AZONode *expr)
-{
-	AZOVariableList *var;
-	fprintf (stderr, "Popping scope:\n");
-	for (var = comp->current->scope->variables; var; var = var->next) {
-		fprintf (stderr, "Var %s\n", var->var.name->str);
-	}
-}
-
 static unsigned int
 resolve_chain(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
@@ -479,8 +469,9 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 		if (result) return result;
 		if (val->term.type == AZO_TERM_CONSTANT) {
 			// fixme: Optimizer stuff
-			if (!az_type_is_a (val->term.subtype, comp->current->ret_type)) {
-				if (az_value_convert_in_place (&val->value.impl, &val->value.v, comp->current->ret_type, AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
+			// fixme: Have to check is assignable
+			if (!az_type_is_a (val->term.subtype, rctx->frame->ret_type)) {
+				if (az_value_convert_in_place (&val->value.impl, &val->value.v, rctx->frame->ret_type, AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
 					fprintf (stderr, "azo_compiler_resolve_expression: Return value is wrong type\n");
 					result = 1;
 				} else {
@@ -489,12 +480,12 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 			}
 		}
 	} else {
-		if (comp->current->ret_type != AZ_TYPE_NONE) {
+		if (rctx->frame->ret_type != AZ_TYPE_NONE) {
 			fprintf (stderr, "azo_compiler_resolve_expression: Must return a value\n");
 			result = 1;
 		}
 	}
-	comp->current->ret_is_last = 1;
+	rctx->frame->ret_is_last = 1;
 	return result;
 }
 
@@ -542,9 +533,9 @@ resolve_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
 	int result;
 	/* Create new scope */
-	azo_frame_push_scope(comp->current);
+	azo_frame_push_scope(rctx->frame);
 	result = resolve_children(comp, rctx, node);
-	azo_frame_pop_scope(comp->current);
+	azo_frame_pop_scope(rctx->frame);
 	return result;
 }
 

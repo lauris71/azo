@@ -368,12 +368,13 @@ interpret_type_EXCEPTION (AZOInterpreter *intr, const uint8_t *ip)
 	return NULL;
 }
 
+#ifdef AZO_TC_HAS_DEBUG
 static const unsigned char *
 interpret_DEBUG (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t op;
 	memcpy (&op, ip + 1, 4);
-	if ((*ip & 127) == AZO_TC_DEBUG) {
+	if ((*ip & 127) == AZO_TC_DEBUG_STACK) {
 		fprintf (stderr, "Debug: IPC = %u\n", (unsigned int) (ip - ictx->tcode));
 		azo_intepreter_print_stack (intr, stderr);
 	} else {
@@ -381,6 +382,7 @@ interpret_DEBUG (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned c
 	}
 	return ip + 5;
 }
+#endif
 
 static const unsigned char *
 interpret_PUSH_FRAME (AZOInterpreter *intr, const unsigned char *ip)
@@ -1825,10 +1827,12 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 			ipc = interpret_type_EXCEPTION (intr, ipc);
 			break;
 
-		case AZO_TC_DEBUG:
+#ifdef AZO_TC_HAS_DEBUG
+		case AZO_TC_DEBUG_STACK:
 		case AZO_TC_DEBUG_STR:
 			ipc = interpret_DEBUG (intr, ictx, ipc);
 			break;
+#endif
 
 		/* Stack management */
 		case AZO_TC_PUSH_FRAME:
