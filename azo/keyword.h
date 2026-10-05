@@ -114,6 +114,16 @@ unsigned int azo_token_is_bareword(const AZOToken *token, const AZOSource *src);
  */
 unsigned int azo_token_get_keyword(const AZOToken *token, const AZOSource *src);
 
+/**
+ * @brief Return the keyword string
+ * 
+ * No new reference is created (do not unref the result)
+ * 
+ * @param keyword The keyword code
+ * @return A string representation
+ */
+AZString *azo_keyword_str (unsigned int keyword);
+
 void azo_print_keyword (unsigned int keyword, FILE *ofs);
 
 #ifdef __cplusplus

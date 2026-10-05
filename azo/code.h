@@ -141,6 +141,12 @@ azo_code_write_PUSH_IMMEDIATE (AZOCode *code, unsigned int type, const AZValue *
 }
 
 static inline void
+azo_code_write_PUSH_VALUE(AZOCode *code, unsigned int pos, const AZONode *node)
+{
+	azo_code_write_ic_u32(code, AZO_TC_PUSH_VALUE, pos, node);
+}
+
+static inline void
 azo_code_write_PUSH_CAPTURE(AZOCode *code, unsigned int pos, const AZONode *node)
 {
 	azo_code_write_ic_u32(code, AZO_TC_PUSH_CAPTURE, pos, node);

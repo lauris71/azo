@@ -239,8 +239,9 @@ enum {
 
 /* Variable subtypes */
 enum {
-	AZO_TERM_VARIABLE_PARENT,
-	AZO_TERM_VARIABLE_LOCAL
+	AZO_TERM_VARIABLE_LOCAL,
+	AZO_TERM_VARIABLE_SHARED,
+	AZO_TERM_VARIABLE_CAPTURE
 };
 
 /* Function subtypes */

@@ -215,7 +215,7 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	if (var) {
 		DBG_PRINTF("resolve_variable: Parent %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
-		expr->term.subtype = AZO_TERM_VARIABLE_PARENT;
+		expr->term.subtype = AZO_TERM_VARIABLE_CAPTURE;
 		az_packed_value_clear (&expr->value);
 		expr->var_pos = var->pos;
 		return 0;
@@ -239,16 +239,21 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 			assert(var != NULL);
 			DBG_PRINTF("resolve_variable: Created parent variable %s at pos %u\n", expr->value.v.string->str, var->pos);
 			expr->term.type = AZO_TERM_VARIABLE;
-			expr->term.subtype = AZO_TERM_VARIABLE_PARENT;
+			expr->term.subtype = AZO_TERM_VARIABLE_CAPTURE;
 			az_packed_value_clear (&expr->value);
 			expr->var_pos = var->pos;
 			return 0;
 		}
 	}
 	/* Either attribute or member of this */
-	if (rctx->this_node && rctx->this_node->term.type != AZO_TERM_EMPTY) {
+	if (rctx->this_variant != AZO_COMPILER_NO_THIS) {
 		// fixme: It is either property or attribute, need a special node for this
 		AZONode *this_node = azo_node_new(AZO_TERM_KEYWORD, AZO_KEYWORD_THIS, expr->term.start, expr->term.end);
+		unsigned int lresult = azo_compiler_resolve_node(comp, rctx, this_node);
+		if (lresult) {
+			azo_node_free(this_node);
+			return lresult;
+		}
 		AZONode *prop_node = azo_node_new(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER, expr->term.start, expr->term.end);
 		az_packed_value_set_string(&prop_node->value, expr->value.v.string);
 		expr->term.subtype = AZO_TERM_REFERENCE_PROPERTY;

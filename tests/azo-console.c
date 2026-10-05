@@ -41,8 +41,8 @@ main(int argc, const char *argv[])
     AZOResolveCtx rctx = {
         .ret_type = AZ_TYPE_NONE
     };
-	rctx.frame = azo_compiler_push_frame(&comp, NULL, NULL, 0, AZ_TYPE_NONE);
-	int result = azo_compiler_resolve_program(&comp, &rctx, expr, NULL, NULL);
+	rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+	int result = azo_compiler_resolve_program(&comp, &rctx, expr);
     azo_node_print_info(expr, stdout, src, 0);
 
     fprintf(stderr, "-------- OPTIMIZING --------\n");

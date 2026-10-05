@@ -1340,7 +1340,7 @@ free_node_chain (AZONode *node)
 
 /*
  * Assignment:
- *   LValue assignment_operator Expression
+ *   LValue = Expression
  *   LValue = LValue [= LValue ...] = Expression
  *
  * Only the plain = chains
@@ -1351,17 +1351,15 @@ free_node_chain (AZONode *node)
 static unsigned int
 parse_assignment_statement (AZOParser *parser, AZOToken *token)
 {
-	AZONode *expr, *left, *right, *last;
-	unsigned int start;
-	int subtype;
-	subtype = azo_token_get_assignment_term (token);
-	left = parser_detach_last (parser);
+	int subtype = azo_token_get_assignment_term (token);
+	AZONode *left = parser_detach_last (parser);
 	if (!term_is_lvalue (&left->term)) {
 		azo_node_free_tree (left);
 		return AZO_PARSER_ERROR_SYNTAX;
 	}
-	start = left->term.start;
-	last = NULL;
+	unsigned int start = left->term.start;
+	AZONode *last = left;
+	AZONode *right = NULL;
 	while (1) {
 		unsigned int result;
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
@@ -1375,28 +1373,32 @@ parse_assignment_statement (AZOParser *parser, AZOToken *token)
 		}
 		right = parser_detach_last (parser);
 		/* Chained assignment continues only when both the statement and the next operator are plain = */
+		last->next = right;
 		if ((subtype != AZO_TERM_ASSIGN_PLAIN) || !AZO_TOKEN_IS_OPERATOR (token) || (AZO_TOKEN_OPERATOR_CODE (token) != AZO_OPERATOR_ASSIGN)) break;
 		/* In a chain the RHS becomes the next target, so it has to be an LValue */
 		if (!term_is_lvalue (&right->term)) {
 			free_node_chain (left);
-			azo_node_free_tree (right);
 			return AZO_PARSER_ERROR_SYNTAX;
-		}
-		if (last) {
-			last->next = right;
-		} else {
-			left->next = right;
 		}
 		last = right;
 	}
-	/* The last parsed value terminates the target chain */
-	if (last) {
-		last->next = right;
-	} else {
-		left->next = right;
+	if (AZO_NODE_IS(last, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY) || AZO_NODE_IS(last, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
+		/* The last LValue in chain is a property/member reference */
+		if (AZO_NODE_IS(right, AZO_TERM_FUNCTION, AZO_TERM_LAMBDA) && !(right->term.flags & AZO_TERM_FLAG_STATIC)) {
+			/* If non-static function is assigned to property/attribute create internal this context for the function */
+			AZONode *body = right->children->next->next;
+			assert (body->term.type == AZO_TERM_BLOCK);
+			/* Add context node to lambda body block */
+			AZONode *this_node = azo_node_duplicate_tee(last->children);
+			AZONode *ctx_node = azo_node_new(AZO_TERM_CONTEXT, AZO_TERM_GENERIC, last->term.start, last->term.end);
+			ctx_node->children = this_node;
+			this_node->next = body->children;
+			body->children = ctx_node;
+			azo_node_print_info(last, stdout, parser->src, 0);
+		}
 	}
 	/* Children are target(s) followed by the value (the chain is built manually because of its variable size) */
-	expr = azo_node_new (AZO_TERM_ASSIGN, subtype, start, right->term.end);
+	AZONode *expr = azo_node_new (AZO_TERM_ASSIGN, subtype, start, right->term.end);
 	expr->children = left;
 	parser_append (parser, expr);
 	return AZO_ERROR_NONE;
@@ -1931,12 +1933,13 @@ parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, 
 	if (token->type == AZO_TOKEN_LEFT_BRACE) {
 		error = parse_sentence (parser, token);
 	} else {
-		/* Expression body - wrap into return */
+		/* Expression body - wrap into { return EXPR; } */
 		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
 		if (!error) {
-			AZONode *node = parser_detach_last(parser);
-			node = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_RETURN, token->start, token->start, 1, node);
-			parser_append(parser, node);
+			AZONode *expr = parser_detach_last(parser);
+			AZONode *ret = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_RETURN, expr->term.start, expr->term.end, 1, expr);
+			AZONode *block = azo_node_new_with_children (AZO_TERM_BLOCK, AZO_TERM_GENERIC, expr->term.start, expr->term.end, 1, ret);
+			parser_append(parser, block);
 		}
 	}
 	if (error) {
@@ -1945,12 +1948,8 @@ parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, 
 		return error;
 	}
 	body = parser_detach_last (parser);
-	if (is_static) {
-		/* Wrap body into static context */
-		AZONode *empty = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, start, start);
-		body = azo_node_new_with_children(AZO_TERM_CONTEXT, AZO_TERM_GENERIC, body->term.start, body->term.end, 2, empty, body);
-	}
 	AZONode *expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_LAMBDA, start, body->term.end, 3, type, args, body);
+	if (is_static) expr->term.flags = AZO_TERM_FLAG_STATIC;
 	parser_append (parser, expr);
 	return azo_parser_continue_expression (parser, token, left_precedence);
 }

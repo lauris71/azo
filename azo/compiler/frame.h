@@ -39,14 +39,9 @@ struct _AZOFrame {
 	 */
 	unsigned int ret_type;
 	unsigned int ret_is_last;
-	/**
-	 * @brief Reference to this
-	 * 
-	 * It is up to invoker to ensure that this stays valid.
-	 * Implementation is NULL for static code, instance is NULL for relocatable code.
-	 */
-	const AZImplementation *this_impl;
-	void *this_inst;
+
+	unsigned int this_is_captured;
+	
 	/**
 	 * @brief The number of arguments (i.e. reserved variable positions)
 	 * 
@@ -71,19 +66,19 @@ struct _AZOFrame {
 	AZOCode code;
 };
 
-void azo_frame_init(AZOFrame *frame, AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug);
+void azo_frame_init(AZOFrame *frame, AZOFrame *parent, unsigned int capture_this, unsigned int n_args, unsigned int ret_type, unsigned int debug);
 void azo_frame_finalize(AZOFrame *frame);
 /**
  * @brief Create a new frame
  * 
  * @param parent The parent frame (NULL for root)
- * @param this_impl Implementation of the current object (NULL for static code)
- * @param this_inst Instance of the current object or NULL if not known at compile time
+ * @param capture_this Whether to capture the 'this' reference
+ * @param n_args Number of arguments for this code block
  * @param ret_type Return type of the code block (AZ_TYPE_NONE for void)
  * @param debug Debug flag (non-zero to enable debugging)
  * @return Pointer to the newly created frame, or NULL on failure
  */
-AZOFrame *azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug);
+AZOFrame *azo_frame_new (AZOFrame *parent, unsigned int capture_this, unsigned int n_args, unsigned int ret_type, unsigned int debug);
 void azo_frame_delete (AZOFrame *frame);
 void azo_frame_delete_tree (AZOFrame *frame);
 
@@ -98,6 +93,7 @@ unsigned int azo_frame_get_current_ip (AZOFrame *frame);
 void azo_frame_update_JMP_to (AZOFrame *frame, unsigned int loc);
 
 void azo_frame_reserve_data (AZOFrame *frame, unsigned int amount);
+unsigned int azo_frame_append (AZOFrame *frame, const AZImplementation *impl, void *inst);
 unsigned int azo_frame_append_value (AZOFrame *frame, unsigned int type, const AZValue *val);
 unsigned int azo_frame_append_string (AZOFrame *frame, AZString *str);
 unsigned int azo_frame_append_object (AZOFrame *frame, AZObject *obj);
@@ -108,11 +104,11 @@ unsigned int azo_frame_append_object (AZOFrame *frame, AZObject *obj);
  * @param frame The frame
  * @param name The variable name
  * @param type The type of variable
- * @param result pointer to error code
  * @return The variable object
  *
  */
-AZOVariable *azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, unsigned int *result);
+AZOVariable *azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type);
+AZOVariable *azo_frame_declare_this(AZOFrame *frame, unsigned int type);
 /**
  * @brief Ensure variable exists in current frame
  * 

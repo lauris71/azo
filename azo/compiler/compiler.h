@@ -24,10 +24,12 @@ extern "C" {
 #endif
 
 enum {
-	THIS_IS_VARIABLE,
-	THIS_IS_CAPTURE,
-	THIS_IS_ARGUMENT,
-	THIS_IS_STATIC
+	AZO_COMPILER_NO_THIS,
+	// fixme: Join argument and variable -> stack
+	AZO_COMPILER_THIS_IS_ARGUMENT,
+	AZO_COMPILER_THIS_IS_VARIABLE,
+	AZO_COMPILER_THIS_IS_SHARED,
+	AZO_COMPILER_THIS_IS_CAPTURE
 };
 /**
  * @brief Compiler context
@@ -65,7 +67,6 @@ struct _AZOCompilerContext {
 		/* For static constant */
 		unsigned int this_static_pos;
 	};
-	AZONode *this_node;
 
 	/* Compiler */
 	/* The number of variables pushed into stack */
@@ -95,11 +96,6 @@ struct _AZOCompiler {
 	 * 
 	 */
 	unsigned int debug : 1;
-	/**
-	 * @brief Current compilation frame
-	 * 
-	 */
-	AZOFrame *current;
 
 	unsigned int n_frames_allocated;
 	unsigned int n_frames;
@@ -120,11 +116,9 @@ void azo_compiler_release (AZOCompiler *compiler);
  * @param comp A compiler
  * @param rctx Resolve context
  * @param root The root node of the parsed tree
- * @param impl The implementation of the code being compiled
- * @param inst The instance of the implementation
  * @return 0 if successful, non-zero otherwise
  */
-int azo_compiler_resolve_program(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, const AZImplementation *this_impl, void *this_inst);
+int azo_compiler_resolve_program(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node);
 
 AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOCompilerContext *ctx, AZONode *root, AZOSource *src);
 
@@ -136,39 +130,13 @@ AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOCompilerContext *ctx, AZ
  * this_impl/this_inst are only for specifying constant this
  *  
  * @param comp The compiler instance 
- * @param this_impl The implementation of constant this instance (or NULL for none).
- * @param this_inst The constant instance of this (or NULL if none).
+ * @param parent The parent frame (or NULL for root).
+ * @param capture_this Whether to capture 'this' in this frame.
  * @param n_args The number of arguments.
- * @param arg_types The types of the arguments.
- * @param arg_names The names of the arguments.
  * @param ret_type The return type.
  * @return AZOFrame* The new function frame.
  */
-AZOFrame *azo_compiler_new_frame(AZOCompiler *comp,
-	const AZImplementation *this_impl, void *this_inst,
-	unsigned int n_args, const unsigned int arg_types[], const uint8_t *arg_names[],
-	unsigned int ret_type);
-/**
- * @brief Start new current frame, preserving link to parent
- *
- * I.e. start compiling an outermost program body or resolve function definition inside code
- * 
- * @param comp The compiler.
- * @param this_impl The implementation of this (or NULL for none).
- * @param this_inst The instance of this (or NULL if none/not defined).
- * @param ret_type The return type of the code.
- */
-AZOFrame *azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type);
-/**
- * @brief Set the new current frame, removing all references to parent
- * 
- * I.e. start compiling the resolved function definition using it's resolved frame
- * 
- * @param comp The compiler.
- * @param frame The frame to set as current.
- * @return AZOFrame* The previous current frame.
- */
-AZOFrame *azo_compiler_set_frame (AZOCompiler *comp, AZOFrame *frame);
+AZOFrame *azo_compiler_new_frame(AZOCompiler *comp, AZOFrame *parent, unsigned int capture_this, unsigned int n_args, unsigned int ret_type);
 
 unsigned int azo_compiler_compile_expression (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src);
 

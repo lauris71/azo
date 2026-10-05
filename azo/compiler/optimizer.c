@@ -465,19 +465,8 @@ static int
 optimize_keyword(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	if (node->term.subtype == AZO_KEYWORD_THIS) {
-		if (ctx->this_node && (ctx->this_node->term.type == AZO_TERM_CONSTANT)) {
-			node->term.type = AZO_TERM_CONSTANT;
-			node->term.subtype = ctx->this_node->term.subtype;
-			az_packed_value_copy(&node->value, &ctx->this_node->value);
-			fprintf(stderr, "resolve_member: Replaced 'this' with ");
-			azo_node_print(node, stderr);
-			fprintf(stderr, "\n");
-			unsigned int first, last;
-			if (azo_source_find_line_range(opt->comp->src, node->term.start, node->term.end, &first, &last)) {
-				azo_source_print_lines(opt->comp->src, first, last + 1, stderr);
-			}
-			opt->n_const_subst += 1;
-		}
+		/* 'this' has to be resolved */
+		assert(0);
 	}
 	return 0;
 }
@@ -528,11 +517,9 @@ optimize_function(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsign
 		if (result) return result;
 		AZONode *body = args->next;
 		// fixme: Think out the frame/context management
-		azo_compiler_set_frame(opt->comp, opt->comp->frames[node->frame]);
 		AZOOptimizerCtx new_ctx = *ctx;
 		new_ctx.frame = opt->comp->frames[node->frame];
 		result = optimize_node(opt, &new_ctx, body, flags);
-		azo_compiler_set_frame(opt->comp, ctx->frame);
 		if (result) return result;
 	} else {
 		AZONode *type = node->children;
@@ -543,11 +530,9 @@ optimize_function(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsign
 		if (result) return result;
 		AZONode *body = args->next;
 		// fixme: Think out the frame/context management
-		azo_compiler_set_frame(opt->comp, opt->comp->frames[node->frame]);
 		AZOOptimizerCtx new_ctx = *ctx;
 		new_ctx.frame = opt->comp->frames[node->frame];
 		result = optimize_node(opt, &new_ctx, body, flags);
-		azo_compiler_set_frame(opt->comp, ctx->frame);
 		if (result) return result;
 	}
 	return 0;
@@ -848,7 +833,6 @@ optimize_node(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned i
 			unsigned int lresult = optimize_node(opt, ctx, this_node, flags);
 			if (lresult) result = 1;
 			AZOResolveCtx lctx = *ctx;
-			lctx.this_node = this_node;
 			lresult = optimize_chain(opt, &lctx, this_node->next, flags);
 			if (lresult) result = 1;
 			return result;

@@ -111,15 +111,14 @@ test_program(AZOContext *ctx, const char *text,
 	azo_compiler_setup(&comp, globals, src);
 	comp.debug = 1;
 
-	AZOFrame *frame = azo_compiler_push_frame(&comp, NULL, NULL, 1, AZ_TYPE_INT32);
+	AZOFrame *frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_INT32);
 	for (unsigned int i = 0; i < n_args; ++i) {
 		AZString *str = az_string_new((const uint8_t *) arg_names[i]);
-		unsigned int dr;
-		azo_frame_declare_variable(frame, str, AZ_IMPL_TYPE(arg_impls[i]), &dr);
+		azo_frame_declare_variable(frame, str, AZ_IMPL_TYPE(arg_impls[i]));
 	}
 
     comp_ctx.frame = frame;
-	int result = azo_compiler_resolve_program(&comp, &comp_ctx, tree, NULL, NULL);
+	int result = azo_compiler_resolve_program(&comp, &comp_ctx, tree);
 	//azo_node_print_info(tree, stderr, src, 0);
 	if (result != 0) {
 		azo_parser_release (&parser);

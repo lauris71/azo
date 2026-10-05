@@ -77,10 +77,10 @@ test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, con
 	azo_compiler_setup(&comp, globals, src);
 	comp.debug = 1;
 
-	AZOFrame *frame = azo_compiler_push_frame(&comp, NULL, NULL, 0, AZ_TYPE_INT32);
+	AZOFrame *frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_INT32);
 
     comp_ctx.frame = frame;
-	int result = azo_compiler_resolve_program(&comp, &comp_ctx, tree, NULL, NULL);
+	int result = azo_compiler_resolve_program(&comp, &comp_ctx, tree);
 	if (result != 0) {
 		azo_parser_release (&parser);
 		azo_source_unref(src);

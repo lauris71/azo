@@ -16,22 +16,21 @@
 #include <az/string.h>
 
 #include <azo/compiler/frame.h>
+#include <azo/keyword.h>
 #include <azo/errors.h>
 
 void
-azo_frame_init(AZOFrame *frame, AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug)
+azo_frame_init(AZOFrame *frame, AZOFrame *parent, unsigned int capture_this, unsigned int n_args, unsigned int ret_type, unsigned int debug)
 {
 	memset(frame, 0, sizeof(AZOFrame));
 	frame->parent = parent;
 	frame->ret_type = ret_type;
-	frame->this_impl = this_impl;
-	frame->this_inst = this_inst;
 	frame->n_args = n_args;
 
-	frame->n_captures = (this_impl) ? 1 : 0;
+	frame->n_captures = (capture_this) ? 1 : 0;
 	// fixme: This goes to captures
 	/* If this is present, reserve the first variable position to it */
-	frame->scope = azo_scope_new (NULL, (this_impl) ? 1 : 0);
+	frame->scope = azo_scope_new (NULL, (capture_this) ? 1 : 0);
 	azo_code_init(&frame->code, debug);
 }
 
@@ -46,10 +45,10 @@ azo_frame_finalize(AZOFrame *frame)
 }
 
 AZOFrame *
-azo_frame_new (AZOFrame *parent, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type, unsigned int debug)
+azo_frame_new (AZOFrame *parent, unsigned int capture_this, unsigned int n_args, unsigned int ret_type, unsigned int debug)
 {
 	AZOFrame *frame = (AZOFrame *) calloc (1, sizeof (AZOFrame));
-	azo_frame_init(frame, parent, this_impl, this_inst, n_args, ret_type, debug);
+	azo_frame_init(frame, parent, capture_this, n_args, ret_type, debug);
 	return frame;
 }
 
@@ -129,6 +128,14 @@ azo_frame_reserve_data (AZOFrame *frame, unsigned int amount)
 #define noDEBUG_APPEND
 
 unsigned int
+azo_frame_append (AZOFrame *frame, const AZImplementation *impl, void *inst)
+{
+	unsigned int pos = frame->code.data_len;
+	azo_code_write_instance(&frame->code, impl, inst);
+	return pos;
+}
+
+unsigned int
 azo_frame_append_value (AZOFrame *frame, unsigned int type, const AZValue *val)
 {
 	unsigned int pos = frame->code.data_len;
@@ -153,14 +160,20 @@ azo_frame_append_object (AZOFrame *frame, AZObject *obj)
 }
 
 AZOVariable *
-azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, unsigned int *result)
+azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type)
 {
 	if (azo_scope_lookup_local_var (frame->scope, name)) {
-		*result = AZO_VARIABLE_DEFINED;
+		fprintf(stderr, "Variable %s is already defined in current scope\n", name->str);
 		return NULL;
 	}
 	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, name, frame->scope->next_var_pos++);
-	*result = AZO_ERROR_NONE;
+	return &frame->scope->variables->var;
+}
+
+AZOVariable *
+azo_frame_declare_this(AZOFrame *frame, unsigned int type)
+{
+	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, azo_keyword_str(AZO_KEYWORD_THIS), frame->scope->next_var_pos++);
 	return &frame->scope->variables->var;
 }
 

@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <az/string.h>
+
 #include <azo/keyword.h>
 
 const char *azo_keywords[] = {
@@ -101,6 +103,21 @@ azo_token_get_keyword(const AZOToken *token, const AZOSource *src)
 		}
 	}
 	return AZO_KEYWORD_NONE;
+}
+
+AZString *
+azo_keyword_str (unsigned int keyword)
+{
+	static AZString **strs = NULL;
+	if (strs == NULL) {
+		strs = calloc(AZO_NUM_KEYWORDS, sizeof(AZString *));
+		for (unsigned int i = 0; i < AZO_NUM_KEYWORDS; i++) {
+			if (azo_keywords[i] != NULL) {
+				strs[i] = az_string_new((const uint8_t *) azo_keywords[i]);
+			}
+		}
+	}
+	return strs[keyword];
 }
 
 void

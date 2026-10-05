@@ -47,8 +47,9 @@ enum {
 	LVALUE_ATTRIBUTE,
 	/* Array element, stack(1) is array, stack(0) is index */
 	LVALUE_ELEMENT,
-	/* Constant */
-	LVALUE_VALUE
+	/* Constants */
+	LVALUE_SHARED,
+	LVALUE_CAPTURE
 };
 
 struct _LValue {
@@ -82,45 +83,37 @@ azo_compiler_release(AZOCompiler *compiler)
 }
 
 AZOFrame *
-azo_compiler_push_frame (AZOCompiler *comp, const AZImplementation *this_impl, void *this_inst, unsigned int n_args, unsigned int ret_type)
+azo_compiler_new_frame(AZOCompiler *comp, AZOFrame *parent, unsigned int capture_this, unsigned int n_args, unsigned int ret_type)
 {
 	if (comp->n_frames >= comp->n_frames_allocated) {
 		comp->n_frames_allocated += 8;
 		comp->frames = realloc(comp->frames, comp->n_frames_allocated * sizeof(AZOFrame));
 	}
-	unsigned int idx = comp->n_frames++;
-	comp->frames[idx] = azo_frame_new (comp->current, this_impl, this_inst, n_args, ret_type, comp->debug);
-	comp->current = comp->frames[idx];
-	return comp->frames[idx];
-}
-
-AZOFrame *
-azo_compiler_set_frame (AZOCompiler *comp, AZOFrame *frame)
-{
-	AZOFrame *prev = comp->current;
-	comp->current = frame;
-	return prev;
+	AZOFrame *frame = azo_frame_new (parent, capture_this, n_args, ret_type, comp->debug);
+	frame->parent = parent;
+	comp->frames[comp->n_frames++] = frame;
+	return frame;
 }
 
 static void
 compile_PUSH_VALUE_const(AZOCompiler *comp, AZOCompilerContext *ctx, unsigned int type, const AZValue *val, const AZONode *node)
 {
 	unsigned int pos = azo_frame_append_value (ctx->frame, type, val);
-	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_PUSH_VALUE, pos, node);
+	azo_code_write_PUSH_VALUE(&ctx->frame->code, pos, node);
 }
 
 static void
 compile_PUSH_VALUE_const_string(AZOCompiler *comp, AZOCompilerContext *ctx, AZString *str, const AZONode *node)
 {
 	unsigned int pos = azo_frame_append_string (ctx->frame, str);
-	azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_PUSH_VALUE, pos, node);
+	azo_code_write_PUSH_VALUE(&ctx->frame->code, pos, node);
 }
 
 static void
 compile_PUSH_VALUE_const_object(AZOCompiler *comp, AZOCompilerContext *ctx, AZObject *obj, const AZONode *node)
 {
 	unsigned int pos = azo_frame_append_object (ctx->frame, obj);
-	azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_PUSH_VALUE, pos, node);
+	azo_code_write_PUSH_VALUE(&ctx->frame->code, pos, node);
 }
 
 /* End temporary */
@@ -228,20 +221,37 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			lvalue->pos = expr->var_pos;
 			lvalue->n_elements = 0;
 			return 1;
-		} else {
+		} else if (expr->term.subtype == AZO_TERM_VARIABLE_SHARED) {
+			/*
+			 * No code, bare LValue
+			 */
+			// fixme: Track writable shared declarations
+			if (!read_only) {
+				fprintf (stderr, "Shared variable in writable lvalue\n");
+				return 0;
+			}
+			lvalue->type = LVALUE_SHARED;
+			lvalue->pos = expr->var_pos;
+			lvalue->n_elements = 0;
+			return 1;
+		} else if (expr->term.subtype == AZO_TERM_VARIABLE_CAPTURE) {
 			/*
 			 * Declared in parent frame
 			 *
 			 * No code, bare LValue
 			 */
+			// fixme: Track writable static declarations
 			if (!read_only) {
 				fprintf (stderr, "Parent variable in writable lvalue\n");
 				return 0;
 			}
-			lvalue->type = LVALUE_VALUE;
+			lvalue->type = LVALUE_CAPTURE;
 			lvalue->pos = expr->var_pos;
 			lvalue->n_elements = 0;
 			return 1;
+		} else {
+			fprintf (stderr, "compile_lvalue: Invalid variable subtype %u\n", expr->term.subtype);
+			return 0;
 		}
 	} else if (expr->term.type == AZO_TERM_REFERENCE) {
 		if (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
@@ -746,17 +756,14 @@ compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 		result = compile_call (comp, ctx, func, list, src, 0, 1);
 		if (result) return 0;
 		break;
-	case LVALUE_VALUE:
-		/* - */
-#ifdef DEBUG_PARENT_LVAL
-		write_DEBUG_STRING (comp, "Parent lval 1\n");
-		write_DEBUG_STACK (comp);
-#endif
+	case LVALUE_SHARED:
+		azo_code_write_PUSH_VALUE (code, lval.pos, func);
+		/* Value */
+		result = compile_call (comp, ctx, func, list, src, 0, 1);
+		if (result) return 0;
+		break;
+	case LVALUE_CAPTURE:
 		azo_code_write_PUSH_CAPTURE (code, lval.pos, func);
-#ifdef DEBUG_PARENT_LVAL
-		write_DEBUG_STRING (comp, "Parent lval 2\n");
-		write_DEBUG_STACK (comp);
-#endif
 		/* Value */
 		result = compile_call (comp, ctx, func, list, src, 0, 1);
 		if (result) return 0;
@@ -812,16 +819,13 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	assert(node->frame);
 
 	AZOFrame *func_frame = comp->frames[node->frame];
-	AZOFrame *prev_frame = azo_compiler_set_frame(comp, func_frame);
 
 	AZOCompilerContext func_ctx = *ctx;
-	func_ctx.this_node = obj;
 	func_ctx.ret_type = ret_type;
 	func_ctx.frame = func_frame;
 	
 	prog = azo_compiler_compile(comp, &func_ctx, body, src);
 	/* Restore the previous frame */
-	azo_compiler_set_frame(comp, prev_frame);
 
 	if (!prog) {
 		fprintf (stderr, "compile_function: error compiling function\n");
@@ -830,7 +834,7 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 
 	compile_PUSH_VALUE_const(comp, ctx, AZO_TYPE_PROGRAM, (const AZValue *) &prog, node);
 	/* program */
-	if (func_frame->this_impl) {
+	if (func_frame->this_is_captured) {
 		// fixme: This should be fetched from context
 		compile_this(comp, ctx, node, src);
 		/* program [this] */
@@ -919,8 +923,13 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 	if (node->term.type == AZO_TERM_VARIABLE) {
 		if (node->term.subtype == AZO_TERM_VARIABLE_LOCAL) {
 			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, node->var_pos, node);
-		} else {
+		} else if (node->term.subtype == AZO_TERM_VARIABLE_SHARED) {
+			azo_code_write_PUSH_VALUE(code, node->var_pos, node);
+		} else if (node->term.subtype == AZO_TERM_VARIABLE_CAPTURE) {
 			azo_code_write_PUSH_CAPTURE(code, node->var_pos, node);
+		} else {
+			fprintf (stderr, "compile_expression_rvalue: Invalid variable subtype %u\n", node->term.subtype);
+			return 0;
 		}
 	} else if (node->term.type == AZO_TERM_CONSTANT) {
 		if (!azo_compiler_compile_constant (comp, ctx, node, src)) return 0;

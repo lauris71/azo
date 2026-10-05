@@ -40,6 +40,14 @@
             "program": "${workspaceFolder}/build/tests/azo_test",
             "args": ["calculate"],
             "cwd": "${workspaceFolder}/build/tests/"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Test function",
+            "program": "${workspaceFolder}/build/tests/azo_test",
+            "args": ["function"],
+            "cwd": "${workspaceFolder}/build/tests/"
         }
     ]
 }

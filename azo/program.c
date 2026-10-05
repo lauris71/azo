@@ -14,6 +14,7 @@
 #include <azo/bytecode.h>
 #include <azo/debugger.h>
 #include <azo/parser.h>
+#include <azo/keyword.h>
 #include <azo/compiler/compiler.h>
 #include <azo/compiler/optimizer.h>
 #include <azo/compiler/resolver.h>
@@ -58,7 +59,7 @@ azo_program_new(AZOContext *ctx, AZOFrame *frame, AZONode *tree, AZOSource *src)
 	prog->tcode = code->bc;
 	prog->tcode_length = code->bc_len;
 
-	prog->n_args = (frame->this_impl == NULL) ? frame->n_args : frame->n_args + 1;
+	prog->n_args = frame->n_args;
 	prog->ret_type = frame->ret_type;
 	prog->n_captures = frame->n_captures;
 	prog->n_static = frame->n_static;
@@ -107,7 +108,7 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	AZOParser parser;
 	azo_parser_setup (&parser, src);
 	AZONode *expr = azo_parser_parse (&parser);
-	//azo_node_print_info(expr, stderr, src, 0);
+	azo_node_print_info(expr, stderr, src, 0);
 
 	AZOCompilerContext comp_ctx = {
 		.ret_type = ret_type
@@ -116,16 +117,27 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	azo_compiler_setup(&comp, globals, src);
 	comp.debug = 1;
 
-	AZOFrame *frame = azo_compiler_push_frame(&comp, this_impl, this_inst, n_args, ret_type);
+	if (!this_impl) {
+		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
+		comp_ctx.this_variant = AZO_COMPILER_NO_THIS;
+	} else if (!this_inst) {
+		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
+		/* This is argument 0 */
+		AZOVariable *var = azo_frame_declare_this(comp_ctx.frame, AZ_IMPL_TYPE(this_impl));
+		comp_ctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
+		comp_ctx.this_var_pos = var->pos;
+	} else {
+		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
+		comp_ctx.this_variant = AZO_COMPILER_THIS_IS_SHARED;
+		comp_ctx.this_static_pos = azo_frame_append(comp_ctx.frame, this_impl, this_inst);
+	}
 	for (unsigned int i = 0; i < n_args; i++) {
-		unsigned int result = 0;
-		if (!azo_frame_declare_variable(frame, arg_names[i], arg_types[i], &result)) {
+		if (!azo_frame_declare_variable(comp_ctx.frame, arg_names[i], arg_types[i])) {
 			fprintf(stderr, "Variable %s is already defined in current scope\n", arg_names[i]->str);
 		}
 		// fixme: fail
 	}
-	comp_ctx.frame = frame;
-	int result = azo_compiler_resolve_program(&comp, &comp_ctx, expr, this_impl, this_inst);
+	int result = azo_compiler_resolve_program(&comp, &comp_ctx, expr);
 	if (result != 0) {
 		azo_parser_release (&parser);
 		azo_source_unref(src);
@@ -135,10 +147,6 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	//azo_node_print_info(expr, stderr, src, 0);
 	AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
-	comp_ctx = (AZOCompilerContext) {
-		.ret_type = ret_type
-	};
-	comp_ctx.frame = frame;
 	result = azo_compiler_optimize_program(&opt, &comp_ctx, expr, AZO_OPTIMIZER_FLAG_ALL);
 	azo_optimizer_release(&opt);
 	if (result != 0) {
@@ -148,10 +156,6 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 		return NULL;
 	}
 
-	comp_ctx = (AZOCompilerContext) {
-		.ret_type = ret_type
-	};
-	comp_ctx.frame = frame;
 	AZOProgram *prog = azo_compiler_compile (&comp, &comp_ctx, expr, src);
 	azo_parser_release (&parser);
 	azo_source_unref(src);
