@@ -246,9 +246,7 @@ enum {
 
 /* Function subtypes */
 enum {
-	AZO_TERM_LAMBDA,
-	AZO_TERM_FUNCTION_STATIC_OLD,
-	AZO_TERM_FUNCTION_MEMBER_OLD
+	AZO_TERM_LAMBDA
 };
 
 /* Suffix subtypes */

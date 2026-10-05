@@ -74,32 +74,14 @@ static AZOVariableList *
 tag_assigns(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 {
 	switch (node->term.type) {
-		case AZO_TERM_FUNCTION:
+		case AZO_TERM_FUNCTION: {
 			/* Return type has to be already resolved to constant class */
-			if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC_OLD)) {
-				AZONode *ret = node->children;
-				AZONode *args = ret->next;
-				AZONode *body = args->next;
-				vars = tag_assigns(opt, args, vars);
-				break;
-			} else if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER_OLD)) {
-				AZONode *ret = node->children;
-				AZONode *this = ret->next;
-				AZONode *args = this->next;
-				AZONode *body = args->next;
-				vars = tag_assigns(opt, this, vars);
-				vars = tag_assigns(opt, args, vars);
-				break;
-			} else if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_LAMBDA)) {
-				AZONode *ret = node->children;
-				AZONode *args = ret->next;
-				AZONode *body = args->next;
-				vars = tag_assigns(opt, args, vars);
-				break;
-			} else {
-				fprintf(stderr, "tag_assigns: Invalid function subtype %u\n", node->term.subtype);
-				break;
-			}
+			AZONode *ret = node->children;
+			AZONode *args = ret->next;
+			AZONode *body = args->next;
+			vars = tag_assigns(opt, args, vars);
+			break;
+		}
 		case AZO_TERM_PREFIX:
 			if ((node->term.subtype != AZO_TERM_PREFIX_INCREMENT) && (node->term.subtype != AZO_TERM_PREFIX_DECREMENT)) {
 				for (AZONode *child = node->children; child; child = child->next) {
@@ -253,30 +235,10 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 #if 1
 			/* Proceed args with existing list, duplicate list and proceed body */
 			/* Return type has to be already resolved to constant class */
-			AZONode *ret, *this, *args, *body;
-			if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_STATIC_OLD)) {
-				ret = node->children;
-				this = NULL;
-				args = ret->next;
-				body = args->next;
-				break;
-			} else if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_FUNCTION_MEMBER_OLD)) {
-				ret = node->children;
-				this = ret->next;
-				args = this->next;
-				body = args->next;
-				break;
-			} else if (AZO_NODE_IS(node, AZO_TERM_FUNCTION, AZO_TERM_LAMBDA)) {
-				ret = node->children;
-				this = NULL;
-				args = ret->next;
-				body = args->next;
-				break;
-			} else {
-				fprintf(stderr, "optimize_const_assign: Invalid function subtype %u\n", node->term.subtype);
-				break;
-			}
-			if (this) vars = optimize_const_assign(opt, this, vars);
+			AZONode *ret, *args, *body;
+			ret = node->children;
+			args = ret->next;
+			body = args->next;
 			vars = optimize_const_assign(opt, args, vars);
 			AZOVariableList *dupl = azo_var_list_duplicate(vars);
 			dupl = optimize_const_assign(opt, body, dupl);
@@ -505,36 +467,18 @@ optimize_argument_declaration(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *
 static int
 optimize_function(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	if (node->term.subtype == AZO_TERM_FUNCTION_MEMBER_OLD) {
-		AZONode *type = node->children;
-		int result = optimize_node(opt, ctx, type, flags);
-		if (result) return result;
-		AZONode *obj = type->next;
-		result = optimize_node(opt, ctx, obj, flags);
-		if (result) return result;
-		AZONode *args = obj->next;
-		result = optimize_node(opt, ctx, args, flags);
-		if (result) return result;
-		AZONode *body = args->next;
-		// fixme: Think out the frame/context management
-		AZOOptimizerCtx new_ctx = *ctx;
-		new_ctx.frame = opt->comp->frames[node->frame];
-		result = optimize_node(opt, &new_ctx, body, flags);
-		if (result) return result;
-	} else {
-		AZONode *type = node->children;
-		int result = optimize_node(opt, ctx, type, flags);
-		if (result) return result;
-		AZONode *args = type->next;
-		result = optimize_node(opt, ctx, args, flags);
-		if (result) return result;
-		AZONode *body = args->next;
-		// fixme: Think out the frame/context management
-		AZOOptimizerCtx new_ctx = *ctx;
-		new_ctx.frame = opt->comp->frames[node->frame];
-		result = optimize_node(opt, &new_ctx, body, flags);
-		if (result) return result;
-	}
+	AZONode *type = node->children;
+	int result = optimize_node(opt, ctx, type, flags);
+	if (result) return result;
+	AZONode *args = type->next;
+	result = optimize_node(opt, ctx, args, flags);
+	if (result) return result;
+	AZONode *body = args->next;
+	// fixme: Think out the frame/context management
+	AZOOptimizerCtx new_ctx = *ctx;
+	new_ctx.frame = opt->comp->frames[node->frame];
+	result = optimize_node(opt, &new_ctx, body, flags);
+	if (result) return result;
 	return 0;
 }
 

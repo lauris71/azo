@@ -40,9 +40,6 @@ main(int argc, const char *argv[])
             RUN_TEST(test_comparison);
         } else if (!strcmp(argv[i], "function")) {
             RUN_TEST(test_function);
-#ifdef HAS_FUNCTION_KEYWORD
-            RUN_TEST(test_legacy_function);
-#endif
         } else if (!strcmp(argv[i], "cycles")) {
             RUN_TEST(test_cycles);
         } else if (!strcmp(argv[i], "calculate")) {
@@ -271,20 +268,3 @@ test_function(void)
     azo_context_delete(ctx);
 }
 
-#ifdef HAS_FUNCTION_KEYWORD
-/* LEGACY - the old function keyword syntax (superseded by lambdas) */
-static const char *legacy_function_src = ""
-"any a = function int32 (int32 a, int32 b) {\n"
-"    for (int32 i = 0; i < b; i++) a = a + 1;\n"
-"    return a;\n"
-"};\n"
-"int32 c = a(100, 28);\n"
-"return c;\n"
-"";
-
-void
-test_legacy_function(void)
-{
-    TEST_ASSERT_EQUAL_INT(128, run_program(legacy_function_src));
-}
-#endif

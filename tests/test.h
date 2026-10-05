@@ -27,8 +27,5 @@ void test_comparison(void);
 void test_cycles(void);
 void test_function(void);
 void test_calculate(void);
-#ifdef HAS_FUNCTION_KEYWORD
-void test_legacy_function(void);
-#endif
 
 #endif /* AZO_TEST_H */

@@ -221,27 +221,10 @@ resolve_argument_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *e
 static unsigned int
 resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 {
-	AZONode *obj, *type, *args, *body, *child;
 	unsigned int result = 0;
-	if (func->term.subtype == AZO_TERM_FUNCTION_MEMBER_OLD) {
-		type = func->children;
-		obj = type->next;
-		args = obj->next;
-		body = args->next;
-	} else if (func->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD) {
-		type = func->children;
-		obj = NULL;
-		args = type->next;
-		body = args->next;
-	} else if (func->term.subtype == AZO_TERM_LAMBDA) {
-		obj = NULL;
-		type = func->children;
-		args = type->next;
-		body = args->next;
-	} else {
-		fprintf (stderr, "resolve_function: Invalid function expression subtype %u\n", func->term.subtype);
-		return 1;
-	}
+	AZONode *type = func->children;
+	AZONode *args = type->next;
+	AZONode *body = args->next;
 
 	/* Return type */
 	if (type->term.type == AZO_TERM_EMPTY) {
@@ -255,41 +238,9 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 	}
 	unsigned int ret_type = type->term.subtype;
 
-	/* This type */
-	AZONode *this_node = NULL;
-	if (obj) {
-		this_node = azo_node_duplicate_tee(obj);
-	} else if (func->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD) {
-		this_node = azo_node_new(AZO_TERM_TYPE, AZ_TYPE_ANY, body->term.start, body->term.end);
-	}
-	if (this_node) {
-		AZONode *ctx_node = azo_node_new(AZO_TERM_CONTEXT, AZO_TERM_GENERIC, body->term.start, body->term.end);
-		ctx_node->children = this_node;
-		this_node->next = body->children;
-		body->children = ctx_node;
-	}
-	const AZImplementation *this_impl = (func->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD)
-		//|| (expr->term.subtype == AZO_TERM_LAMBDA)
-		? (const AZImplementation *) az_type_get_class (AZ_TYPE_ANY) : NULL;
-	if (obj) {
-		result = azo_compiler_resolve_node(comp, rctx, obj);
-		if (result) return result;
-		if (obj->term.type == AZO_TERM_CONSTANT) {
-			if (obj->term.subtype != AZ_TYPE_CLASS) {
-				fprintf (stderr, "resolve_function: parent is constant non-class (%u)\n", obj->term.subtype);
-				return 1;
-			}
-			this_impl = (const AZImplementation *) obj->value.v.block;
-			obj->term.type = AZO_TERM_TYPE;
-			obj->term.subtype = AZ_IMPL_TYPE((const AZImplementation *) obj->value.v.block);
-			az_packed_value_clear(&obj->value);
-		} else {
-			this_impl = (const AZImplementation *) az_type_get_class (AZ_TYPE_ANY);
-		}
-	}
-
+	/* Argument list */
 	unsigned int n_args = 0;
-	for (child = args->children; child; child = child->next) {
+	for (AZONode *child = args->children; child; child = child->next) {
 		if (child->term.type != AZO_TERM_ARGUMENT_DECLARATION) {
 			fprintf (stderr, "resolve_function: Invalid expression type %u/%u in signature\n", child->term.type, child->term.subtype);
 			return 1;
@@ -317,12 +268,6 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 	if (func->term.flags & AZO_TERM_FLAG_STATIC) {
 		func_frame = azo_compiler_new_frame (comp, rctx->frame, 0, n_args, ret_type);
 		fctx.this_variant = AZO_COMPILER_NO_THIS;
-	} else if (this_impl) {
-		/* Create member function */
-		func_frame = azo_compiler_new_frame (comp, rctx->frame, 0, n_args, ret_type);
-		AZOVariable *var = azo_frame_declare_this (func_frame, AZ_TYPE_ANY);
-		fctx.this_variant = AZO_COMPILER_THIS_IS_ARGUMENT;
-		fctx.this_var_pos = var->pos;
 	} else {
 		/* No intrinsic this, capture if it exists in parent frame */
 		if (rctx->this_variant == AZO_COMPILER_NO_THIS) {
@@ -335,7 +280,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 	}
 	fctx.frame = func_frame;
 
-	for (child = args->children; child; child = child->next) {
+	for (AZONode *child = args->children; child; child = child->next) {
 		type = child->children;
 		AZONode *name = type->next;
 		// fixme: Use type

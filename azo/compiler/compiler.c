@@ -782,7 +782,7 @@ compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 static unsigned int
 compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
-	AZONode *obj, *type, *args, *body;
+	AZONode *type, *args, *body;
 	AZONode *child;
 	AZOProgram *prog;
 	AZOCompiledFunction *cfunc;
@@ -791,25 +791,9 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	write_DEBUG_STRING (comp, "Function 1");
 	write_DEBUG_STACK (comp);
 #endif
-	if (node->term.subtype == AZO_TERM_FUNCTION_MEMBER_OLD) {
-		type = node->children;
-		obj = type->next;
-		args = obj->next;
-		body = args->next;
-	} else if (node->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD) {
-		type = node->children;
-		obj = NULL;
-		args = type->next;
-		body = args->next;
-	} else if (node->term.subtype == AZO_TERM_LAMBDA) {
-		type = node->children;
-		obj = NULL;
-		args = type->next;
-		body = args->next;
-	} else {
-		fprintf (stderr, "compile_function: Invalid function expression subtype %u\n", node->term.subtype);
-		return 0;
-	}
+	type = node->children;
+	args = type->next;
+	body = args->next;
 
 	/* Return type */
 	assert (type->term.type == AZO_TERM_TYPE);
@@ -943,11 +927,7 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 			return 0;
 		}
 	} else if (node->term.type == AZO_TERM_FUNCTION) {
-		if (node->term.subtype == AZO_TERM_FUNCTION_STATIC_OLD) {
-			if (!compile_function (comp, ctx, node, src)) return 0;
-		} else {
-			if (!compile_function (comp, ctx, node, src)) return 0;
-		}
+		if (!compile_function (comp, ctx, node, src)) return 0;
 	} else if (node->term.type == AZO_TERM_FUNCTION_CALL) {
 		if (!compile_function_call (comp, ctx, node->children, node->children->next, src, 0)) return 0;
 	} else if (node->term.type == AZO_TERM_LITERAL_ARRAY) {

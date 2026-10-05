@@ -364,24 +364,16 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		azo_node_print (expr->children->next, ofs);
 		break;
 	case AZO_TERM_FUNCTION:
-		/* Lambda - children: [return_type, args, body] (static) or [return_type, object, args, body] (member) */
-		if (expr->term.subtype == AZO_TERM_FUNCTION_MEMBER_OLD) {
-			azo_node_print (expr->children->next, ofs);
-			fprintf (ofs, ".");
-			azo_node_print (expr->children->next->next, ofs);
+		/* Lambda - children: [return_type, args, body] */
+		fprintf (ofs, "(");
+		azo_node_print (expr->children->next, ofs);
+		fprintf (ofs, ") ");
+		if (expr->children->term.type != AZO_TERM_EMPTY) {
+			azo_node_print (expr->children, ofs);
 			fprintf (ofs, " ");
-			if (expr->children->next->next->next) print_sentence (expr->children->next->next->next, ofs);
-		} else {
-			fprintf (ofs, "(");
-			azo_node_print (expr->children->next, ofs);
-			fprintf (ofs, ") ");
-			if (expr->children->term.type != AZO_TERM_EMPTY) {
-				azo_node_print (expr->children, ofs);
-				fprintf (ofs, " ");
-			}
-			fprintf (ofs, "=> ");
-			if (expr->children->next->next) print_sentence (expr->children->next->next, ofs);
 		}
+		fprintf (ofs, "=> ");
+		if (expr->children->next->next) print_sentence (expr->children->next->next, ofs);
 		break;
 	case AZO_TERM_FUNCTION_CALL:
 		azo_node_print (expr->children, ofs);
