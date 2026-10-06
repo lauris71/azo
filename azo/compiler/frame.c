@@ -27,10 +27,11 @@ azo_frame_init(AZOFrame *frame, AZOFrame *parent, unsigned int capture_this, uns
 	frame->ret_type = ret_type;
 	frame->n_args = n_args;
 
+	frame->this_is_captured = capture_this;
 	frame->n_captures = (capture_this) ? 1 : 0;
 	// fixme: This goes to captures
 	/* If this is present, reserve the first variable position to it */
-	frame->scope = azo_scope_new (NULL, (capture_this) ? 1 : 0);
+	frame->scope = azo_scope_new (NULL, 0);
 	azo_code_init(&frame->code, debug);
 }
 

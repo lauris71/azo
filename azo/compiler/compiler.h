@@ -111,7 +111,7 @@ void azo_compiler_release (AZOCompiler *compiler);
  * Argumets must be already declared as variables.
  * 
  * References are replaced with either VARIABLE or CONSTANT nodes
- * All type expressions must resolve to constants
+ * All type expressions must resolve to constants and are replaced by TYPE nodes
  * 
  * @param comp A compiler
  * @param rctx Resolve context

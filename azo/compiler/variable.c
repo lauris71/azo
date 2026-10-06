@@ -22,14 +22,14 @@ azo_variable_init(AZOVariable *var, AZString *name, unsigned int pos)
 {
     memset (var, 0, sizeof (AZOVariable));
     var->name = name;
-    az_string_ref(name);
+    if (name) az_string_ref(name);
     var->pos = pos;
 }
 
 void
 azo_variable_finalize(AZOVariable *var)
 {
-    az_string_unref (var->name);
+    if (var->name) az_string_unref (var->name);
 }
 
 void
@@ -55,6 +55,16 @@ azo_var_list_find(AZOVariableList *list, AZString *name)
 	assert(name != NULL);
 	while (list) {
 		if (list->var.name == name) return list;
+		list = list->next;
+	}
+	return NULL;
+}
+
+AZOVariableList *
+azo_var_list_find_by_pos(AZOVariableList *list, unsigned int pos)
+{
+	while (list) {
+		if (list->var.pos == pos) return list;
 		list = list->next;
 	}
 	return NULL;
@@ -94,6 +104,27 @@ azo_var_list_remove(AZOVariableList *list, AZString *name)
 	AZOVariableList *prev = NULL;
 	while (current) {
 		if (current->var.name == name) {
+			if (prev) {
+				prev->next = current->next;
+			} else {
+				list = current->next;
+			}
+			azo_var_list_free_one(current);
+			return list;
+		}
+		prev = current;
+		current = current->next;
+	}
+	return list;
+}
+
+AZOVariableList *
+azo_var_list_remove_by_pos(AZOVariableList *list, unsigned int pos)
+{
+	AZOVariableList *current = list;
+	AZOVariableList *prev = NULL;
+	while (current) {
+		if (current->var.pos == pos) {
 			if (prev) {
 				prev->next = current->next;
 			} else {

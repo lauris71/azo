@@ -14,6 +14,7 @@ add_executable(azo_test
     test_parser.c
     test_resolver.c
     test_calculate.c
+    test_function.c
 )
 
 target_compile_definitions(azo_test PRIVATE UNITY_INCLUDE_DOUBLE)

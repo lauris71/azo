@@ -170,9 +170,9 @@ resolve_new (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 static unsigned int
 resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
-	AZOVariable *var;
 	unsigned int result;
 	AZONode *name = node->children;
+	assert(AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE));
 	AZONode *value = name->next;
 	if (azo_scope_lookup_local_var (rctx->frame->scope, name->value.v.string)) {
 		fprintf (stderr, "resolve_declaration: Variable %s already declared in scope\n", name->value.v.string->str);
@@ -184,7 +184,8 @@ resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		if (result) return result;
 	}
 	// fixme: Use type
-	azo_frame_declare_variable (rctx->frame, name->value.v.string, AZ_TYPE_ANY);
+	AZOVariable *var = azo_frame_declare_variable (rctx->frame, name->value.v.string, AZ_TYPE_ANY);
+	name->var_pos = var->pos;
 	return 0;
 }
 

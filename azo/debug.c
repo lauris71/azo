@@ -49,7 +49,7 @@ azo_debug_print_term(AZODebugInfo *dbg, unsigned int term_idx, FILE *ofs)
         return;
     }
     const AZODebugTerm *term = &dbg->terms[term_idx];
-    fprintf(ofs, "%s line: %u near ", dbg->src->name->str, term->line);
+    fprintf(ofs, "%s line: %u near ", (dbg->src->name) ? (const char *) dbg->src->name->str : "unnamed", term->line);
     for (unsigned int i = term->term.start; i < term->term.end; i++) {
         fputc(dbg->src->cdata[i], ofs);
     }

@@ -108,6 +108,7 @@ test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, con
 
     if (!prog) return 1;
     azo_program_print_bytecode(prog);
+    azo_interpreter_init(ctx->intr);
 	azo_program_interpret(prog, ctx->intr, &static_data, 0, NULL, NULL, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
     azo_program_unref(prog);
     az_object_unref((AZObject *) src);
@@ -205,6 +206,7 @@ run_program(const char *source)
         AZ_TYPE_INT32, 0, NULL, NULL,
         (const uint8_t *) source, strlen(source));
     AZPackedValue ret_val;
+    azo_interpreter_init(ctx->intr);
     azo_program_interpret(prog, ctx->intr, &static_data, 0, NULL, NULL, &ret_val.impl, &ret_val.v, AZ_PACKED_VALUE_MAX_SIZE);
     int32_t result = ret_val.v.int32_v;
     az_packed_value_clear(&ret_val);
@@ -234,37 +236,5 @@ test_comparison(void)
     TEST_ASSERT_EQUAL_INT(0, run_program("int32 a = 5;\nint32 b = 3;\nint32 r = a < b;\nreturn r;\n"));
     TEST_ASSERT_EQUAL_INT(1, run_program("int32 a = 5;\nint32 b = 5;\nint32 r = a >= b;\nreturn r;\n"));
     TEST_ASSERT_EQUAL_INT(0, run_program("int32 a = 5;\nint32 b = 6;\nint32 r = a >= b;\nreturn r;\n"));
-}
-
-static const char *function_src = ""
-"any a = (int32 a, int32 b) int32 => {\n"
-"    for (int32 i = 0; i < b; i++) a = a + 1;\n"
-"    return a;\n"
-"};\n"
-"int32 c = a(100, 28);\n"
-"return c;\n"
-"";
-
-void
-test_function(void)
-{
-    az_init();
-    AZOContext *ctx = azo_context_new();
-    azo_context_define_basic_types(ctx);
-    AZOSource *src = azo_source_new_static((const uint8_t *) "test-source", (const uint8_t *) function_src, strlen(function_src));
-	AZOProgram *prog = azo_program_compile_from_text(ctx, (const uint8_t *) "test-program", NULL, NULL,
-        AZ_TYPE_INT32, 0, NULL, NULL,
-        (const uint8_t *) function_src, strlen(function_src));
-    azo_program_print_bytecode(prog);
-    const AZImplementation *this_impl = NULL;
-    const AZValue *this_val = NULL;
-    AZPackedValue ret_val;
-	azo_program_interpret(prog, ctx->intr, &static_data, 0, NULL, NULL, &ret_val.impl, &ret_val.v, AZ_PACKED_VALUE_MAX_SIZE);
-    TEST_ASSERT_EQUAL_INT(128, ret_val.v.int32_v);
-
-    az_packed_value_clear(&ret_val);
-    azo_program_unref(prog);
-    az_object_unref((AZObject *) src);
-    azo_context_delete(ctx);
 }
 

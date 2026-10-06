@@ -150,6 +150,7 @@ test_program(AZOContext *ctx, const char *text,
 
     if (!prog) return 1;
     //azo_program_print_bytecode(prog);
+    azo_interpreter_init(ctx->intr);
 	azo_program_interpret(prog, ctx->intr, &static_data, n_args, arg_impls, arg_vals, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
     azo_program_unref(prog);
     az_object_unref((AZObject *) src);

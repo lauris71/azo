@@ -53,6 +53,8 @@ struct _AZOInterpreterCtx {
 AZOInterpreter *azo_interpreter_new (AZOContext *ctx);
 void interpreter_delete (AZOInterpreter *intr);
 
+void azo_interpreter_init(AZOInterpreter *intr);
+
 void azo_intepreter_push_instance (AZOInterpreter *intr, const AZImplementation *impl, void *inst);
 void azo_intepreter_push_value (AZOInterpreter *intr, const AZImplementation *impl, const AZValue *val);
 void azo_intepreter_push_values (AZOInterpreter *intr, const AZImplementation **impls, const AZValue **vals, unsigned int n_vals);

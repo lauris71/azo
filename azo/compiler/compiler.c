@@ -308,6 +308,7 @@ compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, c
 #endif
 	/* [func] */
 	if (test_implementation) {
+		azo_compiler_write_DEBUG_STRING(comp, ctx, "compile_call(): test implementation", func);
 		azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, func);
 		is_function = azo_code_write_JMP32 (code, JMP_32_IF, 0, func);
 		azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, func);
@@ -317,9 +318,11 @@ compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, c
 	if (has_this) {
 		// has_this indicates that this is one element BEFORE function
 		// e.g. [this, function]
+		azo_compiler_write_DEBUG_STRING(comp, ctx, "compile_call(): has this", func);
 		azo_code_write_DUPLICATE (code, 1, func);
 		n_args += 1;
 	} else {
+		azo_compiler_write_DEBUG_STRING(comp, ctx, "compile_call(): this is first argument", func);
 		azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, 0, func);
 		n_args += 1;
 		//fprintf(stderr, "%d\n", func->term.subtype);
@@ -366,15 +369,16 @@ compile_call_property (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 	unsigned int is_member_function, is_class, not_active_obj, no_static_function, invalid_type, finished, finished_2, finished_3;
 	AZOCode *code = &ctx->frame->code;
 
-	/* Instance, Key */
+	azo_compiler_write_DEBUG_STRING(comp, ctx, "compile_call_property: 1", func);
+	/* Instance, String */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, 1, func);
-	/* Instance, Key, Instance */
+	/* Instance, String, This */
 	unsigned int n_args = 1;
 	for (const AZONode *child = list->children; child; child = child->next) {
 		azo_compiler_compile_expression (comp, ctx, child, src);
 		n_args += 1;
 	}
-	/* Instance, Key, Arguments */
+	/* Instance, String, This, Arguments */
 	/* Try GET_FUNCTION */
 	/* Instance, String, Arguments */
 	azo_code_write_GET_FUNCTION(code, n_args, func);

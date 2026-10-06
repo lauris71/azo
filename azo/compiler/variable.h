@@ -69,6 +69,7 @@ void azo_var_list_free(AZOVariableList *list);
  * @return Pointer to the found element or NULL
  */
 AZOVariableList *azo_var_list_find(AZOVariableList *list, AZString *name);
+AZOVariableList *azo_var_list_find_by_pos(AZOVariableList *list, unsigned int pos);
 /**
  * @brief Unconditionally prepends a new element to a list
  * 
@@ -98,6 +99,7 @@ AZOVariableList *azo_var_list_set(AZOVariableList *list, AZString *name, unsigne
  * @return Updated list with the element removed
  */
 AZOVariableList *azo_var_list_remove(AZOVariableList *list, AZString *name);
+AZOVariableList *azo_var_list_remove_by_pos(AZOVariableList *list, unsigned int pos);
 /**
  * @brief Remove all elements of one list from the other
  * 

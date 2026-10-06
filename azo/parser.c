@@ -137,6 +137,7 @@ parser_report_error (AZOParser *parser, const AZOToken *token, unsigned int errv
 		strncpy(error->message, azo_get_error_str(errval), sizeof (error->message) - 1);
 		error->message[sizeof (error->message) - 1] = 0;
 	}
+	fprintf(stderr, "%s\n", (parser->src->name) ? (const char *) parser->src->name->str : "unnamed script");
 	fprintf (stderr, "%s at line ", azo_get_error_str(errval));
 	if (!azo_tokenizer_is_eof (&parser->tokenizer, token)) {
 		unsigned int first, last;

@@ -108,7 +108,7 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	AZOParser parser;
 	azo_parser_setup (&parser, src);
 	AZONode *expr = azo_parser_parse (&parser);
-	azo_node_print_info(expr, stderr, src, 0);
+	//azo_node_print_info(expr, stderr, src, 0);
 
 	AZOCompilerContext comp_ctx = {
 		.ret_type = ret_type
