@@ -45,6 +45,8 @@ enum {
 	LVALUE_PROPERTY,
 	/* Attribute (arrow operator), stack(1) is object, stack(0) is attribute name */
 	LVALUE_ATTRIBUTE,
+	/* Property or attribute, stack(1) is object, stack(0) is the name */
+	LVALUE_PROPERTY_OR_ATTRIBUTE,
 	/* Array element, stack(1) is array, stack(0) is index */
 	LVALUE_ELEMENT,
 	/* Constants */
@@ -183,13 +185,23 @@ compile_assign_to_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, LValue *lv
 		/* [instance, key, value, false] */
 		unsigned int finished = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
 		/* [instance, key, value] */
-		azo_code_write_SET_ATTRIBUTE (code, expr);
+		azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_PROPERTY, expr);
 		/* [] */
 		azo_code_update_JMP32 (code, finished);
 	} else if (lval->type == LVALUE_ATTRIBUTE) {
 		/* [instance, key, value] */
 		azo_code_write_SET_ATTRIBUTE (code, expr);
 		/* [] */
+	} else if (lval->type == LVALUE_PROPERTY_OR_ATTRIBUTE) {
+		/* [instance, key, value] */
+		azo_code_write_SET_PROPERTY (code, expr);
+		/* [true] */
+		/* [instance, key, value, false] */
+		unsigned int finished = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
+		/* [instance, key, value] */
+		azo_code_write_SET_ATTRIBUTE (code, expr);
+		/* [] */
+		azo_code_update_JMP32 (code, finished);
 	} else if (lval->type == LVALUE_ELEMENT) {
 		/* [array, index, value] */
 		azo_code_write_ic (code, WRITE_ARRAY_ELEMENT, expr);
@@ -254,15 +266,7 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			return 0;
 		}
 	} else if (expr->term.type == AZO_TERM_REFERENCE) {
-		if (expr->term.subtype == AZO_TERM_REFERENCE_VARIABLE) {
-			/* Did not resolve to stack variable */
-			/* Interpret as this member */
-			lvalue->type = LVALUE_PROPERTY;
-			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, 0, expr);
-			compile_PUSH_VALUE_const_string (comp, ctx, expr->value.v.string, expr);
-			lvalue->n_elements = 2;
-			return 1;
-		} else if (expr->term.subtype == AZO_TERM_REFERENCE_PROPERTY) {
+		if (expr->term.subtype == AZO_TERM_REFERENCE_PROPERTY) {
 			lvalue->type = LVALUE_PROPERTY;
 			AZONode *left = expr->children;
 			AZONode *right = left->next;
@@ -271,6 +275,13 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			lvalue->n_elements = 2;
 		} else if (expr->term.subtype == AZO_TERM_REFERENCE_ATTRIBUTE) {
 			lvalue->type = LVALUE_ATTRIBUTE;
+			AZONode *left = expr->children;
+			AZONode *right = left->next;
+			if (!azo_compiler_compile_expression (comp, ctx, left, src)) return 0;
+			compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, expr);
+			lvalue->n_elements = 2;
+		} else if (expr->term.subtype == AZO_TERM_REFERENCE_PROPERTY_OR_ATTRIBUTE) {
+			lvalue->type = LVALUE_PROPERTY_OR_ATTRIBUTE;
 			AZONode *left = expr->children;
 			AZONode *right = left->next;
 			if (!azo_compiler_compile_expression (comp, ctx, left, src)) return 0;
@@ -651,132 +662,46 @@ compile_suffix (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 }
 
 static unsigned int
-compile_reference_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZString *str)
+compile_function_call_member (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
-	unsigned int property_not_null, not_active_obj, finished;
-	AZOCode *code = &ctx->frame->code;
-
-	/* InstanceA */
-	azo_code_write_DUPLICATE (code, 0, expr);
-	compile_PUSH_VALUE_const_string (comp, ctx, str, expr);
-	/* InstanceA, InstanceA, String */
-	azo_code_write_ic (code, AZO_TC_GET_PROPERTY, expr);
-	/* InstanceA, Value|null */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
-	property_not_null = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
-
-	/* InstanceA, null */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 1, AZ_TYPE_ATTRIBUTE_DICT, expr);
-	not_active_obj = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
-	/* ActiveObj, null */
-	azo_code_write_POP (code, 1, expr);
-	compile_PUSH_VALUE_const_string (comp, ctx, str, expr);
-	/* ActiveObj, String */
-	azo_code_write_GET_ATTRIBUTE (code, expr);
-	/* Value */
-	finished = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
-
-	azo_code_update_JMP32 (code, property_not_null);
-	azo_code_update_JMP32 (code, not_active_obj);
-	/* InstanceA, Value */
-	azo_code_write_REMOVE (code, 1, 1, NULL);
-	/* Value */
-	azo_code_update_JMP32 (code, finished);
-	return 1;
-}
-
-static unsigned int
-compile_this_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZString *id)
-{
-	/* */
-	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, 0, expr);
-	/* This */
-	if (!compile_reference_lookup (comp, ctx, expr, id)) return 0;
-	/* Value */
-	return 1;
-}
-
-#define noDEBUG_PARENT_LVAL
-
-static unsigned int
-compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, const AZONode *list, AZOSource *src, unsigned int silent)
-{
-	AZONode *child;
-	unsigned int n_args, result;
-	LValue lval;
-	AZOCode *code = &ctx->frame->code;
-
-	// fixme: Handle in lvalue?
-	// fixme: Implement separate expression type for this handling?
-	// This wrong old-style code
-	// Basically for constant properties optimizer creates
-	// FUNCTION:CONST
-	//  PARENT_OBJ:CONST
-	// structure
-	// The parent object is meant to be fed as the first 'this' argument
-	if (func->term.type == AZO_TERM_CONSTANT) {
-		if (func->children) {
-			assert (func->children->term.type == AZO_TERM_CONSTANT);
-			if (!azo_compiler_compile_constant (comp, ctx, func->children, src)) return 0;
-			if (!azo_compiler_compile_constant (comp, ctx, func, src)) return 0;
-			result = compile_call (comp, ctx, func, list, src, 1, 0);
-			if (result) return 0;
-			azo_code_write_REMOVE (code, 1, 1, func);
-		} else {
-			if (!azo_compiler_compile_constant (comp, ctx, func, src)) return 0;
-			result = compile_call (comp, ctx, func, list, src, 0, 0);
-			if (result) return 0;
-		}
-		if (silent) {
-			azo_code_write_POP (code, 1, func);
-		}
-		return 1;
+	AZONode *base = node->children;
+	AZONode *name = base->next;
+	AZONode *list = name->next;
+	if (!azo_compiler_compile_expression (comp, ctx, base, src)) return 0;
+	compile_PUSH_VALUE_const_string (comp, ctx, name->value.v.string, name);
+	/* instance, key */
+	switch (node->term.subtype) {
+		case AZO_TERM_FUNCTION_CALL_PROPERTY:
+			compile_call_property (comp, ctx, node, list, src);
+			break;
+		case AZO_TERM_FUNCTION_CALL_ATTRIBUTE:
+			compile_call_attribute (comp, ctx, node, list, src);
+			break;
+		case AZO_TERM_FUNCTION_CALL_PROPERTY_OR_ATTRIBUTE:
+			compile_call_property (comp, ctx, node, list, src);
+			break;
+		default:
+			fprintf (stderr, "compile_function_call_member: Unknown function call type %u\n", node->term.subtype);
+			return 0;
 	}
+	return 1;
+}
 
-	if (!compile_lvalue (comp, ctx, func, src, &lval, 1)) return 0;
-	switch (lval.type) {
-	case LVALUE_STACK:
-		/* - */
-		azo_code_write_ic_u32 (code, AZO_TC_DUPLICATE_FRAME, lval.pos, NULL);
-		/* Value */
-		result = compile_call (comp, ctx, func, list, src, 0, 1);
+static unsigned int
+compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src, unsigned int silent)
+{
+	AZOCode *code = &ctx->frame->code;
+	if (node->term.subtype == AZO_TERM_FUNCTION_CALL_PLAIN) {
+		AZONode *func = node->children;
+		AZONode *list = func->next;
+		if (!azo_compiler_compile_expression(comp, ctx, func, src)) return 0;
+		unsigned int result = compile_call (comp, ctx, func, list, src, 0, 1);
 		if (result) return 0;
-		break;
-	case LVALUE_PROPERTY:
-		/* Instance, Key */
-		compile_call_property (comp, ctx, func, list, src);
-		break;
-	case LVALUE_ATTRIBUTE:
-		/* Instance, Key - attribute lookup + call */
-		compile_call_attribute (comp, ctx, func, list, src);
-		break;
-	case LVALUE_ELEMENT:
-		/* Array, Index */
-		azo_code_write_ic (code, LOAD_ARRAY_ELEMENT, func);
-		/* Array, Value */
-		azo_code_write_REMOVE (code, 1, 1, func);
-		/* Value */
-		/* fixme: Handle object.array[index](args) this types */
-		result = compile_call (comp, ctx, func, list, src, 0, 1);
-		if (result) return 0;
-		break;
-	case LVALUE_SHARED:
-		azo_code_write_PUSH_VALUE (code, lval.pos, func);
-		/* Value */
-		result = compile_call (comp, ctx, func, list, src, 0, 1);
-		if (result) return 0;
-		break;
-	case LVALUE_CAPTURE:
-		azo_code_write_PUSH_CAPTURE (code, lval.pos, func);
-		/* Value */
-		result = compile_call (comp, ctx, func, list, src, 0, 1);
-		if (result) return 0;
-		break;
-	default:
-		break;
+	} else {
+		if (!compile_function_call_member (comp, ctx, node, src)) return 0;
 	}
 	if (silent) {
-		azo_code_write_POP (code, 1, func);
+		azo_code_write_POP (code, 1, node);
 	}
 	return 1;
 }
@@ -806,7 +731,7 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	/* Compile function body in it's own resolved frame */
 	assert(node->frame);
 
-	AZOFrame *func_frame = comp->frames[node->frame];
+	AZOFrame *func_frame = node->frame;
 
 	AZOCompilerContext func_ctx = *ctx;
 	func_ctx.ret_type = ret_type;
@@ -923,8 +848,10 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 		if (!azo_compiler_compile_constant (comp, ctx, node, src)) return 0;
 	} else if (node->term.type == AZO_TERM_KEYWORD) {
 		if (node->term.subtype == AZO_KEYWORD_THIS) {
+			assert(0);
 			if (!compile_this (comp, ctx, node, src)) return 0;
 		} else if (node->term.subtype == AZO_KEYWORD_NEW) {
+			assert(0);
 			if (!compile_new (comp, ctx, node->children, node->children->next, src)) return 0;
 		} else {
 			fprintf (stderr, "compile_expression_rvalue: Unknown keyword subtype %u\n", node->term.subtype);
@@ -933,7 +860,7 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 	} else if (node->term.type == AZO_TERM_FUNCTION) {
 		if (!compile_function (comp, ctx, node, src)) return 0;
 	} else if (node->term.type == AZO_TERM_FUNCTION_CALL) {
-		if (!compile_function_call (comp, ctx, node->children, node->children->next, src, 0)) return 0;
+		if (!compile_function_call (comp, ctx, node, src, 0)) return 0;
 	} else if (node->term.type == AZO_TERM_LITERAL_ARRAY) {
 		if (!compile_array_literal (comp, ctx, node, src)) return 0;
 		/* fixme: Do we allow operators here? (Lauris) */
@@ -971,52 +898,80 @@ compile_array_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONo
 }
 
 static unsigned int
-compile_member_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
+compile_reference_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZString *str)
 {
-	AZONode *left, *right;
-	left = node->children;
-	right = left->next;
-	azo_compiler_compile_expression (comp, ctx, left, src);
-	if (!compile_reference_lookup (comp, ctx, node, right->value.v.string)) return 0;
-	return 1;
-}
-
-static unsigned int
-compile_attribute_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src)
-{
+	unsigned int property_not_null, not_active_obj, finished;
 	AZOCode *code = &ctx->frame->code;
-	AZONode *left, *right;
-	left = expr->children;
-	right = left->next;
-	azo_compiler_compile_expression (comp, ctx, left, src);
-	compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, expr);
-	azo_code_write_GET_ATTRIBUTE (code, expr);
-	return 1;
-}
 
-static unsigned int
-compile_singular_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr)
-{
-	AZOVariable *var = azo_frame_lookup_local_var (ctx->frame, expr->value.v.string);
-	if (var) {
-		/* Orphan AZO_TERM_REFERENCE_VARIABLE (by name) - should have been resolved to EXPRESSION_VARIABLE (by position) */
-		fprintf (stderr, "compile_singular_reference: Internal error - variable %s is not resolved\n", expr->value.v.string->str);
-		return 0;
-	} else {
-		compile_this_reference (comp, ctx, expr, expr->value.v.string);
-	}
+	/* InstanceA */
+	azo_code_write_DUPLICATE (code, 0, expr);
+	compile_PUSH_VALUE_const_string (comp, ctx, str, expr);
+	/* InstanceA, InstanceA, String */
+	azo_code_write_ic (code, AZO_TC_GET_PROPERTY, expr);
+	/* InstanceA, Value|null */
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
+	property_not_null = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
+
+	/* InstanceA, null */
+	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 1, AZ_TYPE_ATTRIBUTE_DICT, expr);
+	not_active_obj = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
+	/* ActiveObj, null */
+	azo_code_write_POP (code, 1, expr);
+	compile_PUSH_VALUE_const_string (comp, ctx, str, expr);
+	/* ActiveObj, String */
+	azo_code_write_GET_ATTRIBUTE (code, expr);
+	/* Value */
+	finished = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
+
+	azo_code_update_JMP32 (code, property_not_null);
+	azo_code_update_JMP32 (code, not_active_obj);
+	/* InstanceA, Value */
+	azo_code_write_REMOVE (code, 1, 1, NULL);
+	/* Value */
+	azo_code_update_JMP32 (code, finished);
 	return 1;
 }
 
 static unsigned int
 compile_variable_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, unsigned int type, AZOSource *src)
 {
-	if (type == AZO_TERM_REFERENCE_VARIABLE) {
-		if (!compile_singular_reference (comp, ctx, node)) return 0;
-	} else if (type == AZO_TERM_REFERENCE_PROPERTY) {
-		if (!compile_member_reference (comp, ctx, node, src)) return 0;
+	AZOCode *code = &ctx->frame->code;
+	AZONode *left = node->children;
+	AZONode *right = left->next;
+	if (!azo_compiler_compile_expression (comp, ctx, left, src)) return 0;
+	if (type == AZO_TERM_REFERENCE_PROPERTY) {
+		compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, node);
+		azo_code_write_ic (code, AZO_TC_GET_PROPERTY, node);
 	} else if (type == AZO_TERM_REFERENCE_ATTRIBUTE) {
-		if (!compile_attribute_reference (comp, ctx, node, src)) return 0;
+		compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, node);
+		azo_code_write_GET_ATTRIBUTE (code, node);
+	} else if (type == AZO_TERM_REFERENCE_PROPERTY_OR_ATTRIBUTE) {
+		/* inst */
+		azo_code_write_DUPLICATE (code, 0, node);
+		compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, node);
+		/* inst, inst, name */
+		azo_code_write_ic (code, AZO_TC_GET_PROPERTY, node);
+		/* inst, value|null */
+		azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, node);
+		unsigned int property_not_null = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, node);
+
+		/* inst, null */
+		azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 1, AZ_TYPE_ATTRIBUTE_DICT, node);
+		unsigned int not_active_obj = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, node);
+		/* inst, null */
+		azo_code_write_POP (code, 1, node);
+		compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, node);
+		/* inst, name */
+		azo_code_write_GET_ATTRIBUTE (code, node);
+		/* Value */
+		unsigned int finished = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
+
+		azo_code_update_JMP32 (code, property_not_null);
+		azo_code_update_JMP32 (code, not_active_obj);
+		/* inst, value|null */
+		azo_code_write_REMOVE (code, 1, 1, NULL);
+		/* value */
+		azo_code_update_JMP32 (code, finished);
 	} else {
 		fprintf (stderr, "azo_compiler_compile_expression: Unknown reference subtype %u\n", node->term.subtype);
 		return 0;
@@ -1083,7 +1038,7 @@ compile_silent_statement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZON
 		if (!compile_assign (comp, ctx, node->children, node->children->next, src)) return 0;
 		break;
 	case AZO_TERM_FUNCTION_CALL:
-		if (!compile_function_call (comp, ctx, node->children, node->children->next, src, 1)) return 0;
+		if (!compile_function_call (comp, ctx, node, src, 1)) return 0;
 		break;
 	case AZO_TERM_SUFFIX:
 		if (!compile_suffix (comp, ctx, node, node->children, src, 1)) return 0;

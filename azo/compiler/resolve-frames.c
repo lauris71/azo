@@ -98,79 +98,45 @@ resolve_for (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 
 #define noDEBUG_RESOLVE_NEW
 
+// fixme: I ma not sure about this
+// What happens is that we call an method on class intance (the actual class)
+// It has to resolve either to:
+// Class own method (toString() result in "xyz class")
+// Static method of null instance
+// If the logic reamins, there should be separate FUNCTION_CALL_CLASS subtype
+// but the logic is sound otherwise: MyObj.someStaticMethod should work if MyObj is MyObj class
 static unsigned int
-resolve_new (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
+resolve_new (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
-	unsigned int result = 0;
-	static AZString *new_str = NULL;
-	if (!new_str) new_str = az_string_new((const uint8_t *) "new");
-	AZONode *type, *args, *child;
-	type = expr->children;
-	args = type->next;
+	AZONode *type = node->children;
+	AZONode *args = type->next;
 	assert (!args->next);
 
-	result = azo_compiler_resolve_type_expression(comp, rctx, type);
+	unsigned int result = azo_compiler_resolve_type_expression(comp, rctx, type);
 	if (result) return result;
-
 	result = azo_compiler_resolve_node (comp, rctx, args);
 	if (result) return result;
 
-	/* fixme: Optimizer thing */
-	/* Test if arguments list is constant */
-	unsigned int n_args = 0;
-	unsigned int arg_types[64];
-	for (child = args->children; child; child = child->next) {
-		if (child->term.type != AZO_TERM_CONSTANT) return result;
-		arg_types[n_args] = child->term.subtype;
-		n_args += 1;
-		if (n_args >= 64) return result;
-	}
-	/* All arguments are constants */
-	const AZClass *klass;
-	const AZImplementation *impl;
+	/* Replace with: FUNCTION_CALL->(REF_MEMBER(TYPE,new), ARGS) */
+	type->term.type = AZO_TERM_CONSTANT;
+	type->term.subtype = AZ_TYPE_CLASS;
+	az_packed_value_set(&type->value, AZ_IMPL_FROM_TYPE(AZ_TYPE_CLASS), AZ_CLASS_FROM_TYPE(type->term.subtype));
+	AZONode *str = azo_node_new(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER, node->term.start, node->term.end);
+	az_packed_value_set_string(&str->value, azo_keyword_str(AZO_KEYWORD_NEW));
+	AZONode *ref = azo_node_new_with_children(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY, node->term.start, type->term.end, 2, type, str);
+	ref->next = args;
+	node->children = ref;
+	node->term.type = AZO_TERM_FUNCTION_CALL;
+	/* We create plain call and re-invoke resolver to resolve it into a proper reference variant */
+	node->term.subtype = AZO_TERM_FUNCTION_CALL_PLAIN;
+	az_packed_value_clear(&node->value);
 
-	klass = AZ_CLASS_FROM_TYPE(type->term.subtype);
-
-	impl = (AZImplementation *) klass;
-	AZFunctionSignature *sig = az_function_signature_new (AZ_TYPE_NONE, AZ_CLASS_TYPE(klass), n_args, arg_types);
-	const AZClass *def_class;
-	const AZImplementation *def_impl;
-	void *def_inst;
-	int idx = az_class_lookup_function (klass, impl, NULL, new_str, sig, &def_class, &def_impl, &def_inst);
-	az_function_signature_delete (sig);
-	if (idx >= 0) {
-		AZField *field = &def_class->props_self[idx];
-		if (AZ_FIELD_IS_FINAL(field) && AZ_FIELD_IS_FUNCTION(field)) {
-			const AZImplementation *prop_impl;
-			AZValue64 prop_val;
-			if (!az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &prop_impl, &prop_val.value, 64, NULL)) {
-				fprintf (stderr, "azo_compiler_resolve_new: Property new is not readable\n");
-				return 1;
-			}
-			az_packed_value_set_from_impl_value (&type->value, prop_impl, &prop_val.value);
-			expr->term.type = AZO_TERM_FUNCTION_CALL;
-			expr->term.subtype = AZO_TERM_GENERIC;
-			type->term.type = AZO_TERM_CONSTANT;
-			if (prop_impl) {
-				type->term.subtype = AZ_IMPL_TYPE(prop_impl);
-				az_value_clear (prop_impl, &prop_val.value);
-			} else {
-				// Missing new, this is not normal
-				type->term.subtype = 0;
-			}
-#ifdef DEBUG_RESOLVE_NEW
-			fprintf (stderr, "azo_compiler_resolve_new: Replaced new %s with constant\n", klass->name);
-#endif
-			return 0;
-		}
-	}
-	return 0;
+	return azo_compiler_resolve_node(comp, rctx, node);
 }
 
 static unsigned int
 resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
-	unsigned int result;
 	AZONode *name = node->children;
 	assert(AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE));
 	AZONode *value = name->next;
@@ -180,7 +146,7 @@ resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	}
 	/* Value has to be solved first so it cannot refer to name */
 	if (value) {
-		result = azo_compiler_resolve_node (comp, rctx, value);
+		unsigned int result = azo_compiler_resolve_node (comp, rctx, value);
 		if (result) return result;
 	}
 	// fixme: Use type
@@ -223,32 +189,33 @@ static unsigned int
 resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 {
 	unsigned int result = 0;
-	AZONode *type = func->children;
-	AZONode *args = type->next;
+	AZONode *ret_type = func->children;
+	AZONode *args = ret_type->next;
 	AZONode *body = args->next;
 
 	/* Return type */
-	if (type->term.type == AZO_TERM_EMPTY) {
+	if (ret_type->term.type == AZO_TERM_EMPTY) {
 		/* Replace void with type none */
-		type->term.type = AZO_TERM_TYPE;
-		type->term.subtype = AZ_TYPE_NONE;
-		az_packed_value_clear (&type->value);
+		ret_type->term.type = AZO_TERM_TYPE;
+		ret_type->term.subtype = AZ_TYPE_NONE;
 	} else {
-		result = azo_compiler_resolve_type_expression(comp, rctx, type);
+		result = azo_compiler_resolve_type_expression(comp, rctx, ret_type);
 		if (result) return result;
 	}
-	unsigned int ret_type = type->term.subtype;
 
 	/* Argument list */
 	unsigned int n_args = 0;
-	for (AZONode *child = args->children; child; child = child->next) {
-		if (child->term.type != AZO_TERM_ARGUMENT_DECLARATION) {
-			fprintf (stderr, "resolve_function: Invalid expression type %u/%u in signature\n", child->term.type, child->term.subtype);
+	for (AZONode *decl = args->children; decl; decl = decl->next) {
+		if (decl->term.type != AZO_TERM_ARGUMENT_DECLARATION) {
+			fprintf (stderr, "resolve_function: Invalid expression type %u/%u in signature\n", decl->term.type, decl->term.subtype);
 			return 1;
 		}
-		type = child->children;
+		AZONode *type = decl->children;
 		AZONode *name = type->next;
-		if (type->term.type != AZO_TERM_EMPTY) {
+		if (type->term.type == AZO_TERM_EMPTY) {
+			type->term.type = AZO_TERM_CONSTANT;
+			type->term.subtype = AZ_TYPE_ANY;
+		} else {
 			result = azo_compiler_resolve_type_expression(comp, rctx, type);
 			if (result) return result;
 		}
@@ -259,33 +226,28 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 		n_args += 1;
 	}
 
-	AZOFrame *current = rctx->frame;
-	unsigned int func_frame_idx = comp->n_frames;
-	AZOFrame *func_frame;
-
 	AZOResolveCtx fctx = *rctx;
-	fctx.ret_type = ret_type;
+	fctx.ret_type = ret_type->term.subtype;
 
 	if (func->term.flags & AZO_TERM_FLAG_STATIC) {
-		func_frame = azo_compiler_new_frame (comp, rctx->frame, 0, n_args, ret_type);
+		fctx.frame = azo_compiler_new_frame (comp, rctx->frame, 0, n_args, ret_type->term.subtype);
 		fctx.this_variant = AZO_COMPILER_NO_THIS;
 	} else {
-		/* No intrinsic this, capture if it exists in parent frame */
+		/* Capture 'this'' it exists in parent frame */
 		if (rctx->this_variant == AZO_COMPILER_NO_THIS) {
-			func_frame = azo_compiler_new_frame (comp, rctx->frame, 0, n_args, ret_type);
+			fctx.frame = azo_compiler_new_frame (comp, rctx->frame, 0, n_args, ret_type->term.subtype);
 		} else {
-			func_frame = azo_compiler_new_frame (comp, rctx->frame, 1, n_args, ret_type);
+			fctx.frame = azo_compiler_new_frame (comp, rctx->frame, 1, n_args, ret_type->term.subtype);
 			fctx.this_variant = AZO_COMPILER_THIS_IS_CAPTURE;
 			fctx.this_capture_pos = 0;
 		}
 	}
-	fctx.frame = func_frame;
 
 	for (AZONode *child = args->children; child; child = child->next) {
-		type = child->children;
+		AZONode *type = child->children;
 		AZONode *name = type->next;
 		// fixme: Use type
-		if (!azo_frame_declare_variable (func_frame, name->value.v.string, AZ_TYPE_ANY)) {
+		if (!azo_frame_declare_variable (fctx.frame, name->value.v.string, AZ_TYPE_ANY)) {
 			fprintf (stderr, "resolve_function: Repeated variable name %s\n", name->value.v.string->str);
 			return 1;
 		}
@@ -294,29 +256,50 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 	int lresult = azo_compiler_resolve_frame(comp, &fctx, body);
 	if (lresult) result = 1;
 
-	func->frame = func_frame_idx;
+	func->frame = fctx.frame;
 
 	return result;
 }
 
-#define noDEBUG_RESOLVE_FUNCTION_CALL
-
 static unsigned int
-azo_compiler_resolve_function_call (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
+resolve_function_call (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 {
-	AZONode *ref = expr->children;
+	AZONode *ref = func->children;
 	AZONode *args = ref->next;
 	assert (!args->next);
-	unsigned int result = 0;
 	if (args->term.type != AZO_TERM_LIST) {
-		fprintf (stderr, "azo_compiler_resolve_function_call: arguments is not list\n");
+		fprintf (stderr, "resolve_function_call: arguments node is not list\n");
 		return 1;
 	}
-
-	result = azo_compiler_resolve_reference (comp, rctx, ref);
+	unsigned int result = azo_compiler_resolve_reference (comp, rctx, ref);
 	if (result) return result;
 	result = azo_compiler_resolve_node (comp, rctx, args);
 	if (result) return result;
+	if (ref->term.type == AZO_TERM_REFERENCE) {
+		/* REFERENCE_VARIABLE does not exist after resolve pass */
+		switch (ref->term.subtype) {
+			case AZO_TERM_REFERENCE_PROPERTY:
+				func->term.subtype = AZO_TERM_FUNCTION_CALL_PROPERTY;
+				break;
+			case AZO_TERM_REFERENCE_ATTRIBUTE:
+				func->term.subtype = AZO_TERM_FUNCTION_CALL_ATTRIBUTE;
+				break;
+			case AZO_TERM_REFERENCE_PROPERTY_OR_ATTRIBUTE:
+				func->term.subtype = AZO_TERM_FUNCTION_CALL_PROPERTY_OR_ATTRIBUTE;
+				break;
+			default:
+				fprintf (stderr, "resolve_function_call: Invalid reference subtype %u\n", ref->term.subtype);
+				return 1;
+		}
+		/* FUNCTION(REF(BASE,NAME),ARGS) -> FUNCTION(BASE,NAME,ARGS) */
+		AZONode *base = ref->children;
+		AZONode *name = base->next;
+		assert(!name->next);
+		func->term.subtype = AZO_TERM_FUNCTION_CALL_PROPERTY;
+		func->children = base;
+		name->next = args;
+		azo_node_free(ref);
+	}
 
 	return 0;
 }
@@ -619,7 +602,7 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		case AZO_TERM_FUNCTION:
 			return resolve_function (comp, rctx, node);
 		case AZO_TERM_FUNCTION_CALL:
-			return azo_compiler_resolve_function_call (comp, rctx, node);
+			return resolve_function_call (comp, rctx, node);
 		case AZO_TERM_ARRAY_ELEMENT:
 		case AZO_TERM_LIST:
 			return resolve_children(comp, rctx, node);

@@ -29,6 +29,8 @@ typedef struct _TestObjectClass TestObjectClass;
 
 unsigned int test_object_get_type();
 
+static unsigned int print_tree = 0;
+
 static AZODataBlock static_data = {0};
 static AZOContext *globals = NULL;
 static AZBufferOutputStream *bostream = NULL;
@@ -44,7 +46,10 @@ test_program(AZOContext *ctx, const char *text, const AZImplementation *this_imp
 	AZOParser parser;
 	azo_parser_setup (&parser, src);
 	AZONode *tree = azo_parser_parse(&parser);
-	//azo_node_print_info(tree, stderr, src, 0);
+	if (print_tree) {
+        fprintf(stderr, "Parser tree:\n");
+		azo_node_print_info(tree, stderr, src, 0);
+	}
 
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, globals, src);
@@ -72,7 +77,10 @@ test_program(AZOContext *ctx, const char *text, const AZImplementation *this_imp
 	}
 
 	int result = azo_compiler_resolve_program(&comp, &comp_ctx, tree);
-	//azo_node_print_info(tree, stderr, src, 0);
+    if (print_tree) {
+        fprintf(stderr, "Resolved tree:\n");
+    	azo_node_print_info(tree, stderr, src, 0);
+    }
 	if (result != 0) {
 		azo_parser_release (&parser);
 		azo_source_unref(src);
@@ -84,6 +92,10 @@ test_program(AZOContext *ctx, const char *text, const AZImplementation *this_imp
 	azo_optimizer_setup(&opt, &comp);
 	result = azo_compiler_optimize_program(&opt, &comp_ctx, tree, AZO_OPTIMIZER_FLAG_ALL);
 	azo_optimizer_release(&opt);
+    if (print_tree) {
+        fprintf(stderr, "Optimized tree:\n");
+       	azo_node_print_info(tree, stderr, src, 0);
+    }
 	if (result != 0) {
 		azo_parser_release (&parser);
 		azo_source_unref(src);
@@ -171,6 +183,7 @@ test_function(void)
     }
     /* Capturing lambda */
     {
+        print_tree = 1;
         static const char *src =
             "function test = () => {\n"
             "    int32 a = 1;\n"
@@ -191,6 +204,7 @@ test_function(void)
         fprintf(stderr, "Output: %s\n", str);
         TEST_ASSERT_EQUAL_STRING("a + b = 3\na + b = 5\n", str);
         free(str);
+        print_tree = 0;
     }
     /* The same program with global this */
     {
@@ -241,13 +255,13 @@ test_function(void)
         TEST_ASSERT_EQUAL_STRING("a + b = 3\na + b = 5\n", str);
         free(str);
     }
-    /* Assigning and calling property function with full signature succeeds */
+    /* Assigning property function with full signature and calling with implicit 'this' succeeds */
     {
         static const char *src =
             "print_tobj_i32 = (any x, int32 val) => {\n"
             "    ofs.printLn(val);\n"
             "};\n"
-            "print_tobj_i32(1234, 42);\n";
+            "print_tobj_i32(42);\n";
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
         const AZImplementation *ret_impl;
         AZValue ret_val;
@@ -255,7 +269,7 @@ test_function(void)
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.type);
     }
-    /* Assigning property with clearly wrong signature */
+    /* Assigning property with clearly wrong signature fails */
     {
         static const char *src =
             "print_tobj_i32 = (any x, int32 val, float val2) => {\n"

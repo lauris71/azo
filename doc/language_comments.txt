@@ -389,3 +389,47 @@ signature negotiation at call sites.
     static myobj.myfunc(5) - forces static call signature (int32), not (myobj, int32)
     This is ambiguous with function call as a variable type - but can be determined by the context (expression/declaration)
     Or omit this and use (myobj.myfunc)(5) for static call?
+
+18. More about functions/properties
+In az all properties are declared in class, but they have different 'storage' types:
+- class storage - can be read/written with class known, impl == NULL, inst == null
+  I.e. their value is invariant in class (fully constant or a mutable field in class structure)
+- implementation storage - let's ignore these for simplicity, they are not used atm
+- instance storage - can be read/written if both impl (and consequently the class) and instance are present
+  I.e. their value varies per-instance - they are normally stored in a field inside instance
+Now signatures are not tied to storage type in any way, e.g. we may have (for an example class MyObj):
+- class storage func1(int32 a) - a pure 'static' function (== oo static method if immutable)
+- class storage func2(Myobj a, int32 b) - a classic 'member' function (== oo member if immutable)
+- instance storage func3(int32 a) - a 'static' function that varies per-instance
+- instance storage func4(MyObj a, int32 b) - a 'member' function that varies per-instance
+and all these can be mutable
+Actually the difference between classical 'static' and 'member' functions cannot be done at az level at all, e.g. a class
+  storage type method of Vector3f: add(Vector3f a, Vector3f b) can be seen in both ways.
+To make things worse, class itself is an instance of class object. It's corresponding class is AZClassKlass
+So if 'MyObj' resolves to 'MyObj class' and 'myobj' is an instance of 'MyObj', then:
+MyObj.toString() calls the 'toString' method of MyObj class's class (AZClassKlass) - prints "MyObj class"
+myobj.toString() calls the 'toString' method of myobj's class (MyObj) - print whatever textual representation MyObj has defined
+So how to solve and which are valid?:
+MyObj.toString()
+MyObj.func1(42)
+MyObj.func2(myobj, 42)
+myobj.func1(42)
+myobj.func2(42)
+myobj.func2(some myobj, 42)
+myobj.func3(42)
+myobj.func4(42)
+myobj.func4(some myobj, 42)
+Where the actual values of func1...func4 can either be lambdas from script or C-level function objects below that
+...and assignments:
+MyObj.func1 = (int32 a) => { ... }
+MyObj.func1 = some function object -  may be defined somewhere in script or be an object encapsulating C function
+MyObj.func2 = (int32 a) => { ... }
+MyObj.func2 = (MyObj obj, int32 a) => { ... }
+MyObj.func2 = some function object -  may be defined somewhere in script or be an object encapsulating C function
+etc.
+Maybe it would become a bit (but only a bit) clearer if we would spearate type and class:
+MyObj is special language construct that does not correspond to any az instance
+MyObj.class is an instance of class
+But this truly solves only MyObj.toString / MyObj.func1 differentiation
+In theory we can also add AZ_FIELD_IS_MEMBER_FUNCTION flag to az function properties. It would be unenforceable at C level,
+but could make a difference on oo layer on top of that

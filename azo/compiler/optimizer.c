@@ -384,8 +384,7 @@ optimize_property(AZOOptimizer *opt, AZONode *expr, const AZClass *klass, const 
 			return 0;
 		}
 	}
-	// fixme: For now we support dot as an attribute but it should be removed
-	return optimize_attribute(opt, expr, klass, impl, inst, str, flags);
+	return 0;
 }
 
 static int
@@ -428,6 +427,9 @@ optimize_keyword(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigne
 {
 	if (node->term.subtype == AZO_KEYWORD_THIS) {
 		/* 'this' has to be resolved */
+		assert(0);
+	} else if (node->term.subtype == AZO_KEYWORD_NEW) {
+		/* 'new' has to be resolved to static call */
 		assert(0);
 	}
 	return 0;
@@ -476,7 +478,7 @@ optimize_function(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsign
 	AZONode *body = args->next;
 	// fixme: Think out the frame/context management
 	AZOOptimizerCtx new_ctx = *ctx;
-	new_ctx.frame = opt->comp->frames[node->frame];
+	new_ctx.frame = node->frame;
 	result = optimize_node(opt, &new_ctx, body, flags);
 	if (result) return result;
 	return 0;
@@ -485,20 +487,34 @@ optimize_function(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsign
 static int
 optimize_function_call(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	AZONode *ref = node->children;
-	assert (ref != NULL);
-	AZONode *args = ref->next;
-	assert(args != NULL);
-	int result = optimize_node(opt, ctx, ref, flags);
-	if (result) return result;
-	result = optimize_node(opt, ctx, args, flags);
-	if (result) return result;
+	if (node->term.subtype == AZO_TERM_FUNCTION_CALL_PLAIN) {
+		AZONode *ref = node->children;
+		assert (ref != NULL);
+		AZONode *args = ref->next;
+		assert(args != NULL);
+		int result = optimize_node(opt, ctx, ref, flags);
+		if (result) return result;
+		result = optimize_node(opt, ctx, args, flags);
+		if (result) return result;
+	} else {
+		AZONode *base = node->children;
+		assert (base != NULL);
+		AZONode *name = base->next;
+		AZONode *args = name->next;
+		assert(args != NULL);
+		int result = optimize_node(opt, ctx, base, flags);
+		if (result) return result;
+		result = optimize_node(opt, ctx, args, flags);
+		if (result) return result;
+	}
 
+#if 0
 	/* If reference is already constant we have nothing to do */
 	if (ref->term.type == AZO_TERM_CONSTANT) return 0;
 	/* If reference is variable we cannot optimize */
 	if (ref->term.type == AZO_TERM_VARIABLE) return 0;
 
+	// fixme: This messes up this handling
 	/* Test if arguments list is constant */
 	unsigned int n_args = 0;
 	unsigned int arg_types[32];
@@ -508,8 +524,6 @@ optimize_function_call(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, u
 		n_args += 1;
 		if (n_args >= 32) return 0;
 	}
-	// fixme: This messes up this handling
-	return 0;
 	/* All arguments are constants */
 	/* Find klass/impl/inst */
 	const AZClass *klass;
@@ -568,8 +582,7 @@ optimize_function_call(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, u
 	//	azo_node_free_tree (child);
 	//}
 #endif
-	return 0;
-
+#endif
 	return 0;
 }
 
@@ -596,22 +609,26 @@ optimize_list(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned i
 static int
 optimize_reference(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	/* REFERENCE_VARIBLE has to be resolved to CONSTANT, VARIABLE, REFERENCE_PROPERTY or REFERENCE_ATTRIBUTE */
+	/* REFERENCE_VARIBLE has to be resolved to CONSTANT, VARIABLE, REFERENCE_PROPERTY, REFERENCE_ATTRIBUTE or REFERENCE_PROPERTY_OR_ATTRIBUTE*/
 	/* REFERENCE_MEMBER is never seen alone */
-	assert((node->term.subtype == AZO_TERM_REFERENCE_PROPERTY) || (node->term.subtype == AZO_TERM_REFERENCE_ATTRIBUTE));
+	assert((node->term.subtype == AZO_TERM_REFERENCE_PROPERTY) || (node->term.subtype == AZO_TERM_REFERENCE_ATTRIBUTE) || (node->term.subtype == AZO_TERM_REFERENCE_PROPERTY_OR_ATTRIBUTE));
 	AZONode *parent = node->children;
 	AZONode *member = parent->next;
 	assert(AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER));
 	int result = optimize_node(opt, ctx, parent, flags);
 	if (result) return result;
-	if (parent->term.type == AZO_TERM_CONSTANT) {
-		void *inst;
-		const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
-		if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
-			return optimize_property (opt, node, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
-		} else if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_ATTRIBUTE)) {
-			return optimize_attribute(opt, node, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
-		}
+	if (parent->term.type != AZO_TERM_CONSTANT) return 0;
+	void *inst;
+	const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
+	if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
+		return optimize_property (opt, node, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
+	} else if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_ATTRIBUTE)) {
+		return optimize_attribute(opt, node, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
+	} else if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY_OR_ATTRIBUTE)) {
+		result = optimize_property (opt, node, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
+		if (!result) return 0;
+		if (node->term.type == AZO_TERM_CONSTANT) return 0;
+		return optimize_attribute(opt, node, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string, flags);
 	}
 	return 0;
 }

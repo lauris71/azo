@@ -1289,18 +1289,6 @@ term_is_lvalue (AZOTerm *term)
 	return (term->type == AZO_TERM_REFERENCE) || (term->type == AZO_TERM_ARRAY_ELEMENT);
 }
 
-/* Free a chain of nodes linked by the next pointer (each node's own subtree included) */
-
-static void
-free_node_chain (AZONode *node)
-{
-	while (node) {
-		AZONode *next = node->next;
-		azo_node_free_tree (node);
-		node = next;
-	}
-}
-
 /*
  * Assignment:
  *   LValue = Expression
@@ -1326,12 +1314,12 @@ parse_assignment_statement (AZOParser *parser, AZOToken *token)
 	while (1) {
 		unsigned int result;
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
-			free_node_chain (left);
+			azo_node_free_chain (left);
 			return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 		}
 		result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
 		if (result) {
-			free_node_chain (left);
+			azo_node_free_chain (left);
 			return result;
 		}
 		right = parser_detach_last (parser);
@@ -1340,24 +1328,24 @@ parse_assignment_statement (AZOParser *parser, AZOToken *token)
 		if ((subtype != AZO_TERM_ASSIGN_PLAIN) || !AZO_TOKEN_IS_OPERATOR (token) || (AZO_TOKEN_OPERATOR_CODE (token) != AZO_OPERATOR_ASSIGN)) break;
 		/* In a chain the RHS becomes the next target, so it has to be an LValue */
 		if (!term_is_lvalue (&right->term)) {
-			free_node_chain (left);
+			azo_node_free_chain (left);
 			return AZO_PARSER_ERROR_SYNTAX;
 		}
 		last = right;
 	}
-	if (AZO_NODE_IS(last, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY) || AZO_NODE_IS(last, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
+	if (AZO_NODE_IS(last, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY) || AZO_NODE_IS(last, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_ATTRIBUTE)) {
 		/* The last LValue in chain is a property/member reference */
 		if (AZO_NODE_IS(right, AZO_TERM_FUNCTION, AZO_TERM_LAMBDA) && !(right->term.flags & AZO_TERM_FLAG_STATIC)) {
 			/* If non-static function is assigned to property/attribute create internal this context for the function */
 			AZONode *body = right->children->next->next;
 			assert (body->term.type == AZO_TERM_BLOCK);
 			/* Add context node to lambda body block */
-			AZONode *this_node = azo_node_duplicate_tee(last->children);
+			AZONode *this_node = azo_node_duplicate_tree(last->children);
 			AZONode *ctx_node = azo_node_new(AZO_TERM_CONTEXT, AZO_TERM_GENERIC, last->term.start, last->term.end);
 			ctx_node->children = this_node;
 			this_node->next = body->children;
 			body->children = ctx_node;
-			azo_node_print_info(last, stdout, parser->src, 0);
+			// azo_node_print_info(last, stdout, parser->src, 0);
 		}
 	}
 	/* Children are target(s) followed by the value (the chain is built manually because of its variable size) */
@@ -1614,7 +1602,7 @@ parse_function_call (AZOParser *parser, AZOToken *token)
 	}
 	AZONode *right = parser_detach_last (parser);
 	AZONode *left = parser_detach_last (parser);
-	AZONode *expr = azo_node_new_with_children (AZO_TERM_FUNCTION_CALL, AZO_TERM_GENERIC, left->term.start, right->term.end, 2, left, right);
+	AZONode *expr = azo_node_new_with_children (AZO_TERM_FUNCTION_CALL, AZO_TERM_FUNCTION_CALL_PLAIN, left->term.start, right->term.end, 2, left, right);
 	parser_append (parser, expr);
 	return AZO_ERROR_NONE;
 }
@@ -1814,13 +1802,11 @@ parse_array_element (AZOParser *parser, AZOToken *token)
 static unsigned int
 parse_array_literal (AZOParser *parser, AZOToken *token)
 {
-	AZONode *expr;
-	unsigned int start, error;
-	start = token->start;
+	unsigned int start = token->start;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	expr = azo_node_new (AZO_TERM_LITERAL_ARRAY, AZO_TERM_GENERIC, token->start, token->end);
+	AZONode *expr = azo_node_new (AZO_TERM_LITERAL_ARRAY, AZO_TERM_GENERIC, token->start, token->end);
 	parser_push (parser, expr);
-	error = parse_expression_list (parser, token, AZO_TOKEN_RIGHT_BRACE);
+	unsigned int error = parse_expression_list (parser, token, AZO_TOKEN_RIGHT_BRACE);
 	if (error) {
 		parser_pop (parser);
 		parser_detach_last (parser);
@@ -1849,21 +1835,66 @@ parse_array_literal (AZOParser *parser, AZOToken *token)
 static unsigned int
 parse_new (AZOParser *parser, AZOToken *token)
 {
-	AZONode *expr, *type, *args;
-	unsigned int start, error;
-	start = token->start;
+	unsigned int start = token->start;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	/* The class expression (member references bind tighter, calls are not consumed) */
-	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_FUNCTION);
+	unsigned int error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_FUNCTION);
 	if (error) return error;
 	if (!node_is_name_path (parser_peek_last (parser))) return AZO_PARSER_ERROR_INVALID_TYPE_EXPRESSION;
 	/* The constructor arguments */
 	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
 	error = parse_list (parser, token);
 	if (error) return error;
-	args = parser_detach_last (parser);
-	type = parser_detach_last (parser);
-	expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_NEW, start, args->term.end, 2, type, args);
+	AZONode *args = parser_detach_last (parser);
+	AZONode *type = parser_detach_last (parser);
+	AZONode *expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_NEW, start, args->term.end, 2, type, args);
+	parser_append (parser, expr);
+	return AZO_ERROR_NONE;
+}
+
+/*
+ * for (Multi_statement ; [Expression] ; Silent_multi_statement) Sentence
+ *
+ * Current token is at keyword
+ */
+
+static unsigned int
+parse_for (AZOParser *parser, AZOToken *token)
+{
+	unsigned int start = token->start;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* ( */
+	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* Initialization */
+	unsigned int error = parse_multi_statement (parser, token, AZO_TOKEN_SEMICOLON, 0);
+	if (error) return error;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* Condition (the ';' was validated by parse_multi_statement) */
+	if (token->type != AZO_TOKEN_SEMICOLON) {
+		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
+		if (error) return error;
+	} else {
+		/* Empty condition */
+		AZONode *empty = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->start);
+		parser_append (parser, empty);
+	}
+	/* ; */
+	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	if (token->type != AZO_TOKEN_SEMICOLON) return AZO_PARSER_ERROR_SYNTAX;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* Step */
+	error = parse_multi_statement (parser, token, AZO_TOKEN_RIGHT_PARENTHESIS, 1);
+	if (error) return error;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* Statement/Block (the ')' was validated by parse_multi_statement) */
+	error = parse_sentence (parser, token);
+	if (error) return error;
+	AZONode *block = parser_detach_last (parser);
+	AZONode *step = parser_detach_last (parser);
+	AZONode *cond = parser_detach_last (parser);
+	AZONode *init = parser_detach_last (parser);
+	AZONode *expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_FOR, start, block->term.end, 4, init, cond, step, block);
 	parser_append (parser, expr);
 	return AZO_ERROR_NONE;
 }
@@ -1904,50 +1935,50 @@ parse_while (AZOParser *parser, AZOToken *token)
 }
 
 /*
- * for (Multi_statement ; [Expression] ; Silent_multi_statement) Sentence
+ * do Sentence while (Expression) ;
  *
- * Current token is at keyword
+ * Condition is checked after the statement, so unlike while this cannot
+ * be translated into a for node
+ *
+ * Current token is at keyword do
  */
 
 static unsigned int
-parse_for (AZOParser *parser, AZOToken *token)
+parse_do (AZOParser *parser, AZOToken *token)
 {
-	AZONode *expr, *left, *middle, *right, *block;
-	unsigned int start, error;
+	unsigned int start = token->start;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* Statement/Block */
+	unsigned int error = parse_sentence (parser, token);
+	if (error) return error;
+	AZONode *block = parser_detach_last (parser);
+	/* while */
+	if (!azo_token_is_keyword (token, AZO_KEYWORD_WHILE, parser->src)) return AZO_PARSER_ERROR_SYNTAX;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	/* ( */
-	start = token->start;
-	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
-	/* Initialization */
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	error = parse_multi_statement (parser, token, AZO_TOKEN_SEMICOLON, 0);
+	/* Expression */
+	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
 	if (error) return error;
-	/* Condition (the ';' was validated by parse_multi_statement) */
-	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	if (token->type != AZO_TOKEN_SEMICOLON) {
-		error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
-		if (error) return error;
-	} else {
-		/* Empty condition */
-		AZONode *empty = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->start);
-		parser_append (parser, empty);
-	}
-	/* ; */
+	AZONode *cond = parser_detach_last (parser);
+	/* ) */
 	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	if (token->type != AZO_TOKEN_SEMICOLON) return AZO_PARSER_ERROR_SYNTAX;
-	/* Step */
+	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) return AZO_PARSER_ERROR_CLOSING_PARENTHESIS_MISSING;
+	unsigned int end = token->end;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	error = parse_multi_statement (parser, token, AZO_TOKEN_RIGHT_PARENTHESIS, 1);
-	if (error) return error;
-	/* Statement/Block (the ')' was validated by parse_multi_statement) */
-	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	error = parse_sentence (parser, token);
-	if (error) return error;
-	block = parser_detach_last (parser);
-	right = parser_detach_last (parser);
-	middle = parser_detach_last (parser);
-	left = parser_detach_last (parser);
-	expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_FOR, start, block->term.end, 4, left, middle, right, block);
+	/* ; */
+	if (token->type != AZO_TOKEN_SEMICOLON) {
+		/* Repair missing semicolon if the next token clearly starts a new sentence */
+		/* An identifier also qualifies - nothing can follow the closing parenthesis of do...while */
+		if ((token->type != AZO_TOKEN_WORD) && !token_is_sentence_boundary (parser, token)) return AZO_PARSER_ERROR_SEMICOLON_MISSING;
+		parser_report_error (parser, token, AZO_PARSER_ERROR_SEMICOLON_MISSING);
+	} else {
+		end = token->end;
+		azo_tokenizer_get_next_token (&parser->tokenizer, token);
+	}
+	/* Unlike 'for' the condition is evaluated after the block */
+	AZONode *expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_DO, start, end, 2, block, cond);
 	parser_append (parser, expr);
 	return AZO_ERROR_NONE;
 }
@@ -1961,88 +1992,35 @@ parse_for (AZOParser *parser, AZOToken *token)
 static unsigned int
 parse_if (AZOParser *parser, AZOToken *token)
 {
-	AZONode *expr, *cond, *if_true, *if_false;
-	unsigned int start, end, error;
+	unsigned int start = token->start;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	/* ( */
-	start = token->start;
-	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
-	/* Expression */
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
+	/* Expression */
+	unsigned int error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
 	if (error) return error;
-	cond = parser_detach_last (parser);
+	AZONode *cond = parser_detach_last (parser);
 	/* ) */
 	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) return AZO_PARSER_ERROR_CLOSING_PARENTHESIS_MISSING;
-	/* Statement/Block */
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* Statement/Block */
 	error = parse_sentence (parser, token);
 	if (error) return error;
-	if_true = parser_detach_last (parser);
-	end = if_true->term.end;
+	AZONode *if_true = parser_detach_last (parser);
+	unsigned int end = if_true->term.end;
 	/* Potential else */
-	if_false = NULL;
+	AZONode *if_false = NULL;
 	if (azo_token_is_keyword (token, AZO_KEYWORD_ELSE, parser->src)) {
-		/* Statement/Block */
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		/* Statement/Block */
 		error = parse_sentence (parser, token);
 		if (error) return error;
 		if_false = parser_detach_last (parser);
 		end = if_false->term.end;
 	}
-	expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_IF, start, end, 3, cond, if_true, if_false);
-	parser_append (parser, expr);
-	return AZO_ERROR_NONE;
-}
-
-/*
- * do STATEMENT while (EXPRESSION) ;
- *
- * Condition is checked after the statement, so unlike while this cannot
- * be translated into a for node
- *
- * Current token is at keyword do
- */
-
-static unsigned int
-parse_do (AZOParser *parser, AZOToken *token)
-{
-	AZONode *expr, *block, *cond;
-	unsigned int start, end, error;
-	start = token->start;
-	/* Statement/Block */
-	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	error = parse_sentence (parser, token);
-	if (error) return error;
-	block = parser_detach_last (parser);
-	/* while */
-	if (!azo_token_is_keyword (token, AZO_KEYWORD_WHILE, parser->src)) return AZO_PARSER_ERROR_SYNTAX;
-	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	/* ( */
-	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
-	/* Expression */
-	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	error = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
-	if (error) return error;
-	cond = parser_detach_last (parser);
-	/* ) */
-	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) return AZO_PARSER_ERROR_CLOSING_PARENTHESIS_MISSING;
-	end = token->end;
-	/* ; */
-	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	if (token->type != AZO_TOKEN_SEMICOLON) {
-		/* Repair missing semicolon if the next token clearly starts a new sentence */
-		/* An identifier also qualifies - nothing can follow the closing parenthesis of do...while */
-		if ((token->type != AZO_TOKEN_WORD) && !token_is_sentence_boundary (parser, token)) return AZO_PARSER_ERROR_SEMICOLON_MISSING;
-		parser_report_error (parser, token, AZO_PARSER_ERROR_SEMICOLON_MISSING);
-	} else {
-		end = token->end;
-		azo_tokenizer_get_next_token (&parser->tokenizer, token);
-	}
-	/* Unlike for the condition is evaluated after the block */
-	expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_DO, start, end, 2, block, cond);
+	AZONode *expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_IF, start, end, 3, cond, if_true, if_false);
 	parser_append (parser, expr);
 	return AZO_ERROR_NONE;
 }

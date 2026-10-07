@@ -207,7 +207,9 @@ enum {
 /* Unspecified subtype */
 #define AZO_TERM_GENERIC 0
 
-/* Reference subtypes */
+/**
+ * @brief Reference subtypes
+ */
 enum {
 	/**
 	 * @brief Single variable name
@@ -234,7 +236,46 @@ enum {
 	 *   REFERENCE/ARRAY_ELEMENT/FUNCTION_CALL
 	 *   REFERENCE_MEMBER (attribute name)
 	 */
-	AZO_TERM_REFERENCE_ATTRIBUTE
+	AZO_TERM_REFERENCE_ATTRIBUTE,
+	/**
+	 * @brief Property or attribute reference
+	 * 
+	 * Created by resolver from barewords in object context where syntax cannot distinguish properties and attributes
+	 * 
+	 * REFERENCE_PROPERTY_OR_ATTRIBUTE
+	 *   REFERENCE/ARRAY_ELEMENT/FUNCTION_CALL
+	 *   REFERENCE_MEMBER (property or attribute name)
+	 */
+	AZO_TERM_REFERENCE_PROPERTY_OR_ATTRIBUTE
+};
+
+/**
+ * @brief Function call subtypes
+ * 
+ * Resolves rearranges function call based on the expression type
+ * 
+ */
+enum {
+	/**
+	 * @brief The expression is evaluated and then used as a function reference
+	 * 
+	 */
+	AZO_TERM_FUNCTION_CALL_PLAIN,
+	/**
+	 * @brief Property lookup based first on arguments, then instance, arguments
+	 * 
+	 */
+	AZO_TERM_FUNCTION_CALL_PROPERTY,
+	/**
+	 * @brief Attribute lookup based first on arguments, then instance, arguments
+	 * 
+	 */
+	AZO_TERM_FUNCTION_CALL_ATTRIBUTE,
+	/**
+	 * @brief First property lookup, then attribute lookup
+	 * 
+	 */
+	AZO_TERM_FUNCTION_CALL_PROPERTY_OR_ATTRIBUTE
 };
 
 /* Variable subtypes */
@@ -375,7 +416,7 @@ struct _AZONode {
 	/* Need to align 16 bytes anyways */
 	union {
 		/* Function frame */
-		unsigned int frame;
+		AZOFrame *frame;
 		/**
 		 * @brief Variable position
 		 * 
@@ -413,8 +454,10 @@ AZONode *azo_node_new_with_children(unsigned int type, unsigned int subtype, uns
 
 void azo_node_free (AZONode *expr);
 void azo_node_free_tree (AZONode *expr);
+/* Free a chain of nodes linked by the next pointer (each node's own subtree included) */
+void azo_node_free_chain (AZONode *expr);
 void azo_node_clear_children (AZONode *expr);
-AZONode *azo_node_duplicate_tee(AZONode *node);
+AZONode *azo_node_duplicate_tree(AZONode *node);
 
 /**
  * @brief Flatten a node tree into an array

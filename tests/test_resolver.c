@@ -149,13 +149,44 @@ test_resolver(void)
         azo_compiler_release(&comp);
         free_parse(&parser, src, tree);
     }
+    /* 'new' is resolved to function call of the class */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("return new int32(1,2,3);", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        //azo_node_print_info(tree, stdout, src, 0);
+
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        azo_frame_declare_this(rctx.frame, AZ_TYPE_INT32);
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(!result);
+        //azo_node_print_info(tree, stdout, src, 0);
+        AZONode *nodes[16];
+        unsigned int n = azo_node_flatten(tree, nodes, 16);
+        TEST_ASSERT_EQUAL_UINT(9, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL_PROPERTY, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_MEMBER, nodes[4]->term.subtype);
+        TEST_ASSERT(nodes[4]->value.v.block = AZ_CLASS_FROM_TYPE(AZ_TYPE_INT32));
+
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
     /* Lambda assigned to property creates context */
     {
         AZOParser parser;
         AZOSource *src;
         AZONode *tree = parse_text("a.myprop = () => { return this; };", &parser, &src);
         TEST_ASSERT_NOT_NULL(tree);
-        azo_node_print_info(tree, stdout, src, 0);
+        //azo_node_print_info(tree, stdout, src, 0);
 
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
@@ -168,7 +199,7 @@ test_resolver(void)
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);
-        azo_node_print_info(tree, stdout, src, 0);
+        //azo_node_print_info(tree, stdout, src, 0);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         /* PROGRAM -> CONTEXT -> TYPE, ASSIGN ->

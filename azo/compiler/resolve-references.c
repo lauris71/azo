@@ -256,7 +256,7 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		}
 		AZONode *prop_node = azo_node_new(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER, expr->term.start, expr->term.end);
 		az_packed_value_set_string(&prop_node->value, expr->value.v.string);
-		expr->term.subtype = AZO_TERM_REFERENCE_PROPERTY;
+		expr->term.subtype = AZO_TERM_REFERENCE_PROPERTY_OR_ATTRIBUTE;
 		expr->children = this_node;
 		this_node->next = prop_node;
 		return 0;

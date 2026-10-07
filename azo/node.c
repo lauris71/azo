@@ -68,6 +68,16 @@ azo_node_free_tree (AZONode *expr)
 }
 
 void
+azo_node_free_chain (AZONode *node)
+{
+	while (node) {
+		AZONode *next = node->next;
+		azo_node_free_tree (node);
+		node = next;
+	}
+}
+
+void
 azo_node_clear_children (AZONode *expr)
 {
 	while (expr->children) {
@@ -78,13 +88,13 @@ azo_node_clear_children (AZONode *expr)
 }
 
 AZONode *
-azo_node_duplicate_tee(AZONode *node)
+azo_node_duplicate_tree(AZONode *node)
 {
 	AZONode *new_node = azo_node_new (node->term.type, node->term.subtype, node->term.start, node->term.end);
 	az_packed_value_transfer (&new_node->value, &node->value);
 	AZONode *prev = NULL;
 	for (AZONode *child = node->children; child; child = child->next) {
-		AZONode *child_copy = azo_node_duplicate_tee(child);
+		AZONode *child_copy = azo_node_duplicate_tree(child);
 		if (!prev) {
 			new_node->children = child_copy;
 		} else {
