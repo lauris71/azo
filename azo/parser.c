@@ -28,6 +28,10 @@ static unsigned int parse_block (AZOParser *parser, AZOToken *token, AZONode *co
 static unsigned int parse_line (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
 static unsigned int parse_statement (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
 static unsigned int parse_step_statement (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
+#ifdef HAS_DEBUG_KEYWORD
+static int parse_debug(AZOParser *parser, AZOToken *token);
+#endif
+
 static unsigned int azo_parser_parse_return (AZOParser *parser, AZOToken *token);
 static unsigned int azo_parser_parse_declaration (AZOParser *parser, AZOToken *token, int quals);
 static unsigned int azo_parser_parse_single_declaration (AZOParser *parser, AZOToken *token);
@@ -677,10 +681,7 @@ parse_statement (AZOParser *parser, AZOToken *token, int quals, AZONode *expr)
 #ifdef HAS_DEBUG_KEYWORD
 	else if (azo_token_is_keyword (token, AZO_KEYWORD_DEBUG, parser->src)) {
 		if ((quals > 0) || expr) return AZO_PARSER_ERROR_SYNTAX;
-		AZONode *expr = azo_node_new (AZO_TERM_KEYWORD, AZO_KEYWORD_DEBUG, token->start, token->end);
-		parser_append (parser, expr);
-		azo_tokenizer_get_next_token (&parser->tokenizer, token);
-		return AZO_ERROR_NONE;
+		return parse_debug(parser, token);
 	}
 #endif
 	result = parse_step_statement(parser, token, quals, expr);
@@ -2024,6 +2025,37 @@ parse_if (AZOParser *parser, AZOToken *token)
 	parser_append (parser, expr);
 	return AZO_ERROR_NONE;
 }
+
+#ifdef HAS_DEBUG_KEYWORD
+
+static int
+parse_debug(AZOParser *parser, AZOToken *token)
+{
+	AZString *text = NULL;
+	unsigned int flags = 0;
+	unsigned int start = token->start;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	while((token->type != AZO_TOKEN_SEMICOLON) && (token->type != AZO_TOKEN_RIGHT_BRACE)) {
+		if (token->type == AZO_TOKEN_TEXT) {
+			text = az_string_new_length (parser->src->cdata + token->start + 1, token->end - token->start - 2);
+		} else if (token->type == AZO_TOKEN_WORD) {
+			if (azo_token_equals_str(token, (const uint8_t *) "resolver_tree", parser->src->cdata)) {
+				flags |= AZO_TERM_DEBUG_RESOLVER_TREE;
+			} else if (azo_token_equals_str(token, (const uint8_t *) "optimizer_tree", parser->src->cdata)) {
+				flags |= AZO_TERM_DEBUG_OPTIMIZER_TREE;
+			} else if (azo_token_equals_str(token, (const uint8_t *) "interpreter_stack", parser->src->cdata)) {
+				flags |= AZO_TERM_DEBUG_INTERPRETER_STACK;
+			}
+		}
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	}
+	AZONode *debug = azo_node_new(AZO_TERM_KEYWORD, AZO_KEYWORD_DEBUG, start, token->end);
+	debug->term.flags = flags;
+	if (text) az_packed_value_set_string(&debug->value, text);
+	parser_append (parser, debug);
+	return AZO_ERROR_NONE;
+}
+#endif
 
 /*
  * Consume token and go forward if it is given keyword

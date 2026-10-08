@@ -121,7 +121,7 @@ AZOBCInfo bc_info[] = {
 	{AZO_TC_GET_STATIC_PROPERTY, "GET STATIC PROPERTY", ARG_NONE},
 	{AZO_TC_GET_STATIC_FUNCTION, "GET STATIC FUNCTION", ARG_U8},
 	{AZO_TC_GET_ATTRIBUTE, "GET ATTRIBUTE", ARG_NONE},
-	{AZO_TC_SET_ATTRIBUTE, "SEt ATTRIBUTE", ARG_NONE}
+	{AZO_TC_SET_ATTRIBUTE, "SET ATTRIBUTE", ARG_NONE}
 };
 
 static AZOBCInfo
@@ -378,7 +378,7 @@ print_WRITE_ARRAY_ELEMENT (const unsigned char *ip)
 }
 
 void
-print_bytecode (AZOProgram *prog)
+azo_print_bytecode (AZOProgram *prog)
 {
 	const unsigned char *code = prog->tcode;
 	unsigned int length = prog->tcode_length;

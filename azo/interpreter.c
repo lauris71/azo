@@ -68,9 +68,10 @@ interpreter_delete (AZOInterpreter *intr)
 void
 azo_interpreter_init(AZOInterpreter *intr)
 {
-	intr->n_frames = 0;
-	intr->frames[0] = 0;
-	if (intr->stack.length) azo_stack_pop(&intr->stack, intr->stack.length);
+	// fixme: Think how to manage interpreter through native calls
+	//intr->n_frames = 0;
+	//intr->frames[0] = 0;
+	//if (intr->stack.length) azo_stack_pop(&intr->stack, intr->stack.length);
 	intr->flags = AZO_INTR_FLAG_CHECK_ARGS;
 	intr->exc.type = AZO_EXCEPTION_NONE;
 	az_packed_value_clear(&intr->vals[0].packed_val);
@@ -1380,6 +1381,10 @@ interpret_INVOKE (AZOInterpreter *intr, const unsigned char *ip)
 	az_function_invoke (func_impl, func_inst, azo_stack_impls_bw (&intr->stack, sig->n_args - 1), (const AZValue **) azo_stack_values_bw (&intr->stack, sig->n_args - 1), &intr->vals[0].impl, &intr->vals[0].v, NULL);
 	azo_stack_push_value_transfer (&intr->stack, intr->vals[0].impl, &intr->vals[0].v);
 	intr->vals[0].impl = NULL;
+	if(intr->exc.type) {
+		intr->exc.ipc = ip;
+		return NULL;
+	}
 	return ip + 2;
 }
 
@@ -1565,6 +1570,10 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 	}
 	/* Try simple property */
 	if (az_instance_get_property_by_key (impl, inst, key->str, &intr->vals[0].impl, &intr->vals[0].v)) {
+		if ((uintptr_t) intr->vals[0].impl == 0x400) {
+			fprintf(stderr, "Property: %s\n", key->str);
+			fprintf(stderr, ".");
+		}
 		/* Ordinary property */
 		azo_stack_pop (&intr->stack, 2);
 		azo_stack_push_value_transfer (&intr->stack, intr->vals[0].packed_val.impl, &intr->vals[0].packed_val.v);
@@ -1809,20 +1818,21 @@ interpret_GET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 static const unsigned char *
 interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const uint8_t *ip)
 {
-	void *attrd_inst;
-	const AZAttribDictImplementation *attrd_impl;
 	CHECK_TYPE_EXACT(1, AZ_TYPE_STRING);
 	if (ip[0] & AZO_TC_CHECK_ARGS) {
 		if (!test_stack_underflow (intr, ip, 3)) return NULL;
 		if (!test_stack_type_implements (intr, ip, 2, AZ_TYPE_ATTRIBUTE_DICT)) return NULL;
 	}
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
-	attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 2), azo_stack_instance_bw (&intr->stack, 2), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
+	void *attrd_inst;
+	const AZAttribDictImplementation *attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 2), azo_stack_instance_bw (&intr->stack, 2), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
 	if (!attrd_impl) {
 		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
 		return NULL;
 	}
-	if (!az_attrib_dict_set (attrd_impl, attrd_inst, key, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), 0)) {
+	const AZImplementation *val_impl = azo_stack_impl_bw (&intr->stack, 0);
+	void *val_inst = azo_stack_instance_bw (&intr->stack, 0);
+	if (!az_attrib_dict_set (attrd_impl, attrd_inst, key, val_impl, val_inst, 0)) {
 		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_VALUE, 1UL << AZO_EXCEPTION_INVALID_VALUE, ip);
 		return NULL;
 	}
@@ -2073,9 +2083,13 @@ azo_interpreter_run(AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 {
 	const uint8_t *ipc = ictx->tcode;
 	const uint8_t *end = ictx->tcode + ictx->tcode_len;
+	assert(!intr->exc.type);
 
 	while (ipc && (ipc < end)) {
+		unsigned int ip = ipc - ictx->tcode;
+		assert((ictx->tcode <= ipc) && (ipc < end));
 		ipc = azo_interpreter_interpret_tc(intr, ictx, ipc);
+		// if (!ipc || (ipc >= end)) fprintf(stderr, "ip = %u\n", ip);
 	}
 
 	if (intr->exc.type != AZO_EXCEPTION_NONE) {

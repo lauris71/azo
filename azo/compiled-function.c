@@ -114,6 +114,14 @@ compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, cons
 	/* We have to keep reference during invocation */
 	az_object_ref ((AZObject *) cfunc);
 
+	//fprintf(stderr, "Captured data\n");
+	//azo_datablock_print(&cfunc->static_data, stderr);
+	// fixme:
+	// Exception handling!!!
+	// We probably have to install handler method to interpreter
+	// And new function invocation check the presence/absence of this
+	cfunc->ctx->intr->exc.type = AZO_EXCEPTION_NONE;
+
 	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, &cfunc->static_data, cfunc->signature->n_args, arg_impls, arg_vals, ret_impl, &ret_val->value, 64);
 
 	az_object_unref ((AZObject *) cfunc);

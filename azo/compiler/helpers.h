@@ -33,9 +33,9 @@ azo_code_compile_expression_and_type_check(AZOCompiler *comp, AZOCompilerContext
 
 #ifdef AZO_TC_HAS_DEBUG
 static inline void
-azo_compiler_write_DEBUG_STACK (AZOCompiler *comp, AZOCompilerContext *ctx, AZONode *node)
+azo_compiler_write_DEBUG_STACK (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node)
 {
-	azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_DEBUG_STACK, 0, NULL);
+	azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_DEBUG_STACK, 0, node);
 }
 
 static inline void

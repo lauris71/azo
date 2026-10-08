@@ -87,6 +87,8 @@ struct _AZOToken {
 	unsigned int type;
 };
 
+unsigned int azo_token_equals_str(const AZOToken *token, const uint8_t *text, const uint8_t *cdata);
+
 void azo_tokenizer_setup (AZOTokenizer *tokenizer, const uint8_t *cdata, unsigned int csize);
 void azo_tokenizer_release (AZOTokenizer *tokenizer);
 

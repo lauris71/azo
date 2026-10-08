@@ -128,3 +128,19 @@ azo_datablock_set_weak(AZODataBlock *block, unsigned int idx, const AZImplementa
     arikkei_return_if_fail(az_type_is_a(AZ_IMPL_TYPE(impl), AZ_TYPE_ACTIVE_OBJECT));
     azo_datablock_set_from_val(block, idx, impl, (AZValue *) &object, 1);
 }
+
+void
+azo_datablock_print(AZODataBlock *block, FILE *ofs)
+{
+    for (unsigned int i = 0; i < block->size_total; i++) {
+        AZODataBlockEntry *entry = &block->entries[i];
+        fprintf(ofs, "Entry %u (%s %u): ", i, (i < block->size_const) ? "const" : "mutable", entry->flags);
+        if (entry->impl) {
+            uint8_t c[256];
+            az_instance_to_string(entry->impl, az_value_get_inst(entry->impl, &entry->val), c, sizeof(c));
+            fprintf(ofs, "%s\n", c);
+        } else {
+            fprintf(ofs, "null\n");
+        }
+    }
+}

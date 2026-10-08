@@ -61,6 +61,10 @@ static int
 azo_compiler_resolve_frame(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
 	int result = resolve_sentences(comp, rctx, node->children);
+	if (rctx->print_tree) {
+		azo_node_print_info(node, stdout, comp->src, 0);
+	}
+	rctx->print_tree = 0;
 	if (result) return result;
 
 	if (rctx->frame->ret_type && !rctx->frame->ret_is_last) {
@@ -114,13 +118,14 @@ resolve_new (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 
 	unsigned int result = azo_compiler_resolve_type_expression(comp, rctx, type);
 	if (result) return result;
-	result = azo_compiler_resolve_node (comp, rctx, args);
-	if (result) return result;
+	//result = azo_compiler_resolve_node (comp, rctx, args);
+	//if (result) return result;
 
 	/* Replace with: FUNCTION_CALL->(REF_MEMBER(TYPE,new), ARGS) */
 	type->term.type = AZO_TERM_CONSTANT;
-	type->term.subtype = AZ_TYPE_CLASS;
+	//type->term.subtype = AZ_TYPE_CLASS;
 	az_packed_value_set(&type->value, AZ_IMPL_FROM_TYPE(AZ_TYPE_CLASS), AZ_CLASS_FROM_TYPE(type->term.subtype));
+	type->term.subtype = AZ_TYPE_CLASS;
 	AZONode *str = azo_node_new(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER, node->term.start, node->term.end);
 	az_packed_value_set_string(&str->value, azo_keyword_str(AZO_KEYWORD_NEW));
 	AZONode *ref = azo_node_new_with_children(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY, node->term.start, type->term.end, 2, type, str);
@@ -499,6 +504,7 @@ resolve_this(AZOCompiler *comp, AZOResolveCtx *ctx, AZONode *node)
 			fprintf(stderr, "resolve_this: Unknown this variant\n");
 			return 1;
 	}
+	az_packed_value_set_string(&node->value, azo_keyword_str(AZO_KEYWORD_THIS));
 	return 0;
 }
 
@@ -523,6 +529,7 @@ resolve_context(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	if (this_node->term.type == AZO_TERM_EMPTY) {
 		lctx.this_variant = AZO_COMPILER_NO_THIS;
 	} else if (this_node->term.type == AZO_TERM_VARIABLE) {
+		/* If context this is any known variable type we can use it directly */
 		switch (this_node->term.subtype) {
 			case AZO_TERM_VARIABLE_LOCAL:
 				lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
@@ -541,16 +548,15 @@ resolve_context(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 				return 1;
 		}
 	} else {
-		// fixme: Handle constants here
-		// fixme: Delay erasure until after optimization to determine type?
+		/* Context 'this' was not resolved, reserve a variable spot ('this' is not valid name anyways)*/
 		AZOVariable *var = azo_frame_declare_this(rctx->frame, AZ_TYPE_ANY);
-		this_node->term.type = AZO_TERM_VARIABLE;
-		this_node->term.subtype = AZO_TERM_VARIABLE_LOCAL;
-		this_node->var_pos = var->pos;
+		node->var_pos = var->pos;
 		lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
-		lctx.this_var_pos = this_node->var_pos;
+		lctx.this_var_pos = var->pos;
 	}
-	return resolve_chain(comp, &lctx, this_node->next);
+	result = resolve_chain(comp, &lctx, this_node->next);
+	if (lctx.print_tree) azo_node_print_info(node, stderr, comp->src, 0);
+	return result;
 }
 
 unsigned int
@@ -573,7 +579,14 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		case AZO_TERM_STATEMENT_GROUP:
 			return resolve_children(comp, rctx, node);
 		case AZO_TERM_KEYWORD:
-			if (node->term.subtype == AZO_KEYWORD_THIS) {
+			if (node->term.subtype == AZO_KEYWORD_DEBUG) {
+				if (node->term.flags & AZO_TERM_DEBUG_RESOLVER_TREE) {
+					rctx->print_tree = 1;
+				} else {
+					rctx->print_tree = 0;
+				}
+				return 0;
+			} else if (node->term.subtype == AZO_KEYWORD_THIS) {
 				return resolve_this(comp, rctx, node);
 			} else if (node->term.subtype == AZO_KEYWORD_FOR) {
 				return resolve_for(comp, rctx, node);
@@ -643,5 +656,6 @@ int
 azo_compiler_resolve_program(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
 	assert(AZO_NODE_IS(node, AZO_TERM_PROGRAM, AZO_TERM_GENERIC));
-	return azo_compiler_resolve_frame(comp, rctx, node);
+	int result = azo_compiler_resolve_frame(comp, rctx, node);
+	return result;
 }

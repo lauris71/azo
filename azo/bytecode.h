@@ -346,7 +346,7 @@ unsigned int azo_bc_next_instruction(const uint8_t *bc, unsigned int pos, unsign
 
 /* Debug */
 typedef struct _AZOProgram AZOProgram;
-void print_bytecode (AZOProgram *program);
+void azo_print_bytecode (AZOProgram *program);
 
 #ifdef __cplusplus
 }

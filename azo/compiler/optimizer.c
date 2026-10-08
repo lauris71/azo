@@ -38,11 +38,18 @@ typedef struct _AZOOptimizer AZOOptimizer;
 #define noVERBOSE
 
 #ifdef VERBOSE
-#define DBG_PRINTF(...) fprintf(stdout, __VA_ARGS__)
-#define DBG_REPLACE(...) describe(stdout, __VA_ARGS__)
+static void
+describe(const char *str, const AZString *s, const AZImplementation *impl, const AZValue *val)
+{
+	uint8_t b[256];
+	az_instance_to_string(impl, az_value_get_inst(impl, val), b, sizeof(b));
+	fprintf(stderr, str, s->str, b);
+}
+#define DBG_PRINTF(ofs, ...) fprintf(ofs, __VA_ARGS__)
+#define DBG_REPLACE(ofs, ...) describe(ofs, __VA_ARGS__)
 #else
-#define DBG_PRINTF(...)
-#define DBG_REPLACE(S, args...)
+#define DBG_PRINTF(ofs, ...)
+#define DBG_REPLACE(ofs, ...)
 #endif
 
 static int optimize_node(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags);
@@ -122,7 +129,6 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 	switch(node->term.type) {
 		case AZO_TERM_KEYWORD:
 			if (node->term.subtype == AZO_KEYWORD_FOR) {
-#if 1
 				AZONode *init = node->children;
 				AZONode *cond = init->next;
 				AZONode *step = cond->next;
@@ -146,9 +152,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				/* Remove again in case they were added */
 				vars = azo_var_list_remove_all(vars, trashed);
 				azo_var_list_free(trashed);
-#endif
 			} else if (node->term.subtype == AZO_KEYWORD_WHILE) {
-#if 1
 				AZONode *cond = node->children;
 				AZONode *body = cond->next;
 
@@ -166,9 +170,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				/* Remove again in case they were added */
 				vars = azo_var_list_remove_all(vars, trashed);
 				azo_var_list_free(trashed);
-#endif
 			} else if (node->term.subtype == AZO_KEYWORD_DO) {
-#if 1
 				AZONode *block = node->children;
 				AZONode *cond = block->next;
 				
@@ -185,9 +187,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				/* Remove again in case they were added */
 				vars = azo_var_list_remove_all(vars, trashed);
 				azo_var_list_free(trashed);
-#endif
 			} else if (node->term.subtype == AZO_KEYWORD_IF) {
-#if 1
 				AZONode *cond = node->children;
 				AZONode *if_true = cond->next;
 				AZONode *if_false = if_true->next;
@@ -211,7 +211,6 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				/* Remove trashed from the original */
 				vars = azo_var_list_remove_all(vars, trashed);
 				azo_var_list_free(trashed);
-#endif
 			} else {
 				for (AZONode *child = node->children; child; child = child->next) {
 					vars = optimize_const_assign(opt, child, vars);
@@ -227,12 +226,11 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			if (init && init->term.type == AZO_TERM_CONSTANT) {
 				vars = azo_var_list_set(vars, name->value.v.string, name->var_pos, init);
 			} else {
-				vars = azo_var_list_remove_by_pos(vars, name->var_pos);
+				vars = azo_var_list_remove(vars, name->value.v.string);
 			}
 			break;
 		}
 		case AZO_TERM_FUNCTION: {
-#if 1
 			/* Proceed args with existing list, duplicate list and proceed body */
 			/* Return type has to be already resolved to constant class */
 			AZONode *ret, *args, *body;
@@ -244,31 +242,26 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			dupl = optimize_const_assign(opt, body, dupl);
 			azo_var_list_free(dupl);
 			break;
-#endif
 		}
 		case AZO_TERM_SUFFIX:
-#if 1
 			/* Remove from list */
 			/* fixme: Could calculate value */
 			if (AZO_NODE_IS(node->children, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
-				vars = azo_var_list_remove_by_pos(vars, node->children->var_pos);
+				vars = azo_var_list_remove(vars, node->children->value.v.string);
 			} else {
 				vars = optimize_const_assign(opt, node->children, vars);
 			}
-#endif
 			break;
 		case AZO_TERM_PREFIX:
-#if 1
 			if ((node->term.subtype == AZO_TERM_PREFIX_INCREMENT) || (node->term.subtype == AZO_TERM_PREFIX_DECREMENT)) {
 				/* Remove from list */
 				/* fixme: Could calculate value */
 				if (AZO_NODE_IS(node->children, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
-					vars = azo_var_list_remove_by_pos(vars, node->children->var_pos);
+					vars = azo_var_list_remove(vars, node->children->value.v.string);
 				} else {
 					vars = optimize_const_assign(opt, node->children, vars);
 				}
 			}
-#endif
 			break;
 		case AZO_TERM_ASSIGN: {
 			/* Optimize variable list, except DO NOT replace LValue references */
@@ -299,9 +292,8 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 		case AZO_TERM_VARIABLE:
 			/* If const, replace */
 			if (AZO_NODE_IS(node, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
-				AZOVariableList *v = azo_var_list_find_by_pos(vars, node->var_pos);
+				AZOVariableList *v = azo_var_list_find(vars, node->value.v.string);
 				if (v) {
-					//if (!strcmp((const char *) node->value.v.string->str, "all")) break;
 					DBG_PRINTF(stderr, "optimize_const_assign: %s is constant\n", node->value.v.string->str);
 					node->term.type = AZO_TERM_CONSTANT;
 					node->term.subtype = AZ_IMPL_TYPE(v->var.const_node->value.impl);

@@ -640,19 +640,73 @@ const char *expr_names[] = {
 	"TYPE",
 };
 
+static unsigned int
+get_subtype_str(AZONode *node, uint8_t *d, unsigned int dlen)
+{
+	switch (node->term.type) {
+		case AZO_TERM_VARIABLE:
+			switch(node->term.subtype) {
+				case AZO_TERM_VARIABLE_LOCAL:
+					return arikkei_strncpy(d, dlen, (const uint8_t *) "LOCAL");
+				case AZO_TERM_VARIABLE_CAPTURE:
+					return arikkei_strncpy(d, dlen, (const uint8_t *) "CAPTURE");
+				case AZO_TERM_VARIABLE_SHARED:
+					return arikkei_strncpy(d, dlen, (const uint8_t *) "SHARED");
+				default:
+					break;
+			}
+		case AZO_TERM_CONSTANT:
+		case AZO_TERM_TYPE:
+			if (!node->term.subtype) {
+				return arikkei_strncpy(d, dlen, (const uint8_t *) "NONE");
+			} else {
+				AZClass *klass = AZ_CLASS_FROM_TYPE(node->term.subtype);
+				return arikkei_strncpy(d, dlen, klass->name);
+			}
+			break;
+		default:
+			return arikkei_itoa(d, dlen, node->term.subtype);
+	}
+	return arikkei_strncpy(d, dlen, (const uint8_t *) "INVALID");
+}
+
+static unsigned int
+get_value_str(AZONode *node, uint8_t *d, unsigned int dlen)
+{
+	if (!node->value.impl) {
+		return arikkei_strncpy(d, dlen, (const uint8_t *) "NONE");
+	}
+	void *inst;
+	const AZImplementation *impl = az_value_get_inst_autobox(node->value.impl, &node->value.v, &inst);
+	if (AZ_IMPL_TYPE(impl) == AZ_TYPE_STRING) {
+		return snprintf((char *) d, dlen, "\"%s\"", node->value.v.string->str);
+	}
+	AZClass *klass = AZ_CLASS_FROM_IMPL(impl);
+	unsigned int len = arikkei_strncpy(d, dlen, klass->name);
+	if (len < (dlen - 1)) {
+		d[len++] = ':';
+	}
+	if (len < dlen) {
+		len += az_instance_to_string(impl, inst, d + len, dlen - len);
+	}
+	if (len < dlen) d[len] = 0;
+	return len;
+}
+
 void
-azo_node_print_info(AZONode *expr, FILE *ofs, AZOSource *src, unsigned int indent)
+azo_node_print_info(AZONode *node, FILE *ofs, AZOSource *src, unsigned int indent)
 {
 	for (unsigned int i = 0; i < indent; i++) fprintf(ofs, " ");
-	uint8_t b[256];
-	arikkei_utf8_strncpy_len_shorten(b, 255, src->cdata + expr->term.start, expr->term.end - expr->term.start);
-	b[255] = 0;
-	for (unsigned int i = 0; b[i]; i++) if (b[i] == '\n') b[i] = ' ';
-	const char *name = (expr->term.type < AZO_NUM_TERM_TYPES) ? expr_names[expr->term.type] : "?";
-	fprintf (ofs, "{%s:%u [%s] [%u,%u]", name, expr->term.subtype, b, expr->term.start, expr->term.end);
-	if (expr->children) {
+	uint8_t s_subtype[64], s_value[64], s_text[256];
+	get_subtype_str(node, s_subtype, sizeof(s_subtype));
+	arikkei_utf8_strncpy_len_shorten(s_text, 256, src->cdata + node->term.start, node->term.end - node->term.start);
+	for (unsigned int i = 0; s_text[i]; i++) if (s_text[i] == '\n') s_text[i] = ' ';
+	const char *name = (node->term.type < AZO_NUM_TERM_TYPES) ? expr_names[node->term.type] : "?";
+	get_value_str(node, s_value, sizeof(s_value));
+	fprintf (ofs, "{%s:%s %d %s [%u,%u] [%s]", name, s_subtype, node->var_pos, s_value, node->term.start, node->term.end, s_text);
+	if (node->children) {
 		fprintf(ofs, "\n");
-		for (AZONode *child = expr->children; child; child = child->next) {
+		for (AZONode *child = node->children; child; child = child->next) {
 			azo_node_print_info(child, ofs, src, indent + 2);
 		}
 		for (unsigned int i = 0; i < indent; i++) fprintf(ofs, " ");

@@ -18,6 +18,14 @@
 #include <azo/operator.h>
 #include <azo/tokenizer.h>
 
+unsigned int
+azo_token_equals_str(const AZOToken *token, const uint8_t *text, const uint8_t *cdata)
+{
+	if (!token || !text) return 0;
+	if (strlen((const char *) text) != token->end - token->start) return 0;
+	return strncmp((const char *) cdata + token->start, (const char *) text, token->end - token->start) == 0;
+}
+
 static void tokenizer_finalize (AZOTokenizerClass *klass, AZOTokenizer *tokenizer);
 
 static unsigned int azo_tokenizer_type = 0;

@@ -13,6 +13,7 @@ typedef struct _AZODataBlockEntry AZODataBlockEntry;
 #define AZO_DATABLOCK_FLAG_WEAK 2
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include <az/value.h>
 #include <az/weak-reference.h>
@@ -46,6 +47,8 @@ void azo_datablock_set(AZODataBlock *block, unsigned int idx, const AZImplementa
 void azo_datablock_set_from_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, const AZValue *val, unsigned int weak);
 void azo_datablock_transfer_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZValue *val, unsigned int weak);
 void azo_datablock_set_weak(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZActiveObject *object);
+
+void azo_datablock_print(AZODataBlock *block, FILE *ofs);
 
 #ifdef __cplusplus
 }

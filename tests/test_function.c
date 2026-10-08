@@ -30,6 +30,7 @@ typedef struct _TestObjectClass TestObjectClass;
 unsigned int test_object_get_type();
 
 static unsigned int print_tree = 0;
+static unsigned int print_bytecode = 0;
 
 static AZODataBlock static_data = {0};
 static AZOContext *globals = NULL;
@@ -51,8 +52,9 @@ test_program(AZOContext *ctx, const char *text, const AZImplementation *this_imp
 		azo_node_print_info(tree, stderr, src, 0);
 	}
 
-	AZOCompiler comp;
+    AZOCompiler comp;
 	azo_compiler_setup(&comp, globals, src);
+    comp.debug = 1;
 
 	AZOCompilerContext comp_ctx = {
 		.ret_type = ret_type
@@ -105,7 +107,7 @@ test_program(AZOContext *ctx, const char *text, const AZImplementation *this_imp
 
 	AZOProgram *prog = azo_compiler_compile (&comp, &comp_ctx, tree, src);
     if (!prog) return 1;
-    //azo_program_print_bytecode(prog);
+    if (print_bytecode) azo_program_print_bytecode(prog);
 
     azo_interpreter_init(ctx->intr);
     azo_program_interpret(prog, ctx->intr, &static_data, n_args, arg_impls, arg_vals, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
@@ -136,6 +138,7 @@ test_function(void)
     az_init();
     globals = azo_context_new();
     azo_context_define_basic_types(globals);
+    azo_context_define_class_by_str(globals, (const uint8_t *) "TestObject", TYPE_TESTOBJ);
     bostream = (AZBufferOutputStream *) az_instance_new(AZ_TYPE_BUFFER_OUTPUT_STREAM);
     osostream = (AZOSOutputStream *) az_instance_new(AZ_TYPE_OS_OUTPUT_STREAM);
     osostream->file = stdout;
@@ -160,11 +163,13 @@ test_function(void)
 
 	/* Simple program runs */
     {
+        print_tree = 0;
         const AZImplementation *ret_impl;
         AZValue ret_val;
         TEST_ASSERT(test_program(globals, simple_src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
         TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+        print_tree = 0;
     }
     {
         const AZImplementation *ret_impl;
@@ -183,7 +188,7 @@ test_function(void)
     }
     /* Capturing lambda */
     {
-        print_tree = 1;
+        print_tree = 0;
         static const char *src =
             "function test = () => {\n"
             "    int32 a = 1;\n"
@@ -283,34 +288,83 @@ test_function(void)
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_VALUE, globals->intr->exc.type);
     }
+    /* A complex program */
     {
-#if 0
         static const char *src =
-            "this.wear = (any set) => {\n"
-            "    game.console.echo(\"set: \", set);\n"
-            "    game.console.echo(\"all: \", all);\n"
+            "any all = {1, 2, 3, 4, 5, 6, 7 ,8, 9, 10};\n"
+            "cnt = (any set) => {\n"
             "    for (uint32 i = 0; i < all.length; i++) {\n"
-            "        game.console.echo(\"i = \", i);\n"
-            "        game.console.echo(\"all[i] = \", all[i]);\n"
-            "        this.figure.setPartVisibility (all[i], set.contains (all[i]));\n"
+            "        bofs.print(set.contains(all[i]));\n"
+            "        bofs.print(\" \");\n"
             "    }\n"
-            "    setIdle (game.virtualTime);\n"
-            "};\n";
-        az_buffer_output_stream_reset(bostream);
+            "};\n"
+            "cnt({2, 4, 6, 7, 9});\n";
+		az_buffer_output_stream_reset(bostream);
+        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, src, NULL, NULL, 2, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
         fprintf(stderr, "Output: %s\n", str);
-        TEST_ASSERT_EQUAL_STRING("", str);
+        TEST_ASSERT_EQUAL_STRING("false true false true false true true false true false ", str);
         free(str);
-#endif
+    }
+    /* new TestObject("Hello") */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "bofs.print(tobj.text);\n";
+		az_buffer_output_stream_reset(bostream);
+        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
+        char *str = strndup((const char *) bostream->buffer, bostream->pos);
+        fprintf(stderr, "Output: %s\n", str);
+        TEST_ASSERT_EQUAL_STRING("Hello", str);
+        free(str);
+    }
+    /* new TestObject("Hello") */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "all = { 1, 2, 3, 4, 5 };\n"
+            "odd = { 1, 3, 5 };\n"
+            "function wearsAny = (any set) boolean => {\n"
+            "for (uint32 i = 0; i < all.length; i++) {\n"
+            "    if (set.contains(set[i])) return true;\n"
+            "}\n"
+            "return false;\n"
+            "};\n"
+            "find = (any obj, any set) => {\n"
+            "  for (uint32 i = 0; i < all.length; i++) {\n"
+            "    bofs.print(set.contains(all[i]));\n"
+            "    bofs.print(\" \");\n"
+            "  }\n"
+            "};\n"
+            "find (odd);\n";
+		az_buffer_output_stream_reset(bostream);
+        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
+        char *str = strndup((const char *) bostream->buffer, bostream->pos);
+        fprintf(stderr, "Output: %s\n", str);
+        TEST_ASSERT_EQUAL_STRING("true false true false true ", str);
+        free(str);
     }
 }
 
 struct _TestObject {
 	AZActiveObject object;
+
+    AZString *text;
 
     AZPackedValue onPrint1;
 	AZPackedValue onPrint2;
@@ -321,14 +375,17 @@ struct _TestObjectClass {
 };
 
 static void test_object_class_init (TestObjectClass *klass);
+static void test_object_finalize(const TestObjectClass *klass, TestObject *tobj);
 
 static AZFunctionSignature *sig_i32 = NULL;
 static AZFunctionSignature *sig_tobj_i32 = NULL;
 
 /* Properties */
 enum {
+    FUNC_NEW_STR,
 	FUNC_PRINT_I32,
 	FUNC_PRINT_TOBJ_I32,
+    PROP_TEXT,
 	NUM_PROPERTIES
 };
 
@@ -337,13 +394,28 @@ test_object_get_type (void)
 {
 	static unsigned int type = 0;
 	if (!type) {
-		az_register_type (&type, (const unsigned char *) "TestObject", AZ_TYPE_ACTIVE_OBJECT, sizeof (TestObjectClass), sizeof (TestObject), AZ_FLAG_FINAL,
+		AZClass *klass = az_register_type (&type, (const unsigned char *) "TestObject", AZ_TYPE_ACTIVE_OBJECT, sizeof (TestObjectClass), sizeof (TestObject), 0,
             0, NUM_PROPERTIES,
 			(void (*) (AZClass *)) test_object_class_init,
 			NULL,
-			NULL);
+			(void (*) (const AZImplementation *, void *)) test_object_finalize);
 	}
 	return type;
+}
+
+static void
+test_object_finalize(const TestObjectClass *klass, TestObject *tobj)
+{
+	if (tobj->text) az_string_unref(tobj->text);
+}
+
+static TestObject *
+test_object_new_str (AZString *key)
+{
+	TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+    tobj->text = key;
+    az_string_ref(key);
+    return tobj;
 }
 
 static void
@@ -352,10 +424,12 @@ test_object_class_init (TestObjectClass *klass)
     sig_i32 = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_INT32);
     sig_tobj_i32 = az_function_signature_new_va(AZ_TYPE_NONE, 2, TYPE_TESTOBJ, AZ_TYPE_INT32);
 	/* Properties */
+	az_class_define_static_method_native_va ((AZClass *) klass, FUNC_NEW_STR, (const unsigned char *) "new", (void (*)()) test_object_new_str, TYPE_TESTOBJ, 1, AZ_TYPE_STRING);
 	az_class_define_property_function_packed ((AZClass *) klass, FUNC_PRINT_I32, (const unsigned char *) "print_i32", 0,
         AZ_FIELD_INSTANCE, AZ_FIELD_READ_PACKED, AZ_FIELD_WRITE_PACKED,
 		ARIKKEI_OFFSET(TestObject,onPrint1), sig_i32);
 	az_class_define_property_function_packed ((AZClass *) klass, FUNC_PRINT_TOBJ_I32, (const unsigned char *) "print_tobj_i32", 0,
         AZ_FIELD_INSTANCE, AZ_FIELD_READ_PACKED, AZ_FIELD_WRITE_PACKED,
 		ARIKKEI_OFFSET(TestObject,onPrint2), sig_tobj_i32);
+    az_class_define_property_value((AZClass *) klass, PROP_TEXT, (const uint8_t *) "text", AZ_TYPE_STRING, 0, AZ_FIELD_INSTANCE, AZ_FIELD_WRITE_VALUE, ARIKKEI_OFFSET(TestObject, text));
 }

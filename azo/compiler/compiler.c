@@ -157,7 +157,24 @@ azo_compiler_compile_constant (AZOCompiler *comp, AZOCompilerContext *ctx, const
 static int
 compile_this(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
-	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, 0, node);
+	switch (ctx->this_variant) {
+		case AZO_COMPILER_NO_THIS:
+			fprintf(stderr, "Error: 'this' used in non-method context\n");
+			return 0;
+		case AZO_COMPILER_THIS_IS_ARGUMENT:
+		case AZO_COMPILER_THIS_IS_VARIABLE:
+			//fprintf(stderr, "This as varaible at frame:%u\n", ctx->this_var_pos);
+			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, ctx->this_var_pos, node);
+			break;
+		case AZO_COMPILER_THIS_IS_SHARED:
+			//fprintf(stderr, "This is shared at pos:%u\n", ctx->this_static_pos);
+			azo_code_write_PUSH_VALUE(&ctx->frame->code, ctx->this_static_pos, node);
+			break;
+		case AZO_COMPILER_THIS_IS_CAPTURE:
+			//fprintf(stderr, "This is captured at pos:%u\n", ctx->this_capture_pos);
+			azo_code_write_PUSH_CAPTURE(&ctx->frame->code, ctx->this_capture_pos, node);
+			break;
+	}
 	return 1;
 }
 
@@ -305,6 +322,7 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 	return 1;
 }
 
+
 static unsigned int
 compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, const AZONode *list, AZOSource *src, unsigned int has_this, unsigned int test_implementation)
 {
@@ -313,13 +331,8 @@ compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, c
 	AZONode *child;
 	AZOCode *code = &ctx->frame->code;
 	/* [func] */
-#if 0
-	azo_compiler_write_DEBUG_STRING (comp, "compile_call 1");
-	azo_compiler_write_DEBUG_STACK (comp);
-#endif
 	/* [func] */
 	if (test_implementation) {
-		azo_compiler_write_DEBUG_STRING(comp, ctx, "compile_call(): test implementation", func);
 		azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, func);
 		is_function = azo_code_write_JMP32 (code, JMP_32_IF, 0, func);
 		azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, func);
@@ -329,11 +342,9 @@ compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, c
 	if (has_this) {
 		// has_this indicates that this is one element BEFORE function
 		// e.g. [this, function]
-		azo_compiler_write_DEBUG_STRING(comp, ctx, "compile_call(): has this", func);
 		azo_code_write_DUPLICATE (code, 1, func);
 		n_args += 1;
 	} else {
-		azo_compiler_write_DEBUG_STRING(comp, ctx, "compile_call(): this is first argument", func);
 		azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, 0, func);
 		n_args += 1;
 		//fprintf(stderr, "%d\n", func->term.subtype);
@@ -380,7 +391,6 @@ compile_call_property (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 	unsigned int is_member_function, is_class, not_active_obj, no_static_function, invalid_type, finished, finished_2, finished_3;
 	AZOCode *code = &ctx->frame->code;
 
-	azo_compiler_write_DEBUG_STRING(comp, ctx, "compile_call_property: 1", func);
 	/* Instance, String */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, 1, func);
 	/* Instance, String, This */
@@ -516,10 +526,6 @@ compile_new (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *klass, c
 
 	assert(klass->term.type == AZO_TERM_TYPE);
 
-#ifdef DEBUG_NEW
-	write_DEBUG_STRING (comp, "compile_new: 1\n");
-	write_DEBUG_STACK (comp);
-#endif
 	AZClass *tklass = AZ_CLASS_FROM_TYPE(klass->term.subtype);
 	compile_PUSH_VALUE_const(comp, ctx, AZ_TYPE_CLASS, (const AZValue *) &tklass, klass);
 
@@ -623,8 +629,6 @@ compile_prefix (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 	return 1;
 }
 
-#define noDEBUG_SUFFIX
-
 static unsigned int
 compile_suffix (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, const AZONode *left, AZOSource *src, unsigned int silent)
 {
@@ -638,15 +642,7 @@ compile_suffix (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 	if (!compile_lvalue (comp, ctx, left, src, &lval, 0)) return 0;
 	/* Calculate new value */
 	if (expr->term.subtype == AZO_TERM_SUFFIX_INCREMENT) {
-#ifdef DEBUG_SUFFIX
-		write_DEBUG_STRING (comp, "compile_suffix: 1\n");
-		write_DEBUG_STACK (comp);
-#endif
 		if (!azo_compiler_compile_increment (comp, ctx, left, expr, src)) return 0;
-#ifdef DEBUG_SUFFIX
-		write_DEBUG_STRING (comp, "compile_suffix: 2\n");
-		write_DEBUG_STACK (comp);
-#endif
 	} else if (expr->term.subtype == AZO_TERM_SUFFIX_DECREMENT) {
 		if (!azo_compiler_compile_decrement (comp, ctx, left, expr, src)) return 0;
 	} else {
@@ -654,10 +650,6 @@ compile_suffix (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 		return 0;
 	}
 	compile_assign_to_lvalue (comp, ctx, &lval, NULL);
-#ifdef DEBUG_SUFFIX
-	write_DEBUG_STRING (comp, "compile_suffix: 3\n");
-	write_DEBUG_STACK (comp);
-#endif
 	return 1;
 }
 
@@ -716,10 +708,6 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	AZOProgram *prog;
 	AZOCompiledFunction *cfunc;
 	AZOCode *code = &ctx->frame->code;
-#ifdef DEBUG_FUNCTION
-	write_DEBUG_STRING (comp, "Function 1");
-	write_DEBUG_STACK (comp);
-#endif
 	type = node->children;
 	args = type->next;
 	body = args->next;
@@ -749,12 +737,14 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	/* program */
 	if (func_frame->this_is_captured) {
 		// fixme: This should be fetched from context
+		fprintf(stderr, "This is captured\n");
 		compile_this(comp, ctx, node, src);
 		/* program [this] */
 	}
 	for (AZOVariableList *list = func_frame->parent_vars; list; list = list->next) {
 		/* list->var.parent is variable in *current* frame */
 		AZOVariable *var = list->var.parent;
+		fprintf(stderr, "%s is captured\n", var->name->str);
 		if (var->parent) {
 			azo_code_write_PUSH_CAPTURE(code, var->pos, node);
 		} else {
@@ -847,16 +837,8 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 	} else if (node->term.type == AZO_TERM_CONSTANT) {
 		if (!azo_compiler_compile_constant (comp, ctx, node, src)) return 0;
 	} else if (node->term.type == AZO_TERM_KEYWORD) {
-		if (node->term.subtype == AZO_KEYWORD_THIS) {
-			assert(0);
-			if (!compile_this (comp, ctx, node, src)) return 0;
-		} else if (node->term.subtype == AZO_KEYWORD_NEW) {
-			assert(0);
-			if (!compile_new (comp, ctx, node->children, node->children->next, src)) return 0;
-		} else {
-			fprintf (stderr, "compile_expression_rvalue: Unknown keyword subtype %u\n", node->term.subtype);
-			return 0;
-		}
+		fprintf (stderr, "compile_expression_rvalue: Unknown keyword subtype %u\n", node->term.subtype);
+		return 0;
 	} else if (node->term.type == AZO_TERM_FUNCTION) {
 		if (!compile_function (comp, ctx, node, src)) return 0;
 	} else if (node->term.type == AZO_TERM_FUNCTION_CALL) {
@@ -1237,7 +1219,7 @@ compile_do(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOS
  *   + iffalse
  */
 
- static unsigned int
+static unsigned int
 compile_if (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
 	AZONode *cond = node->children;
@@ -1264,6 +1246,45 @@ compile_if (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZO
 	return 1;
 }
 
+static int
+compile_context(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
+{
+	AZONode *this_node = node->children;
+	AZOCompilerContext lctx = *ctx;
+	if (this_node->term.type == AZO_TERM_EMPTY) {
+		lctx.this_variant = AZO_COMPILER_NO_THIS;
+	} else if (this_node->term.type == AZO_TERM_VARIABLE) {
+		/* Known variable types, refer directly to these */
+		switch (this_node->term.subtype) {
+			case AZO_TERM_VARIABLE_LOCAL:
+				lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
+				lctx.this_var_pos = this_node->var_pos;
+				break;
+			case AZO_TERM_VARIABLE_SHARED:
+				lctx.this_variant = AZO_COMPILER_THIS_IS_SHARED;
+				lctx.this_static_pos = this_node->var_pos;
+				break;
+			case AZO_TERM_VARIABLE_CAPTURE:
+				lctx.this_variant = AZO_COMPILER_THIS_IS_CAPTURE;
+				lctx.this_capture_pos = this_node->var_pos;
+				break;
+			default:
+				fprintf(stderr, "resolve_context: Unknown variable type\n");
+				return 0;
+		}
+	} else {
+		/* Local 'this' was not resolved, it has reserved local variable spot */
+		lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
+		lctx.this_var_pos = node->var_pos;
+		if (!azo_compiler_compile_expression(comp, ctx, node->children, src)) return 0;
+		if (!compile_sentences(comp, &lctx, node->children->next, src)) return 0;
+		azo_code_write_POP(&lctx.frame->code, 0, node);
+		return 1;
+	}
+	if (!compile_sentences(comp, &lctx, node->children->next, src)) return 0;
+	return 1;
+}
+
 /*
  * Sentence:
  *   Block
@@ -1277,7 +1298,7 @@ static unsigned int
 compile_sentence (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
 	if (AZO_NODE_IS(node, AZO_TERM_CONTEXT, 0)) {
-		if (!compile_sentences(comp, ctx, node->children->next, src)) return 0;
+		if (!compile_context(comp, ctx, node, src)) return 0;
 	} else if (AZO_NODE_IS(node, AZO_TERM_BLOCK, 0)) {
 		if (!compile_block (comp, ctx, node, src)) return 0;
 	} else if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_FOR)) {
@@ -1288,6 +1309,11 @@ compile_sentence (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 		if (!compile_do (comp, ctx, node, src)) return 0;
 	} else if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_IF)) {
 		if (!compile_if (comp, ctx, node, src)) return 0;
+	} else if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_DEBUG)) {
+		if (node->value.impl) {
+			assert(node->value.impl == AZ_IMPL_FROM_TYPE(AZ_TYPE_STRING));
+			azo_compiler_write_DEBUG_STRING(comp, ctx, (const char *) node->value.v.string->str, node);
+		}
 	} else {
 		/* Line is the same as statement because semicolon is processed by parser */
 		if (!compile_statement (comp, ctx, node, src)) return 0;

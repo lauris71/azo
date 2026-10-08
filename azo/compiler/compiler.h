@@ -71,6 +71,8 @@ struct _AZOCompilerContext {
 	/* Compiler */
 	/* The number of variables pushed into stack */
 	unsigned int n_stack;
+	/* debug */
+	unsigned int print_tree;
 };
 
 struct _AZOCompiler {

@@ -61,5 +61,6 @@ target_include_directories(azo PUBLIC
     ${CMAKE_SOURCE_DIR}/az
     ${CMAKE_SOURCE_DIR}/../az
 )
+target_compile_definitions(azo PRIVATE HAS_DEBUG_KEYWORD)
 
 add_subdirectory(compiler)

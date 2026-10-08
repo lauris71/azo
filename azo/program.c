@@ -167,6 +167,9 @@ void
 azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *static_data, unsigned int n_args, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
 {
 	unsigned int prev_frame = azo_interpreter_push_frame (intr, 0);
+	//fprintf(stderr, "Starting program %s\n", (prog->debug.src->name) ? prog->debug.src->name->str : (const uint8_t *) "unnamed");
+	//fprintf(stderr, "Num frames %u\n", intr->n_frames);
+	//azo_datablock_print(&prog->shared_data, stderr);
 	azo_intepreter_push_values (intr, arg_impls, arg_vals, n_args);
 	if (0 && prog->debug.n_terms) {
 		AZODebugger *debugger = azo_debugger_new(intr);

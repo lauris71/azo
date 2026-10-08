@@ -202,7 +202,6 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		DBG_PRINTF("resolve_variable: Local %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
 		expr->term.subtype = AZO_TERM_VARIABLE_LOCAL;
-		az_packed_value_clear (&expr->value);
 		expr->var_pos = var->pos;
 		return 0;
 	}
@@ -216,7 +215,6 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		DBG_PRINTF("resolve_variable: Parent %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
 		expr->term.subtype = AZO_TERM_VARIABLE_CAPTURE;
-		az_packed_value_clear (&expr->value);
 		expr->var_pos = var->pos;
 		return 0;
 	}
@@ -240,7 +238,6 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 			DBG_PRINTF("resolve_variable: Created parent variable %s at pos %u\n", expr->value.v.string->str, var->pos);
 			expr->term.type = AZO_TERM_VARIABLE;
 			expr->term.subtype = AZO_TERM_VARIABLE_CAPTURE;
-			az_packed_value_clear (&expr->value);
 			expr->var_pos = var->pos;
 			return 0;
 		}
@@ -281,6 +278,8 @@ azo_compiler_resolve_reference (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode 
 		return resolve_property (comp, rctx, expr);
 	} else if (expr->term.subtype == AZO_TERM_REFERENCE_ATTRIBUTE) {
 		return resolve_attribute_reference (comp, rctx, expr);
+	} else if (expr->term.subtype == AZO_TERM_REFERENCE_PROPERTY_OR_ATTRIBUTE) {
+		return resolve_property (comp, rctx, expr);
 	} else if (expr->term.subtype == AZO_TERM_REFERENCE_MEMBER) {
 		/* No-op */
 		return 0;
