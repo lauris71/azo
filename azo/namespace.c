@@ -141,6 +141,13 @@ namespace_set (const AZAttribDictImplementation *attrd_impl, AZAttribDict *attrd
 	return 1;
 }
 
+const AZImplementation *
+azo_namespace_lookup(AZONamespace *nspace, const AZString *key, AZValue *val, unsigned int size)
+{
+	unsigned int flags;
+	return az_attrib_dict_lookup(&azo_namespace_class->attrd_impl, &nspace->adict, key, val, size, &flags);
+}
+
 unsigned int
 azo_namespace_define (AZONamespace *nspace, AZString *key, const AZImplementation *impl, void *inst)
 {

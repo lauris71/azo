@@ -74,8 +74,8 @@ azo_interpreter_init(AZOInterpreter *intr)
 	//if (intr->stack.length) azo_stack_pop(&intr->stack, intr->stack.length);
 	intr->flags = AZO_INTR_FLAG_CHECK_ARGS;
 	intr->exc.type = AZO_EXCEPTION_NONE;
-	az_packed_value_clear(&intr->vals[0].packed_val);
-	az_packed_value_clear(&intr->vals[1].packed_val);
+	intr->vals[0].impl = NULL;
+	intr->vals[1].impl = NULL;
 }
 
 void
@@ -1377,10 +1377,9 @@ interpret_INVOKE (AZOInterpreter *intr, const unsigned char *ip)
 			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 		}
 	}
-	intr->vals[0].impl = NULL;
-	az_function_invoke (func_impl, func_inst, azo_stack_impls_bw (&intr->stack, sig->n_args - 1), (const AZValue **) azo_stack_values_bw (&intr->stack, sig->n_args - 1), &intr->vals[0].impl, &intr->vals[0].v, NULL);
-	azo_stack_push_value_transfer (&intr->stack, intr->vals[0].impl, &intr->vals[0].v);
-	intr->vals[0].impl = NULL;
+	AZPackedValue64 ret_val = {0};
+	az_function_invoke (func_impl, func_inst, azo_stack_impls_bw (&intr->stack, sig->n_args - 1), (const AZValue **) azo_stack_values_bw (&intr->stack, sig->n_args - 1), &ret_val.impl, &ret_val.v, NULL);
+	azo_stack_push_value_transfer (&intr->stack, ret_val.impl, &ret_val.v);
 	if(intr->exc.type) {
 		intr->exc.ipc = ip;
 		return NULL;
@@ -1410,10 +1409,12 @@ interpret_CLOSURE(AZOInterpreter *intr, const unsigned char *ip)
 	if (!test_stack_underflow(intr, ip, n_vals + 1)) return NULL;
 	if (!test_stack_type_exact(intr, ip, n_vals, AZO_TYPE_PROGRAM)) return NULL;
 
-	AZOProgram *sub = (AZOProgram *) azo_stack_instance_bw(&intr->stack, n_vals);
-	AZOCompiledFunction *cfunc = azo_compiled_function_new(sub);
+	AZOProgram *prog = (AZOProgram *) azo_stack_instance_bw(&intr->stack, n_vals);
+	AZOCompiledFunction *cfunc = azo_compiled_function_new(prog);
 	for (unsigned int i = 0; i < n_vals; i++) {
-		azo_compiled_function_bind (cfunc, i, azo_stack_impl_bw (&intr->stack, n_vals - 1 - i), azo_stack_instance_bw (&intr->stack, n_vals - 1 - i));
+		const AZImplementation *arg_impl = azo_stack_impl_bw(&intr->stack, n_vals - 1 - i);
+		void *arg_inst = azo_stack_instance_bw(&intr->stack, n_vals - 1 - i);
+		azo_compiled_function_bind (cfunc, i, arg_impl, arg_inst);
 	}
 	azo_stack_pop(&intr->stack, n_vals + 1);
 	azo_stack_push_instance(&intr->stack, (const AZImplementation *) cfunc->object.klass, cfunc);
@@ -1498,7 +1499,7 @@ interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 	AZValueArray *varray;
 	unsigned int idx;
 	AZPackedValue val = { 0 };
-	if (*ip & AZO_TC_CHECK_ARGS) {
+	if (intr->flags & AZO_INTR_FLAG_CHECK_ARGS) {
 		if (!az_type_is_a (azo_stack_type_bw (&intr->stack, 2), AZ_TYPE_VALUE_ARRAY)) {
 			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
 			return NULL;
@@ -1532,6 +1533,7 @@ interpret_GET_GLOBAL (AZOInterpreter *intr, const unsigned char *ip)
 	if ((intr->vals[0].impl = azo_context_lookup (intr->ctx, key, &intr->vals[0].v.value, 64))) {
 		azo_stack_pop (&intr->stack, 1);
 		azo_stack_push_value_transfer (&intr->stack, intr->vals[0].impl, &intr->vals[0].v.value);
+		intr->vals[0].impl = NULL;
 	} else {
 		azo_stack_pop (&intr->stack, 1);
 		azo_stack_push_value (&intr->stack, NULL, NULL);
@@ -1570,10 +1572,6 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 	}
 	/* Try simple property */
 	if (az_instance_get_property_by_key (impl, inst, key->str, &intr->vals[0].impl, &intr->vals[0].v)) {
-		if ((uintptr_t) intr->vals[0].impl == 0x400) {
-			fprintf(stderr, "Property: %s\n", key->str);
-			fprintf(stderr, ".");
-		}
 		/* Ordinary property */
 		azo_stack_pop (&intr->stack, 2);
 		azo_stack_push_value_transfer (&intr->stack, intr->vals[0].packed_val.impl, &intr->vals[0].packed_val.v);

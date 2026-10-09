@@ -144,17 +144,9 @@ azo_compiled_function_new(AZOProgram *prog)
 	return cfunc;
 }
 
-#define noDEBUG_BIND
-
 void
 azo_compiled_function_bind (AZOCompiledFunction *cfunc, unsigned int pos, const AZImplementation *impl, void *inst)
 {
-#ifdef DEBUG_BIND
-	unsigned char d[256];
-	unsigned int len = az_instance_to_string (impl, inst, d, 255);
-	d[len] = 0;
-	fprintf (stderr, "azo_compiled_function_bind: Binding %s to pos %u\n", d, pos);
-#endif
 	if (impl && az_type_is_a(AZ_IMPL_TYPE(impl), AZ_TYPE_ACTIVE_OBJECT)) {
 		azo_datablock_set(&cfunc->static_data, pos, impl, inst, 1);
 	} else {

@@ -19,6 +19,7 @@
 #include <azo/node.h>
 #include <azo/keyword.h>
 #include <azo/compiler/resolver.h>
+#include <azo/namespace.h>
 
 #define noVERBOSE
 
@@ -157,14 +158,31 @@ resolve_attribute_reference (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *ex
  */
 
 static unsigned int
-resolve_property (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
+resolve_property (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
-	AZONode *parent, *member;
-	parent = expr->children;
+	AZONode *parent = node->children;
 	unsigned int result = azo_compiler_resolve_node (comp, rctx, parent);
 	if (result) return result;
-	member = parent->next;
-	return azo_compiler_resolve_node (comp, rctx, member);
+	AZONode *member = parent->next;
+	assert(member->term.subtype == AZO_TERM_REFERENCE_MEMBER);
+	if ((parent->term.type == AZO_TERM_CONSTANT) && (AZ_IMPL_TYPE(parent->value.impl) == AZO_TYPE_NAMESPACE)) {
+		/* Although namespace is AZAttribDict we resolve it as property */
+		AZValue val;
+		const AZImplementation *impl = azo_namespace_lookup((AZONamespace *) parent->value.v.block, member->value.v.string, &val, AZ_VALUE_MAX_SIZE);
+		if (!impl) {
+			fprintf(stderr, "Namespace ");
+			azo_source_print_token(comp->src, parent->term.start, parent->term.end, stderr);
+			fprintf(stderr, " does not have member %s\n", member->value.v.string->str);
+			return 1;
+		}
+		node->term.type = AZO_TERM_CONSTANT;
+		node->term.subtype = AZ_IMPL_TYPE(impl);
+		az_packed_value_set_from_impl_value(&node->value, impl, &val);
+		az_value_clear(impl, &val);
+		azo_node_clear_children(node);
+		return 0;
+	}
+	return 0;
 }
 
 #define DEBUG_RESOLVE_VARIABLE

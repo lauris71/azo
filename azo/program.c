@@ -185,6 +185,10 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 		};
 		azo_interpreter_run(intr, &ictx);
 	}
-	*ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
+	if (prog->ret_type) {
+		*ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
+	} else {
+		*ret_impl = NULL;
+	}
 	azo_interpreter_restore_frame (intr, prev_frame);
 }

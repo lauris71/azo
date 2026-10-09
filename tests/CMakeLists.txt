@@ -19,6 +19,7 @@ add_executable(azo_test
 
 target_compile_definitions(azo_test PRIVATE UNITY_INCLUDE_DOUBLE)
 target_include_directories(azo_test PRIVATE ${CMAKE_SOURCE_DIR} ..)
+target_compile_definitions(azo_test PRIVATE HAS_DEBUG_KEYWORD)
 
 # The arikkei and az targets (drop-in, added by the top-level CMakeLists) resolves the
 # library location, name (libarikkei/libarikkeid. libaz/libazd) and per-config subdirectory
