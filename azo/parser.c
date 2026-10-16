@@ -146,7 +146,7 @@ parser_report_error (AZOParser *parser, const AZOToken *token, unsigned int errv
 	if (!azo_tokenizer_is_eof (&parser->tokenizer, token)) {
 		unsigned int first, last;
 		if (azo_source_find_line_range (parser->src, token->start, token->end, &first, &last)) {
-			fprintf (stderr, "%d near ", first);
+			fprintf (stderr, "%d near ", first + 1);
 			azo_source_print_token (parser->src, token->start, token->end, stderr);
 			fprintf (stderr, "\n");
 			/* fixme: Keep track of the last processed token */
@@ -1194,7 +1194,8 @@ azo_parser_parse_member (AZOParser *parser, AZOToken *token, unsigned int left_p
 	AZONode *expr = NULL;
 	unsigned int result;
 	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	if ((token->type == AZO_TOKEN_WORD) && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE)) {
+	/* We allow keywords as members because we do not have control over az property names */
+	if (token->type == AZO_TOKEN_WORD /* && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE) */) {
 		/* Variable reference (keywords cannot be references) */
 		expr = azo_node_new_reference (AZO_TERM_REFERENCE_MEMBER, parser->src, token);
 		/* fixme: Allowed next - operator/function/array */

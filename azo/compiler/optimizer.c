@@ -360,11 +360,11 @@ optimize_property(AZOOptimizer *opt, AZONode *expr, const AZClass *klass, const 
 	int idx = az_class_lookup_property (klass, impl, inst, str, &def_class, &def_impl, &def_inst);
 	if (idx >= 0) {
 		AZField *field = &def_class->props_self[idx];
-		if (!inst && (field->spec == AZ_FIELD_INSTANCE)) return 0;
-		if (!impl && (field->spec == AZ_FIELD_IMPLEMENTATION)) return 0;
+		if (!inst && (AZ_FIELD_SPEC(field) == AZ_FIELD_INSTANCE)) return 0;
+		if (!impl && (AZ_FIELD_SPEC(field) == AZ_FIELD_IMPLEMENTATION)) return 0;
 		if (AZ_FIELD_IS_FINAL(field) && !AZ_FIELD_IS_FUNCTION(field)) {
 			az_packed_value_clear(&expr->value);
-			if (!az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &expr->value.impl, &expr->value.v, 16, NULL)) {
+			if (az_instance_get_property_by_id (def_class, AZ_CLASS_FROM_IMPL(def_impl), def_impl, def_inst, idx, &expr->value.impl, &expr->value.v, 16)) {
 				fprintf (stderr, "resolve_member: Property %s is not readable\n", str->str);
 				return 1;
 			}

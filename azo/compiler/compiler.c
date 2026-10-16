@@ -1121,6 +1121,48 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 	return result;
 }
 
+static int
+compile_context(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
+{
+	AZOCode *code = &ctx->frame->code;
+	AZONode *this_node = node->children;
+	AZOCompilerContext lctx = *ctx;
+	if (this_node->term.type == AZO_TERM_EMPTY) {
+		lctx.this_variant = AZO_COMPILER_NO_THIS;
+	} else if (this_node->term.type == AZO_TERM_VARIABLE) {
+		/* Known variable types, refer directly to these */
+		switch (this_node->term.subtype) {
+			case AZO_TERM_VARIABLE_LOCAL:
+				lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
+				lctx.this_var_pos = this_node->var_pos;
+				break;
+			case AZO_TERM_VARIABLE_SHARED:
+				lctx.this_variant = AZO_COMPILER_THIS_IS_SHARED;
+				lctx.this_static_pos = this_node->var_pos;
+				break;
+			case AZO_TERM_VARIABLE_CAPTURE:
+				lctx.this_variant = AZO_COMPILER_THIS_IS_CAPTURE;
+				lctx.this_capture_pos = this_node->var_pos;
+				break;
+			default:
+				fprintf(stderr, "resolve_context: Unknown variable type\n");
+				return 0;
+		}
+	} else {
+		/* Local 'this' was not resolved, it has reserved local variable spot */
+		lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
+		lctx.this_var_pos = node->var_pos;
+		if (!azo_compiler_compile_expression(comp, ctx, node->children, src)) return 0;
+		lctx.n_stack += 1;
+	}
+	if (!compile_sentences(comp, &lctx, node->children->next, src)) return 0;
+	/* Clear scope */
+	if (lctx.n_stack > ctx->n_stack) {
+		azo_code_write_POP (code, lctx.n_stack - ctx->n_stack, node);
+	}
+	return 1;
+}
+
 #define noDEBUG_FOR
 
 static unsigned int
@@ -1246,45 +1288,6 @@ compile_if (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZO
 	return 1;
 }
 
-static int
-compile_context(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
-{
-	AZONode *this_node = node->children;
-	AZOCompilerContext lctx = *ctx;
-	if (this_node->term.type == AZO_TERM_EMPTY) {
-		lctx.this_variant = AZO_COMPILER_NO_THIS;
-	} else if (this_node->term.type == AZO_TERM_VARIABLE) {
-		/* Known variable types, refer directly to these */
-		switch (this_node->term.subtype) {
-			case AZO_TERM_VARIABLE_LOCAL:
-				lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
-				lctx.this_var_pos = this_node->var_pos;
-				break;
-			case AZO_TERM_VARIABLE_SHARED:
-				lctx.this_variant = AZO_COMPILER_THIS_IS_SHARED;
-				lctx.this_static_pos = this_node->var_pos;
-				break;
-			case AZO_TERM_VARIABLE_CAPTURE:
-				lctx.this_variant = AZO_COMPILER_THIS_IS_CAPTURE;
-				lctx.this_capture_pos = this_node->var_pos;
-				break;
-			default:
-				fprintf(stderr, "resolve_context: Unknown variable type\n");
-				return 0;
-		}
-	} else {
-		/* Local 'this' was not resolved, it has reserved local variable spot */
-		lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
-		lctx.this_var_pos = node->var_pos;
-		if (!azo_compiler_compile_expression(comp, ctx, node->children, src)) return 0;
-		if (!compile_sentences(comp, &lctx, node->children->next, src)) return 0;
-		azo_code_write_POP(&lctx.frame->code, 0, node);
-		return 1;
-	}
-	if (!compile_sentences(comp, &lctx, node->children->next, src)) return 0;
-	return 1;
-}
-
 /*
  * Sentence:
  *   Block
@@ -1313,6 +1316,9 @@ compile_sentence (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 		if (node->value.impl) {
 			assert(node->value.impl == AZ_IMPL_FROM_TYPE(AZ_TYPE_STRING));
 			azo_compiler_write_DEBUG_STRING(comp, ctx, (const char *) node->value.v.string->str, node);
+		}
+		if (node->term.flags & AZO_TERM_DEBUG_INTERPRETER_STACK) {
+			azo_compiler_write_DEBUG_STACK(comp, ctx, node);
 		}
 	} else {
 		/* Line is the same as statement because semicolon is processed by parser */

@@ -42,7 +42,7 @@ azo_interpreter_new (AZOContext *ctx)
 	AZOInterpreter *intr = (AZOInterpreter *) malloc (sizeof (AZOInterpreter));
 	memset (intr, 0, sizeof (AZOInterpreter));
 
-	intr->size_frames = 64;
+	intr->size_frames = 16;
 	intr->frames = (unsigned int *) malloc (intr->size_frames * 4);
 	intr->frames[0] = 0;
 	intr->n_frames = 1;
@@ -104,7 +104,7 @@ azo_interpreter_push_frame (AZOInterpreter *intr, unsigned int n_elements)
 {
 	if (intr->n_frames >= intr->size_frames) {
 		intr->size_frames = intr->size_frames << 1;
-		intr->frames = ( unsigned int *) realloc (intr->frames, intr->size_frames * 4);
+		intr->frames = (unsigned int *) realloc (intr->frames, intr->size_frames * 4);
 	}
 	intr->frames[intr->n_frames] = intr->stack.length - n_elements;
 	return intr->n_frames++;
@@ -445,7 +445,9 @@ interpret_PUSH_EMPTY (AZOInterpreter *intr, const unsigned char *ip)
 	TEST_OVERFLOW(1);
 	if (type) {
 		AZClass *klass = az_type_get_class (type);
-		CHECK(!AZ_CLASS_IS_ABSTRACT(klass), AZO_EXCEPTION_INVALID_TYPE);
+		// fixme: This is used to reserve variables
+		// fixme: The proper way would be to push NULL but reserve space
+		//CHECK(!AZ_CLASS_IS_ABSTRACT(klass), AZO_EXCEPTION_INVALID_TYPE);
 		azo_stack_push_value_default (&intr->stack, &klass->impl);
 	} else {
 		azo_stack_push_value_default (&intr->stack, NULL);
@@ -561,8 +563,8 @@ interpret_TYPE (AZOInterpreter *intr, const uint8_t *ip)
 {
 	unsigned int pos, result;
 	pos = ip[1];
+	CHECK_UNDERFLOW(pos + 1);
 	CHECK_TYPE_EXACT(0, AZ_TYPE_UINT32);
-	if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, pos + 1)) return NULL;
 	uint32_t type = azo_stack_uint32_bw(&intr->stack, 0);
 	switch (ip[0] & 127) {
 	case AZO_TC_TYPE_EQUALS:
@@ -588,7 +590,7 @@ interpret_TYPE_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip)
 {
 	unsigned int pos, type, result;
 	pos = ip[1];
-	if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, pos + 1)) return NULL;
+	CHECK_UNDERFLOW(pos + 1);
 	memcpy (&type, ip + 2, 4);
 	switch (ip[0] & 127) {
 	case AZO_TC_TYPE_EQUALS_IMMEDIATE:
@@ -614,13 +616,13 @@ interpret_TYPE_OF (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int type;
 	unsigned int pos;
 	pos = ip[1];
-	if ((ip[0] & AZO_TC_CHECK_ARGS) && !test_stack_underflow (intr, ip, pos + 1)) return NULL;
+	CHECK_UNDERFLOW(pos + 1);
 	if ((ip[0] & 127) == AZO_TC_TYPE_OF) {
 		type = azo_stack_type_bw (&intr->stack, pos);
 		azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE(AZ_TYPE_UINT32), &type);
 	} else {
-		CHECK_TYPE_EXACT(0, AZ_TYPE_CLASS);
-		AZClass *klass = (AZClass *) azo_stack_instance_bw (&intr->stack, 0);
+		CHECK_TYPE_EXACT(pos, AZ_TYPE_CLASS);
+		AZClass *klass = (AZClass *) azo_stack_instance_bw (&intr->stack, pos);
 		azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE(AZ_TYPE_UINT32), &AZ_CLASS_TYPE(klass));
 	}
 	return ip + 2;
@@ -672,9 +674,7 @@ interpret_PROMOTE (AZOInterpreter *intr, const uint8_t *ip)
 {
 	unsigned int pos, result;
 	pos = ip[1];
-	if (*ip & AZO_TC_CHECK_ARGS) {
-		if (!test_stack_underflow (intr, ip, pos + 1)) return NULL;
-	}
+	CHECK_UNDERFLOW(pos + 1);
 	unsigned int type = azo_stack_uint32_bw(&intr->stack, 0);
 	/* fixme: Test clamped/rounded */
 	if (!azo_stack_convert_bw (&intr->stack, pos, type)) {
@@ -1448,48 +1448,32 @@ interpret_NEW_ARRAY (AZOInterpreter *intr, const unsigned char *ip)
 static const unsigned char *
 interpret_LOAD_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 {
-	AZListImplementation *list_impl;
-	void *list_inst;
 	unsigned int idx;
+	CHECK_UNDERFLOW(2);
 	AZPackedValue64 val = { 0 };
-	if (*ip & AZO_TC_CHECK_ARGS) {
-		const AZImplementation *obj_impl = azo_stack_impl_bw (&intr->stack, 1);
-		const AZImplementation *idx_impl = azo_stack_impl_bw (&intr->stack, 0);
-		if (!obj_impl || !idx_impl) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
-			return NULL;
-		}
-		list_impl = (AZListImplementation *) az_instance_get_interface (obj_impl, azo_stack_instance_bw (&intr->stack, 1), AZ_TYPE_LIST, (void **) &list_inst);
-		if (!list_impl) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-			return NULL;
-		}
-		if (!convert_to_u32 (intr, &idx, idx_impl, azo_stack_value_bw (&intr->stack, 0), ip)) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_CONVERSION, 1UL << AZO_EXCEPTION_INVALID_CONVERSION, ip);
-			return NULL;
-		}
-		if (idx >= az_collection_get_size (&list_impl->collection_impl, list_inst)) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_OUT_OF_BOUNDS, 1UL << AZO_EXCEPTION_OUT_OF_BOUNDS, ip);
-			return NULL;
-		}
-		val.impl = az_list_get_element (list_impl, list_inst, idx, &val.v.value, 64);
-		if (!val.impl) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_SYSTEM, 1UL << AZO_EXCEPTION_SYSTEM, ip);
-			return NULL;
-		}
-		azo_stack_pop (&intr->stack, 1);
-		azo_stack_push_value_transfer (&intr->stack, val.impl, &val.v);
-	} else {
-		list_impl = (AZListImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 1), azo_stack_instance_bw (&intr->stack, 1), AZ_TYPE_LIST, (void **) &list_inst);
-		idx = *((unsigned int *) azo_stack_value_bw (&intr->stack, 0));
-		if (idx >= az_collection_get_size (&list_impl->collection_impl, list_inst)) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_OUT_OF_BOUNDS, 1UL << AZO_EXCEPTION_OUT_OF_BOUNDS, ip);
-			return NULL;
-		}
-		val.impl = az_list_get_element (list_impl, list_inst, idx, &val.v.value, 64);
-		azo_stack_pop (&intr->stack, 1);
-		azo_stack_push_value_transfer (&intr->stack, val.impl, &val.v);
+	const AZImplementation *obj_impl = azo_stack_impl_bw (&intr->stack, 1);
+	const AZImplementation *idx_impl = azo_stack_impl_bw (&intr->stack, 0);
+	if (!obj_impl || !idx_impl) {
+		azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
+		return NULL;
 	}
+	void *list_inst;
+	AZListImplementation *list_impl = (AZListImplementation *) az_instance_get_interface(obj_impl, azo_stack_instance_bw(&intr->stack, 1), AZ_TYPE_LIST, (void **) &list_inst);
+	if (!list_impl) {
+		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
+		return NULL;
+	}
+	if (!convert_to_u32 (intr, &idx, idx_impl, azo_stack_value_bw(&intr->stack, 0), ip)) {
+		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_CONVERSION, 1UL << AZO_EXCEPTION_INVALID_CONVERSION, ip);
+		return NULL;
+	}
+	if (idx >= az_collection_get_size(&list_impl->collection_impl, list_inst)) {
+		azo_exception_set (&intr->exc, AZO_EXCEPTION_OUT_OF_BOUNDS, 1UL << AZO_EXCEPTION_OUT_OF_BOUNDS, ip);
+		return NULL;
+	}
+	val.impl = az_list_get_element(list_impl, list_inst, idx, &val.v.value, 64);
+	azo_stack_pop(&intr->stack, 1);
+	azo_stack_push_value_transfer(&intr->stack, val.impl, &val.v);
 	return ip + 1;
 }
 
@@ -1508,7 +1492,7 @@ interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 		if (!convert_to_u32 (intr, &idx, azo_stack_impl_bw (&intr->stack, 1), azo_stack_value_bw (&intr->stack, 1), ip)) {
 			return NULL;
 		}
-		if (idx >= varray->list.collection.size) {
+		if (idx >= varray->size) {
 			azo_exception_set (&intr->exc, AZO_EXCEPTION_OUT_OF_BOUNDS, 1UL << AZO_EXCEPTION_OUT_OF_BOUNDS, ip);
 			return NULL;
 		}
@@ -1570,8 +1554,9 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
 		return NULL;
 	}
+
 	/* Try simple property */
-	if (az_instance_get_property_by_key (impl, inst, key->str, &intr->vals[0].impl, &intr->vals[0].v)) {
+	if (az_instance_get_property_by_key (impl, inst, key->str, &intr->vals[0].impl, &intr->vals[0].v, 64) == AZ_OK) {
 		/* Ordinary property */
 		azo_stack_pop (&intr->stack, 2);
 		azo_stack_push_value_transfer (&intr->stack, intr->vals[0].packed_val.impl, &intr->vals[0].packed_val.v);
@@ -1596,10 +1581,10 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		int idx = az_class_lookup_property (klass, &klass->impl, NULL, key, &sub_class, &prop_impl, NULL);
 		if (idx >= 0) {
 			AZField *field = &sub_class->props_self[idx];
-			if (field->spec == AZ_FIELD_INSTANCE) {
+			if (AZ_FIELD_SPEC(field) == AZ_FIELD_INSTANCE) {
 				/* Field is instance */
 			} else {
-				if (az_instance_get_property_by_id (sub_class, AZ_CLASS_FROM_IMPL(prop_impl), prop_impl, NULL, idx, &intr->vals[0].impl, &intr->vals[0].v.value, 64, NULL)) {
+				if (az_instance_get_property_by_id (sub_class, AZ_CLASS_FROM_IMPL(prop_impl), prop_impl, NULL, idx, &intr->vals[0].impl, &intr->vals[0].v.value, 64) == AZ_OK) {
 					azo_stack_pop (&intr->stack, 2);
 					azo_stack_push_value_transfer (&intr->stack, intr->vals[0].impl, &intr->vals[0].v);
 					return ip + 1;
@@ -1643,7 +1628,7 @@ interpret_GET_FUNCTION (AZOInterpreter *intr, const uint8_t *ip)
 	int idx = az_class_lookup_function(AZ_CLASS_FROM_IMPL(impl), impl, azo_stack_instance_bw (&intr->stack, n_args + 1), key, (AZFunctionSignature *) &sig, &def_class, &sub_impl, &sub_inst);
 	if (idx >= 0) {
 		AZPackedValue64 val;
-		if (az_instance_get_property_by_id(def_class, AZ_CLASS_FROM_IMPL(sub_impl), sub_impl, sub_inst, idx, &val.impl, &val.v.value, 64, NULL)) {
+		if (az_instance_get_property_by_id(def_class, AZ_CLASS_FROM_IMPL(sub_impl), sub_impl, sub_inst, idx, &val.impl, &val.v.value, 64) == AZ_OK) {
 			azo_stack_push_value_transfer (&intr->stack, val.impl, &val.v.value);
 			return ip + 2;
 		}
@@ -1657,10 +1642,8 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 {
 	unsigned int result = 0;
 	/* INSTANCE STRING VALUE */
-	if (intr->flags & AZO_INTR_FLAG_CHECK_ARGS) {
-		CHECK_TYPE_EXACT(1, AZ_TYPE_STRING);
-		if (!test_stack_underflow (intr, ip, 3)) return NULL;
-	}
+	CHECK_TYPE_EXACT(1, AZ_TYPE_STRING);
+	CHECK_UNDERFLOW(3);
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
 	const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, 2);
 	if (!impl) {
@@ -1680,8 +1663,8 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		AZField *prop = &def_class->props_self[idx];
 		unsigned int type = azo_stack_type_bw (&intr->stack, 0);
 		if (!type && (AZ_TYPE_IS_REFERENCE(prop->type) || AZ_TYPE_IS_INTERFACE(prop->type))) {
-			result = az_instance_set_property_by_id (def_class, sub_impl, sub_inst, idx, NULL, NULL, NULL);
-			if (!result) {
+			result = !az_instance_set_property_by_id(def_class, AZ_CLASS_FROM_IMPL(sub_impl), sub_impl, sub_inst, idx, NULL, NULL);
+			if (result) {
 				azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_VALUE, 1UL << AZO_EXCEPTION_INVALID_VALUE, ip);
 				return NULL;
 			}
@@ -1691,12 +1674,12 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 			intr->vals[1].impl = NULL;
 			az_packed_value_set_from_impl_value (&intr->vals[0].packed_val, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0));
 			if (az_packed_value_convert (&intr->vals[1].packed_val, prop->type, &intr->vals[0].packed_val)) {
-				result = az_instance_set_property_by_id (def_class, sub_impl, sub_inst, idx, intr->vals[1].impl, az_packed_value_get_inst (&intr->vals[1].packed_val), NULL);
+				result = !az_instance_set_property_by_id (def_class, AZ_CLASS_FROM_IMPL(sub_impl), sub_impl, sub_inst, idx, intr->vals[1].impl, az_packed_value_get_inst (&intr->vals[1].packed_val));
 				az_packed_value_clear (&intr->vals[1].packed_val);
 			}
 			az_packed_value_clear (&intr->vals[0].packed_val);
 		} else {
-			result = az_instance_set_property_by_id (def_class, sub_impl, sub_inst, idx, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), NULL);
+			result = !az_instance_set_property_by_id (def_class, AZ_CLASS_FROM_IMPL(sub_impl), sub_impl, sub_inst, idx, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0));
 			if (!result) {
 				azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_VALUE, 1UL << AZO_EXCEPTION_INVALID_VALUE, ip);
 				return NULL;
@@ -1732,10 +1715,10 @@ interpret_GET_STATIC_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 	idx = az_class_lookup_property (klass, &klass->impl, NULL, key, &sub_class, &prop_impl, NULL);
 	if (idx < 0) {
 		AZField *field = &sub_class->props_self[idx];
-		if (field->spec == AZ_FIELD_INSTANCE) {
+		if (AZ_FIELD_SPEC(field) == AZ_FIELD_INSTANCE) {
 			/* No such field or field is instance */
 		} else {
-			if (az_instance_get_property_by_id (sub_class, AZ_CLASS_FROM_IMPL(prop_impl), prop_impl, NULL, idx, &intr->vals[0].impl, &intr->vals[0].v.value, 64, NULL)) {
+			if (az_instance_get_property_by_id (sub_class, AZ_CLASS_FROM_IMPL(prop_impl), prop_impl, NULL, idx, &intr->vals[0].impl, &intr->vals[0].v.value, 64) == AZ_OK) {
 				azo_stack_pop (&intr->stack, 2);
 				azo_stack_push_value_transfer (&intr->stack, intr->vals[0].impl, &intr->vals[0].v);
 				return ip + 1;
@@ -1770,7 +1753,7 @@ interpret_GET_STATIC_FUNCTION (AZOInterpreter *intr, const unsigned char *ip)
 	int idx = az_class_lookup_function(klass, NULL, NULL, key, (AZFunctionSignature *) &sig, &def_class, NULL, NULL);
 	if (idx >= 0) {
 		AZPackedValue64 val;
-		if (az_instance_get_property_by_id(def_class, klass, NULL, NULL, idx, &val.impl, &val.v.value, 64, NULL)) {
+		if (az_instance_get_property_by_id(def_class, klass, NULL, NULL, idx, &val.impl, &val.v.value, 64) == AZ_OK) {
 			azo_stack_push_value_transfer (&intr->stack, val.impl, &val.v.value);
 			return ip + 2;
 		}

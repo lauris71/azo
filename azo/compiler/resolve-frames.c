@@ -233,6 +233,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 
 	AZOResolveCtx fctx = *rctx;
 	fctx.ret_type = ret_type->term.subtype;
+	fctx.print_tree = 0;
 
 	if (func->term.flags & AZO_TERM_FLAG_STATIC) {
 		fctx.frame = azo_compiler_new_frame (comp, rctx->frame, 0, n_args, ret_type->term.subtype);
@@ -528,6 +529,7 @@ resolve_context(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	AZOResolveCtx lctx = *rctx;
 	if (this_node->term.type == AZO_TERM_EMPTY) {
 		lctx.this_variant = AZO_COMPILER_NO_THIS;
+		azo_frame_push_scope(lctx.frame);
 	} else if (this_node->term.type == AZO_TERM_VARIABLE) {
 		/* If context this is any known variable type we can use it directly */
 		switch (this_node->term.subtype) {
@@ -547,7 +549,9 @@ resolve_context(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 				fprintf(stderr, "resolve_context: Unknown variable type\n");
 				return 1;
 		}
+		azo_frame_push_scope(lctx.frame);
 	} else {
+		azo_frame_push_scope(lctx.frame);
 		/* Context 'this' was not resolved, reserve a variable spot ('this' is not valid name anyways)*/
 		AZOVariable *var = azo_frame_declare_this(rctx->frame, AZ_TYPE_ANY);
 		node->var_pos = var->pos;

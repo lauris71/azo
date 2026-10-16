@@ -28,8 +28,8 @@ struct _AZONamespaceEntry {
 };
 
 struct _AZONamespace {
-	unsigned int size;
-	AZAttribDict adict;
+	uint32_t size;
+	uint32_t allocated_size;
 	AZONamespaceEntry *entries;
 };
 
