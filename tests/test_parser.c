@@ -1319,7 +1319,7 @@ test_parser(void)
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
-    /* Static block creates context */
+    /* Static block: BLOCK/BLOCK_STATIC with sentences as direct children */
     {
         AZOParser parser;
         AZOSource *src;
@@ -1327,16 +1327,15 @@ test_parser(void)
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        TEST_ASSERT_EQUAL_UINT(7, n);
+        TEST_ASSERT_EQUAL_UINT(5, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONTEXT, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK_STATIC, nodes[1]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
-    /* Member block creates context */
+    /* Member block: MEMBER_BLOCK [head, BLOCK] */
     {
         AZOParser parser;
         AZOSource *src;
@@ -1346,9 +1345,9 @@ test_parser(void)
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         TEST_ASSERT_EQUAL_UINT(7, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONTEXT, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_MEMBER_BLOCK, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[3]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[4]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);

@@ -783,12 +783,11 @@ optimize_node(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned i
 			return 1;
 		case AZO_TERM_EMPTY:
 			return 0;
-		case AZO_TERM_CONTEXT: {
+		case AZO_TERM_MEMBER_BLOCK: {
 			AZONode *this_node = node->children;
 			unsigned int lresult = optimize_node(opt, ctx, this_node, flags);
 			if (lresult) result = 1;
-			AZOResolveCtx lctx = *ctx;
-			lresult = optimize_chain(opt, &lctx, this_node->next, flags);
+			lresult = optimize_node(opt, ctx, this_node->next, flags);
 			if (lresult) result = 1;
 			return result;
 		}

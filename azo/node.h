@@ -41,29 +41,33 @@ enum {
 	AZO_TERM_EMPTY,
 
 	/**
-	 * @brief Forces specific context to children
-	 * 
-	 * CONTEXT
-	 *   REFERENCE | EMPTY
-	 *   SENTENCES | EXPRESSION
+	 * @brief Member block (postfix expression operator)
+	 *
+	 * The head is evaluated once, the block body is executed in its context
+	 * (this == head value) and the whole node yields the head value.
+	 * Exactly two children: the head expression and the body block.
+	 *
+	 * MEMBER_BLOCK
+	 *   EXPRESSION
+	 *   BLOCK
 	 */
-	AZO_TERM_CONTEXT,
+	AZO_TERM_MEMBER_BLOCK,
 
 	/**
 	 * @brief Full program
-	 * 
+	 *
 	 * PROGRAM
 	 *   [SENTENCE ...]
 	 */
 	AZO_TERM_PROGRAM,
 	/**
 	 * @brief Block
-	 * 
+	 *
 	 * Groups sentences, creates a new scope
-	 * Subtypes: PLAIN, STATIC, REFERENCE
-	 * 
+	 * Subtypes: BLOCK_PLAIN, BLOCK_STATIC (the latter evaluates in static
+	 * context - this == NONE)
+	 *
 	 * BLOCK
-	 *   [REFERENCE]
 	 *   [SENTENCE ...]
 	 */
 	AZO_TERM_BLOCK,
@@ -206,6 +210,12 @@ enum {
 
 /* Unspecified subtype */
 #define AZO_TERM_GENERIC 0
+
+/* Block subtypes */
+enum {
+	AZO_TERM_BLOCK_PLAIN,
+	AZO_TERM_BLOCK_STATIC
+};
 
 /**
  * @brief Reference subtypes

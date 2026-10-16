@@ -1122,14 +1122,13 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 }
 
 static int
-compile_context(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
+compile_member_block(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
 	AZOCode *code = &ctx->frame->code;
 	AZONode *this_node = node->children;
+	AZONode *block = this_node->next;
 	AZOCompilerContext lctx = *ctx;
-	if (this_node->term.type == AZO_TERM_EMPTY) {
-		lctx.this_variant = AZO_COMPILER_NO_THIS;
-	} else if (this_node->term.type == AZO_TERM_VARIABLE) {
+	if (this_node->term.type == AZO_TERM_VARIABLE) {
 		/* Known variable types, refer directly to these */
 		switch (this_node->term.subtype) {
 			case AZO_TERM_VARIABLE_LOCAL:
@@ -1145,18 +1144,19 @@ compile_context(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node,
 				lctx.this_capture_pos = this_node->var_pos;
 				break;
 			default:
-				fprintf(stderr, "resolve_context: Unknown variable type\n");
+				fprintf(stderr, "compile_member_block: Unknown variable type\n");
 				return 0;
 		}
 	} else {
 		/* Local 'this' was not resolved, it has reserved local variable spot */
 		lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
 		lctx.this_var_pos = node->var_pos;
-		if (!azo_compiler_compile_expression(comp, ctx, node->children, src)) return 0;
+		if (!azo_compiler_compile_expression(comp, ctx, this_node, src)) return 0;
 		lctx.n_stack += 1;
 	}
-	if (!compile_sentences(comp, &lctx, node->children->next, src)) return 0;
-	/* Clear scope */
+	/* The block child manages its own scope/stack */
+	if (!compile_block(comp, &lctx, block, src)) return 0;
+	/* Pop the evaluated this value if any */
 	if (lctx.n_stack > ctx->n_stack) {
 		azo_code_write_POP (code, lctx.n_stack - ctx->n_stack, node);
 	}
@@ -1300,8 +1300,8 @@ compile_if (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZO
 static unsigned int
 compile_sentence (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
-	if (AZO_NODE_IS(node, AZO_TERM_CONTEXT, 0)) {
-		if (!compile_context(comp, ctx, node, src)) return 0;
+	if (AZO_NODE_IS(node, AZO_TERM_MEMBER_BLOCK, 0)) {
+		if (!compile_member_block(comp, ctx, node, src)) return 0;
 	} else if (AZO_NODE_IS(node, AZO_TERM_BLOCK, 0)) {
 		if (!compile_block (comp, ctx, node, src)) return 0;
 	} else if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_FOR)) {
@@ -1365,8 +1365,8 @@ azo_compiler_compile (AZOCompiler *comp, AZOCompilerContext *ctx, AZONode *root,
 	} else if (root->term.type == AZO_TERM_BLOCK) {
 		/* Function bodies are blocks */
 		if (!compile_sentence (comp, ctx, root, src)) return NULL;
-	} else if (root->term.type == AZO_TERM_CONTEXT) {
-		/* Function bodies are blocks */
+	} else if (root->term.type == AZO_TERM_MEMBER_BLOCK) {
+		/* Member lambda bodies are member blocks */
 		if (!compile_sentence (comp, ctx, root, src)) return NULL;
 	} else {
 		fprintf (stderr, "azo_compiler_compile: Invalid expression type %u\n", root->term.type);

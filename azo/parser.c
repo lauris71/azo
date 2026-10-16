@@ -24,7 +24,8 @@
 static unsigned int parse_program (AZOParser *parser, AZOToken *token);
 static unsigned int parse_sentences (AZOParser *parser, AZOToken *token);
 static unsigned int parse_sentence (AZOParser *parser, AZOToken *token);
-static unsigned int parse_block (AZOParser *parser, AZOToken *token, AZONode *context);
+static unsigned int parse_block (AZOParser *parser, AZOToken *token, unsigned int subtype);
+static unsigned int parse_member_block (AZOParser *parser, AZOToken *token, AZONode *head);
 static unsigned int parse_line (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
 static unsigned int parse_statement (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
 static unsigned int parse_step_statement (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
@@ -447,11 +448,10 @@ parse_sentence (AZOParser *parser, AZOToken *token)
 		/* Plain or static block */
 		if (!quals) {
 			/* Plain block */
-			return parse_block (parser, token, NULL);
+			return parse_block (parser, token, AZO_TERM_BLOCK_PLAIN);
 		} else if (quals == AZO_TERM_FLAG_STATIC) {
 			/* Static block */
-			AZONode *ctx = azo_node_new(AZO_TERM_EMPTY, AZO_TERM_GENERIC, token->start, token->start);
-			return parse_block (parser, token, ctx);
+			return parse_block (parser, token, AZO_TERM_BLOCK_STATIC);
 		} else {
 			/* Other qualifiers are not allowed */
 			return AZO_PARSER_ERROR_SYNTAX;
@@ -466,7 +466,7 @@ parse_sentence (AZOParser *parser, AZOToken *token)
 	if (token->type == AZO_TOKEN_LEFT_BRACE) {
 		/* Member_block */
 		if (quals) return AZO_PARSER_ERROR_SYNTAX;
-		return parse_block(parser, token, expr);
+		return parse_member_block(parser, token, expr);
 	}
 	/* Line */
 	return parse_line (parser, token, quals, expr);
@@ -475,32 +475,22 @@ parse_sentence (AZOParser *parser, AZOToken *token)
 /*
  * Block:
  *   { Sentences }
- * 
+ *
+ * Subtype is AZO_TERM_BLOCK_PLAIN or AZO_TERM_BLOCK_STATIC
  * Token is at opening brace.
- * If context node is present, a new context is created inside block
  */
 
 static unsigned int
-parse_block (AZOParser *parser, AZOToken *token, AZONode *context)
+parse_block (AZOParser *parser, AZOToken *token, unsigned int subtype)
 {
-	AZONode *ctx;
 	/* Block */
 	unsigned int start = token->start;
 	unsigned int end = token->end;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-	AZONode *blk = azo_node_new (AZO_TERM_BLOCK, AZO_TERM_GENERIC, start, end);
+	AZONode *blk = azo_node_new (AZO_TERM_BLOCK, subtype, start, end);
 	parser_push (parser, blk);
-	if (context) {
-		ctx = azo_node_new(AZO_TERM_CONTEXT, AZO_TERM_GENERIC, start, end);
-		parser_push(parser, ctx);
-		parser_append(parser, context);
-	}
 	int result = parse_sentences (parser, token);
 	blk->term.end = token->end;
-	if (context) {
-		ctx->term.end = token->end;
-		parser_pop(parser);
-	}
 	parser_pop (parser);
 	/* Block has to end with "}" (kept by synchronize after inner errors) */
 	if (token->type == AZO_TOKEN_EOF) {
@@ -511,6 +501,31 @@ parse_block (AZOParser *parser, AZOToken *token, AZONode *context)
 	}
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	return result;
+}
+
+/*
+ * Member_block:
+ *   Expression { Sentences }
+ *
+ * The head expression is already parsed, token is at opening brace
+ * MEMBER_BLOCK
+ *   head
+ *   BLOCK
+ */
+
+static unsigned int
+parse_member_block (AZOParser *parser, AZOToken *token, AZONode *head)
+{
+	unsigned int start = head->term.start;
+	int result = parse_block (parser, token, AZO_TERM_BLOCK_PLAIN);
+	if (result) {
+		azo_node_free_tree (head);
+		return result;
+	}
+	AZONode *blk = parser_detach_last (parser);
+	AZONode *mb = azo_node_new_with_children (AZO_TERM_MEMBER_BLOCK, AZO_TERM_GENERIC, start, blk->term.end, 2, head, blk);
+	parser_append (parser, mb);
+	return AZO_ERROR_NONE;
 }
 
 /* Move the last statement under a new statement group node and push the group as the current node */
@@ -1338,15 +1353,13 @@ parse_assignment_statement (AZOParser *parser, AZOToken *token)
 	if (AZO_NODE_IS(last, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY) || AZO_NODE_IS(last, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_ATTRIBUTE)) {
 		/* The last LValue in chain is a property/member reference */
 		if (AZO_NODE_IS(right, AZO_TERM_FUNCTION, AZO_TERM_LAMBDA) && !(right->term.flags & AZO_TERM_FLAG_STATIC)) {
-			/* If non-static function is assigned to property/attribute create internal this context for the function */
+			/* If non-static function is assigned to property/attribute wrap the
+			 * lambda body into a member block (this == assignment target) */
 			AZONode *body = right->children->next->next;
 			assert (body->term.type == AZO_TERM_BLOCK);
-			/* Add context node to lambda body block */
 			AZONode *this_node = azo_node_duplicate_tree(last->children);
-			AZONode *ctx_node = azo_node_new(AZO_TERM_CONTEXT, AZO_TERM_GENERIC, last->term.start, last->term.end);
-			ctx_node->children = this_node;
-			this_node->next = body->children;
-			body->children = ctx_node;
+			AZONode *mb_node = azo_node_new_with_children(AZO_TERM_MEMBER_BLOCK, AZO_TERM_GENERIC, last->term.start, last->term.end, 2, this_node, body);
+			right->children->next->next = mb_node;
 			// azo_node_print_info(last, stdout, parser->src, 0);
 		}
 	}

@@ -202,17 +202,17 @@ test_resolver(void)
         //azo_node_print_info(tree, stdout, src, 0);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
-        /* PROGRAM -> CONTEXT -> TYPE, ASSIGN ->
-             REFERENCE -> KEYWORD(this), REFERENCE
-             FUNCTIN -> TYPE, LIST, CONTEXT -> KEYWORD(this), BLOCK -> KEYWORD */
+        /* PROGRAM -> ASSIGN ->
+             REFERENCE -> VARIABLE_LOCAL(a), REFERENCE_MEMBER
+             FUNCTION -> TYPE, LIST, MEMBER_BLOCK -> VARIABLE_CAPTURE(this), BLOCK -> RETURN */
         TEST_ASSERT_EQUAL_UINT(13, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, nodes[3]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE_LOCAL, nodes[3]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[5]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[8]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONTEXT, nodes[9]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, nodes[10]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE_CAPTURE, nodes[10]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_MEMBER_BLOCK, nodes[8]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, nodes[9]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE_CAPTURE, nodes[9]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[10]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         azo_compiler_release(&comp);
         free_parse(&parser, src, tree);

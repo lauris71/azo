@@ -280,12 +280,11 @@ azo_node_print (AZONode *expr, FILE *ofs)
 	case AZO_TERM_EMPTY:
 		fprintf (ofs, "EMPTY ");
 		break;
-	case AZO_TERM_CONTEXT:
-		fprintf (ofs, "CONTEXT ");
+	case AZO_TERM_MEMBER_BLOCK:
 		azo_node_print (expr->children, ofs);
-		fprintf (ofs, "{\n");
-		azo_node_print_list (expr->children->children, ofs, "\n");
-		fprintf (ofs, "} CONTEXT}n");
+		fprintf (ofs, " {\n");
+		azo_node_print (expr->children->next, ofs);
+		fprintf (ofs, "}\n");
 		break;
 	case AZO_TERM_PROGRAM:
 		fprintf (ofs, "BEGIN_PROGRAM ");
@@ -611,7 +610,7 @@ azo_node_print_list (AZONode *expr, FILE *ofs, const char *separator)
 const char *expr_names[] = {
 	"INVALID",
 	"EMPTY",
-	"CONTEXT",
+	"MEMBER_BLOCK",
 	"PROGRAM",
 	"BLOCK",
 	"STATEMENT_GROUP",

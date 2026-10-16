@@ -29,7 +29,6 @@ Sentences:
 Sentence:
   Block
   Line
-  Member_block
   Static_block
   For_statement
   While_statement
@@ -39,17 +38,11 @@ Sentence:
 Block:
   { Sentences }
 
-# Member block: the head expression is evaluated once and the body is executed in
-# its context (this == head value, unqualified names resolve to its properties
-# first, then attributes, new names are installed as attributes). The head type
-# must be known at compile time.
-# A class-valued head gives a class context: classes are pre-built (C code) and
-# cannot be modified from scripts, so unqualified names resolve to existing class
-# properties or are compile-time errors - no new names can be installed.
-Member_block:
-  Expression Block
-
 # Static block: the body is evaluated in static context (this == NONE)
+# Note: ; terminates a Line; block-statements (Block, Static_block, if/while/
+# for/do) are not Lines and take no ;. A member block is an expression, so as a
+# statement it is a Line and takes ; (like any expression whose value is
+# discarded): enemy { ... };
 Static_block:
   static Block
 
@@ -75,9 +68,12 @@ Silent_statement:
   Empty_statement
   Nonempty_silent_statement
 
+# Member_block is allowed as a silent statement (side-effecting; the yielded
+# head value is discarded, like a function call result)
 Nonempty_silent_statement:
   Assignment
   Function_call
+  Member_block
   Prefix_arithmetic
   Suffix_arithmetic
 
@@ -215,7 +211,26 @@ Attribute_reference
 
 Array_reference:
   Expression[Expression]
-  
+
+# Member block (postfix expression operator, same precedence as . () []):
+# the head expression is evaluated once, the body is executed in its context
+# (this == head value, unqualified names resolve to its properties first, then
+# attributes, new names are installed as attributes) and the block yields the
+# head value. The head type must be known at compile time.
+# A class-valued head gives a class context: classes are pre-built (C code) and
+# cannot be modified from scripts, so unqualified names resolve to existing class
+# properties or are compile-time errors - no new names can be installed.
+# Typical use - configuring a fresh object:
+#   Button btn = new Button(parent) {
+#     width = 32;
+#     onClicked = () => { ... };
+#   };
+# Postfix { can only follow a complete expression, so it never collides with
+# Block ({ at sentence start), Structured_literal ({[...]}) or lambda bodies
+# ({ directly after =>).
+Member_block:
+  Expression Block
+
 RValue:
   null
   this
@@ -223,6 +238,7 @@ RValue:
   New
   Lambda
   Function_call
+  Member_block
   Unary_operation
   Binary_operation
   Prefix_arithmetic

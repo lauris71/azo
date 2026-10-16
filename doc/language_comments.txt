@@ -58,12 +58,18 @@ signature negotiation at call sites.
 ###Declaration context
 - A lambda is static by default; the static prefix forces a plain function with
   exactly the declared signature in any context.
-- Expression { Sentences } is a member block: the head is evaluated once, the body
-  is executed with this bound to it, and unqualified names resolve to the head's
-  properties first, then attributes (the block is an explicit convenience context;
-  the strict ./-> separation applies to the operators). New names are installed as
-  attributes (compile-time error if the head does not implement AZAttributeList).
-  The head type must be known at compile time (resolver error otherwise).
+- Expression { Sentences } is a member block - a postfix expression operator
+  (same precedence as . () []) that yields the head value (Kotlin apply style).
+  The head is evaluated once, the body is executed with this bound to it, and
+  unqualified names resolve to the head's properties first, then attributes (the
+  block is an explicit convenience context; the strict ./-> separation applies to
+  the operators). New names are installed as attributes (compile-time error if
+  the head does not implement AZAttributeList). The head type must be known at
+  compile time (resolver error otherwise).
+- Being an expression, member blocks work anywhere: new Button(p) { ... },
+  factories, assignments, arguments, chaining (obj { ... }.width). As a statement
+  the yielded value is discarded (silent statement, like a function call):
+  enemy { onHit = ...; };
 - A class-valued head gives a class context. Classes are pre-built (C code) and
   cannot be modified from scripts: unqualified names resolve to existing class
   properties or are compile-time errors, and assignments target existing writable
@@ -205,6 +211,11 @@ signature negotiation at call sites.
 ###Usage guidelines (script code)
 - DO attach behavior with member closures: btn.onClicked = () => { ... } - all
   ActiveObject captures (this included) are weak, no cycle possible.
+- DO configure fresh objects with member blocks:
+  Button btn = new Button(parent) {
+    width = 32;
+    onClicked = () => { ... };
+  };
 - DO use static int32 n = 0 inside a lambda for per-closure counters (per-button
   click counts, accumulators).
 - DO use shared for state common to all closures of the same lambda (rare in
