@@ -60,13 +60,8 @@ resolve_sentences (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 static int
 azo_compiler_resolve_frame(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
-	int result;
-	if (node->term.type == AZO_TERM_MEMBER_BLOCK) {
-		/* Member lambda body - the member block sets up this and resolves the body block */
-		result = azo_compiler_resolve_node(comp, rctx, node);
-	} else {
-		result = resolve_sentences(comp, rctx, node->children);
-	}
+	/* PROGRAM, BLOCK and MEMBER_BLOCK are all resolvable nodes */
+	int result = azo_compiler_resolve_node(comp, rctx, node);
 	if (rctx->print_tree) {
 		azo_node_print_info(node, stdout, comp->src, 0);
 	}
@@ -103,6 +98,92 @@ resolve_for (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	lresult = azo_compiler_resolve_node (comp, rctx, content);
 	if (lresult) result = 1;
 	azo_frame_pop_scope (rctx->frame);
+	/* The body may not execute at all */
+	rctx->frame->ret_is_last = 0;
+	return result;
+}
+
+/*
+ * WHILE
+ *   condition
+ *   body sentence
+ */
+
+static unsigned int
+resolve_while (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
+{
+	unsigned int result = 0;
+	AZONode *test = expr->children;
+	AZONode *content = test->next;
+	/* The loop (condition and body) is a scope */
+	azo_frame_push_scope (rctx->frame);
+	unsigned int lresult = azo_compiler_resolve_node (comp, rctx, test);
+	if (lresult) result = 1;
+	lresult = azo_compiler_resolve_node (comp, rctx, content);
+	if (lresult) result = 1;
+	azo_frame_pop_scope (rctx->frame);
+	/* The body may not execute at all */
+	rctx->frame->ret_is_last = 0;
+	return result;
+}
+
+/*
+ * DO
+ *   body sentence
+ *   condition
+ */
+
+static unsigned int
+resolve_do (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
+{
+	unsigned int result = 0;
+	AZONode *content = expr->children;
+	AZONode *test = content->next;
+	/* The loop (body and condition) is a scope */
+	azo_frame_push_scope (rctx->frame);
+	unsigned int lresult = azo_compiler_resolve_node (comp, rctx, content);
+	if (lresult) result = 1;
+	lresult = azo_compiler_resolve_node (comp, rctx, test);
+	if (lresult) result = 1;
+	azo_frame_pop_scope (rctx->frame);
+	/* Do not analyze loop paths */
+	rctx->frame->ret_is_last = 0;
+	return result;
+}
+
+/*
+ * IF
+ *   condition
+ *   true sentence
+ *   [false sentence]
+ */
+
+static unsigned int
+resolve_if (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
+{
+	unsigned int result = 0;
+	AZONode *test = expr->children;
+	AZONode *if_true = test->next;
+	AZONode *if_false = if_true->next;
+	unsigned int lresult = azo_compiler_resolve_node (comp, rctx, test);
+	if (lresult) result = 1;
+	/* Each branch is its own scope */
+	azo_frame_push_scope (rctx->frame);
+	lresult = azo_compiler_resolve_node (comp, rctx, if_true);
+	if (lresult) result = 1;
+	unsigned int true_returns = rctx->frame->ret_is_last;
+	azo_frame_pop_scope (rctx->frame);
+	if (if_false) {
+		azo_frame_push_scope (rctx->frame);
+		lresult = azo_compiler_resolve_node (comp, rctx, if_false);
+		if (lresult) result = 1;
+		/* The if statement returns only if both branches return */
+		rctx->frame->ret_is_last = true_returns && rctx->frame->ret_is_last;
+		azo_frame_pop_scope (rctx->frame);
+	} else {
+		/* There is a path that does not execute if_true */
+		rctx->frame->ret_is_last = 0;
+	}
 	return result;
 }
 
@@ -501,7 +582,8 @@ resolve_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	if (node->term.subtype == AZO_TERM_BLOCK_STATIC) lctx.this_variant = AZO_COMPILER_NO_THIS;
 	/* Create new scope */
 	azo_frame_push_scope(lctx.frame);
-	result = resolve_children(comp, &lctx, node);
+	/* Block children are sentences (per-sentence return tracking) */
+	result = resolve_sentences(comp, &lctx, node->children);
 	azo_frame_pop_scope(lctx.frame);
 	return result;
 }
@@ -514,6 +596,7 @@ resolve_member_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	unsigned int result = azo_compiler_resolve_node(comp, rctx, this_node);
 	if (result) result = 1;
 	AZOResolveCtx lctx = *rctx;
+	azo_frame_push_scope(lctx.frame);
 	if (this_node->term.type == AZO_TERM_VARIABLE) {
 		/* If context this is any known variable type we can use it directly */
 		switch (this_node->term.subtype) {
@@ -543,6 +626,7 @@ resolve_member_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	/* The block child creates the scope */
 	result = azo_compiler_resolve_node(comp, &lctx, block);
 	if (lctx.print_tree) azo_node_print_info(node, stderr, comp->src, 0);
+	azo_frame_pop_scope(lctx.frame);
 	return result;
 }
 
@@ -559,8 +643,7 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		case AZO_TERM_MEMBER_BLOCK:
 			return resolve_member_block(comp, rctx, node);
 		case AZO_TERM_PROGRAM:
-			fprintf(stderr, "resolve_node: type = PROGRAM\n");
-			return 1;
+			return resolve_sentences(comp, rctx, node->children);
 		case AZO_TERM_BLOCK:
 			return resolve_block(comp, rctx, node);
 		case AZO_TERM_STATEMENT_GROUP:
@@ -577,13 +660,12 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 				return resolve_this(comp, rctx, node);
 			} else if (node->term.subtype == AZO_KEYWORD_FOR) {
 				return resolve_for(comp, rctx, node);
+			} else if (node->term.subtype == AZO_KEYWORD_WHILE) {
+				return resolve_while(comp, rctx, node);
 			} else if (node->term.subtype == AZO_KEYWORD_DO) {
-				/* fixme: Scope */
-				return resolve_children(comp, rctx, node);
+				return resolve_do(comp, rctx, node);
 			} else if (node->term.subtype == AZO_KEYWORD_IF) {
-				/* fixme: Scope */
-				/* fixme: return tracking */
-				return resolve_children(comp, rctx, node);
+				return resolve_if(comp, rctx, node);
 			} else if (node->term.subtype == AZO_KEYWORD_NEW) {
 				return resolve_new(comp, rctx, node);
 			} else if (node->term.subtype == AZO_KEYWORD_RETURN) {

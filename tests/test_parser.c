@@ -1335,11 +1335,11 @@ test_parser(void)
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
-    /* Member block: MEMBER_BLOCK [head, BLOCK] */
+    /* Member block statement: MEMBER_BLOCK [head, BLOCK] (expression statement - needs ;) */
     {
         AZOParser parser;
         AZOSource *src;
-        AZONode *tree = parse_text("alfa { a = 1; }", &parser, &src);
+        AZONode *tree = parse_text("alfa { a = 1; };", &parser, &src);
         TEST_ASSERT_NOT_NULL(tree);
         AZONode *nodes[16];
         unsigned int n = azo_node_flatten(tree, nodes, 16);
@@ -1351,5 +1351,68 @@ test_parser(void)
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[4]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
+    }
+    /* Member block as expression: x = alfa { a = 1; }; */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("x = alfa { a = 1; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *nodes[16];
+        unsigned int n = azo_node_flatten(tree, nodes, 16);
+        /* PROGRAM -> ASSIGN(x, MEMBER_BLOCK(alfa, BLOCK(ASSIGN))) */
+        TEST_ASSERT_EQUAL_UINT(9, n);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[2]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_MEMBER_BLOCK, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Member block chains with member access: alfa { a = 1; }.beta; */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("x = alfa { a = 1; }.beta;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *nodes[16];
+        unsigned int n = azo_node_flatten(tree, nodes, 16);
+        /* PROGRAM -> ASSIGN(x, REF_PROPERTY(MEMBER_BLOCK(alfa, BLOCK), beta)) */
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_PROPERTY, nodes[3]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_MEMBER_BLOCK, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Member block on call result: x = new Button(p) { w = 32; }; */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("x = new Button(p) { w = 32; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *nodes[16];
+        unsigned int n = azo_node_flatten(tree, nodes, 16);
+        /* PROGRAM -> ASSIGN(x, MEMBER_BLOCK(NEW(Button, args), BLOCK)) */
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_MEMBER_BLOCK, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_NEW, nodes[4]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[8]->term.type);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Member block statement without ; is an error */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("alfa { a = 1; }", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_GREATER_THAN_UINT(0, parser.n_errors);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
     }
 }

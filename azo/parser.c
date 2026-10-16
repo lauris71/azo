@@ -25,7 +25,7 @@ static unsigned int parse_program (AZOParser *parser, AZOToken *token);
 static unsigned int parse_sentences (AZOParser *parser, AZOToken *token);
 static unsigned int parse_sentence (AZOParser *parser, AZOToken *token);
 static unsigned int parse_block (AZOParser *parser, AZOToken *token, unsigned int subtype);
-static unsigned int parse_member_block (AZOParser *parser, AZOToken *token, AZONode *head);
+static unsigned int parse_member_block (AZOParser *parser, AZOToken *token, unsigned int left_precedence);
 static unsigned int parse_line (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
 static unsigned int parse_statement (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
 static unsigned int parse_step_statement (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
@@ -231,6 +231,7 @@ term_is_silent_statement (AZOTerm *expr)
 	if (expr->type == AZO_TERM_EMPTY) return 1;
 	if (expr->type == AZO_TERM_ASSIGN) return 1;
 	if (expr->type == AZO_TERM_FUNCTION_CALL) return 1;
+	if (expr->type == AZO_TERM_MEMBER_BLOCK) return 1;
 	if (expr->type == AZO_TERM_PREFIX) {
 		if (expr->subtype == AZO_TERM_PREFIX_INCREMENT) return 1;
 		if (expr->subtype == AZO_TERM_PREFIX_DECREMENT) return 1;
@@ -457,17 +458,12 @@ parse_sentence (AZOParser *parser, AZOToken *token)
 			return AZO_PARSER_ERROR_SYNTAX;
 		}
 	}
-	/* Member_block, Step_statement */
+	/* Member_block is a postfix expression operator ({ in continue_expression) */
 	/* All keywords are processed so fetch an expression */
-	/* Either Declaration, Silent Statement or Member_block - all start with expression */
+	/* Either Declaration or Silent Statement - both start with expression */
 	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
 	if (result) return result;
 	AZONode *expr = parser_detach_last(parser);
-	if (token->type == AZO_TOKEN_LEFT_BRACE) {
-		/* Member_block */
-		if (quals) return AZO_PARSER_ERROR_SYNTAX;
-		return parse_member_block(parser, token, expr);
-	}
 	/* Line */
 	return parse_line (parser, token, quals, expr);
 }
@@ -504,18 +500,19 @@ parse_block (AZOParser *parser, AZOToken *token, unsigned int subtype)
 }
 
 /*
- * Member_block:
+ * Member_block (postfix operator):
  *   Expression { Sentences }
  *
- * The head expression is already parsed, token is at opening brace
+ * The head expression is the last parsed node, token is at opening brace
  * MEMBER_BLOCK
  *   head
  *   BLOCK
  */
 
 static unsigned int
-parse_member_block (AZOParser *parser, AZOToken *token, AZONode *head)
+parse_member_block (AZOParser *parser, AZOToken *token, unsigned int left_precedence)
 {
+	AZONode *head = parser_detach_last (parser);
 	unsigned int start = head->term.start;
 	int result = parse_block (parser, token, AZO_TERM_BLOCK_PLAIN);
 	if (result) {
@@ -525,7 +522,7 @@ parse_member_block (AZOParser *parser, AZOToken *token, AZONode *head)
 	AZONode *blk = parser_detach_last (parser);
 	AZONode *mb = azo_node_new_with_children (AZO_TERM_MEMBER_BLOCK, AZO_TERM_GENERIC, start, blk->term.end, 2, head, blk);
 	parser_append (parser, mb);
-	return AZO_ERROR_NONE;
+	return azo_parser_continue_expression (parser, token, left_precedence);
 }
 
 /* Move the last statement under a new statement group node and push the group as the current node */
@@ -1258,6 +1255,10 @@ azo_parser_continue_expression (AZOParser *parser, AZOToken *token, unsigned int
 			/* Array */
 			error = parse_array_element (parser, token);
 			if (error) return error;
+		} else if ((token->type == AZO_TOKEN_LEFT_BRACE) && (left_precedence < AZO_PRECEDENCE_FUNCTION)) {
+			/* Member block */
+			error = parse_member_block (parser, token, left_precedence);
+			if (error) return error;
 		} else {
 			/* Everything else terminates expression */
 			break;
@@ -1755,7 +1756,7 @@ parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, 
 		if (!error) {
 			AZONode *expr = parser_detach_last(parser);
 			AZONode *ret = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_RETURN, expr->term.start, expr->term.end, 1, expr);
-			AZONode *block = azo_node_new_with_children (AZO_TERM_BLOCK, AZO_TERM_GENERIC, expr->term.start, expr->term.end, 1, ret);
+			AZONode *block = azo_node_new_with_children (AZO_TERM_BLOCK, AZO_TERM_BLOCK_PLAIN, expr->term.start, expr->term.end, 1, ret);
 			parser_append(parser, block);
 		}
 	}

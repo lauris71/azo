@@ -217,4 +217,76 @@ test_resolver(void)
         azo_compiler_release(&comp);
         free_parse(&parser, src, tree);
     }
+    /* Return tracking: both if/else branches return - function returns */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = (int32 x) int32 => { if (x) return 1; else return 2; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(!result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Return tracking: if without else does not guarantee return */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = (int32 x) int32 => { if (x) return 1; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Return tracking: cycles do not guarantee return */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = (int32 x) int32 => { while (x) return 1; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Scope tracking: if branches are separate scopes */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = (int32 x) int32 => { if (x) int32 a = 1; else a = 2; return x; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
 }

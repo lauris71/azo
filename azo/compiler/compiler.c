@@ -122,6 +122,7 @@ compile_PUSH_VALUE_const_object(AZOCompiler *comp, AZOCompilerContext *ctx, AZOb
 
 static unsigned int compile_sentences (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src);
 static unsigned int compile_sentence (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src);
+static int compile_member_block_ex (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src, unsigned int discard);
 
 /* Expressions */
 
@@ -843,6 +844,8 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 		if (!compile_function (comp, ctx, node, src)) return 0;
 	} else if (node->term.type == AZO_TERM_FUNCTION_CALL) {
 		if (!compile_function_call (comp, ctx, node, src, 0)) return 0;
+	} else if (node->term.type == AZO_TERM_MEMBER_BLOCK) {
+		if (!compile_member_block_ex (comp, ctx, node, src, 0)) return 0;
 	} else if (node->term.type == AZO_TERM_LITERAL_ARRAY) {
 		if (!compile_array_literal (comp, ctx, node, src)) return 0;
 		/* fixme: Do we allow operators here? (Lauris) */
@@ -1022,6 +1025,9 @@ compile_silent_statement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZON
 	case AZO_TERM_FUNCTION_CALL:
 		if (!compile_function_call (comp, ctx, node, src, 1)) return 0;
 		break;
+	case AZO_TERM_MEMBER_BLOCK:
+		if (!compile_member_block_ex (comp, ctx, node, src, 1)) return 0;
+		break;
 	case AZO_TERM_SUFFIX:
 		if (!compile_suffix (comp, ctx, node, node->children, src, 1)) return 0;
 		break;
@@ -1122,14 +1128,16 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 }
 
 static int
-compile_member_block(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
+compile_member_block_ex(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src, unsigned int discard)
 {
 	AZOCode *code = &ctx->frame->code;
 	AZONode *this_node = node->children;
 	AZONode *block = this_node->next;
 	AZOCompilerContext lctx = *ctx;
+	unsigned int this_is_variable = 0;
 	if (this_node->term.type == AZO_TERM_VARIABLE) {
 		/* Known variable types, refer directly to these */
+		this_is_variable = 1;
 		switch (this_node->term.subtype) {
 			case AZO_TERM_VARIABLE_LOCAL:
 				lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
@@ -1156,11 +1164,26 @@ compile_member_block(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *
 	}
 	/* The block child manages its own scope/stack */
 	if (!compile_block(comp, &lctx, block, src)) return 0;
-	/* Pop the evaluated this value if any */
-	if (lctx.n_stack > ctx->n_stack) {
-		azo_code_write_POP (code, lctx.n_stack - ctx->n_stack, node);
+	if (discard) {
+		/* Sentence: pop the evaluated this value if any */
+		if (lctx.n_stack > ctx->n_stack) {
+			azo_code_write_POP (code, lctx.n_stack - ctx->n_stack, node);
+		}
+	} else {
+		/* Expression: yield the head value */
+		if (this_is_variable) {
+			/* The head was not evaluated onto stack - push it */
+			if (!compile_this(comp, &lctx, node, src)) return 0;
+		}
+		/* Otherwise the evaluated head is on stack top - the result */
 	}
 	return 1;
+}
+
+static int
+compile_member_block(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
+{
+	return compile_member_block_ex(comp, ctx, node, src, 1);
 }
 
 #define noDEBUG_FOR

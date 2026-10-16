@@ -100,55 +100,20 @@ azo_compiler_resolve_type_expression(AZOCompiler *comp, AZOResolveCtx *rctx, AZO
 }
 
 /*
- * REFERENCE_PROPERTY
+ * REFERENCE_ATTRIBUTE
  *   AZO_TERM_REFERENCE_VARIABLE | AZO_TERM_REFERENCE_PROPERTY | CONSTANT
  *   AZO_TERM_REFERENCE_MEMBER
+ *
+ * Final attribute substitution is done by the optimizer (optimize_attribute)
  */
-
-static int
-resolve_attribute (AZOFrame *frame, AZOResolveCtx *rctx, AZONode *expr, const AZClass *klass, const AZImplementation *impl, void *inst, AZString *str)
-{
-	if (inst && az_type_implements(AZ_IMPL_TYPE(impl), AZ_TYPE_ATTRIBUTE_DICT)) {
-		void *attrd_inst;
-		const AZAttribDictImplementation *attrd_impl = (AZAttribDictImplementation *) az_instance_get_interface (impl, inst, AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
-		AZValue64 attr_val;
-		unsigned int attr_flags;
-		const AZImplementation *attr_impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, str, &attr_val.value, 64, &attr_flags);
-		if (attr_flags & AZ_ATTRIB_ARRAY_IS_FINAL) {
-			az_packed_value_set_from_impl_value (&expr->value, attr_impl, &attr_val.value);
-			expr->term.type = AZO_TERM_CONSTANT;
-			if (attr_impl) {
-				expr->term.subtype = AZ_IMPL_TYPE(attr_impl);
-				az_value_clear (attr_impl, &attr_val.value);
-			} else {
-				expr->term.subtype = 0;
-			}
-			azo_node_clear_children(expr);
-			DBG_REPLACE("resolve_attribute: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
-			return 0;
-		}
-	}
-	return 0;
-}
 
 static unsigned int
 resolve_attribute_reference (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 {
-	AZONode *parent, *member;
-	parent = expr->children;
+	AZONode *parent = expr->children;
 	unsigned int result = azo_compiler_resolve_node (comp, rctx, parent);
 	if (result) return result;
-	member = parent->next;
-	result = azo_compiler_resolve_node (comp, rctx, member);
-	if (result) return result;
-	if (parent->term.type == AZO_TERM_CONSTANT) {
-		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER)) {
-			void *inst;
-			const AZImplementation *impl = az_packed_value_get_inst_autobox(&parent->value, &inst);
-			return resolve_attribute (rctx->frame, rctx, expr, AZ_CLASS_FROM_IMPL(impl), impl, inst, member->value.v.string);
-		}
-	}
-	return 0;
+	return azo_compiler_resolve_node (comp, rctx, parent->next);
 }
 
 /*
