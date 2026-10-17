@@ -133,7 +133,7 @@ azo_frame_append (AZOFrame *frame, const AZImplementation *impl, void *inst)
 {
 	unsigned int pos = frame->code.data_len;
 	azo_code_write_instance(&frame->code, impl, inst);
-	return pos;
+	return frame->n_shared + pos;
 }
 
 unsigned int
@@ -141,33 +141,42 @@ azo_frame_append_value (AZOFrame *frame, unsigned int type, const AZValue *val)
 {
 	unsigned int pos = frame->code.data_len;
 	azo_code_write_instance(&frame->code, AZ_IMPL_FROM_TYPE(type), az_value_get_inst(AZ_IMPL_FROM_TYPE(type), val));
-	return pos;
+	return frame->n_shared + pos;
 }
 
 unsigned int
 azo_frame_append_string (AZOFrame *frame, AZString *str)
 {
 	int pos = azo_code_find_block(&frame->code, (const AZImplementation *) &AZStringKlass, str);
-	if (pos >= 0) return pos;
-	return azo_code_write_instance(&frame->code, (const AZImplementation *) &AZStringKlass, str);
+	if (pos >= 0) return frame->n_shared + (unsigned int) pos;
+	return frame->n_shared + azo_code_write_instance(&frame->code, (const AZImplementation *) &AZStringKlass, str);
 }
 
 unsigned int
 azo_frame_append_object (AZOFrame *frame, AZObject *obj)
 {
 	int pos = azo_code_find_block(&frame->code, (const AZImplementation *) obj->klass, obj);
-	if (pos >= 0) return pos;
-	return azo_code_write_instance(&frame->code, (const AZImplementation *) obj->klass, obj);
+	if (pos >= 0) return frame->n_shared + (unsigned int) pos;
+	return frame->n_shared + azo_code_write_instance(&frame->code, (const AZImplementation *) obj->klass, obj);
 }
 
 AZOVariable *
-azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type)
+azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, unsigned int flags)
 {
 	if (azo_scope_lookup_local_var (frame->scope, name)) {
 		fprintf(stderr, "Variable %s is already defined in current scope\n", name->str);
 		return NULL;
 	}
-	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, name, frame->scope->next_var_pos++);
+	unsigned int pos;
+	if (flags & AZO_VARIABLE_FLAG_STATIC) {
+		pos = frame->n_static++;
+	} else if (flags & AZO_VARIABLE_FLAG_SHARED) {
+		pos = frame->n_shared++;
+	} else {
+		pos = frame->scope->next_var_pos++;
+	}
+	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, name, pos);
+	frame->scope->variables->var.flags = flags;
 	return &frame->scope->variables->var;
 }
 

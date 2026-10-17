@@ -47,7 +47,8 @@ test_resolver(void)
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION_LIST, nodes[1]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_TYPE, nodes[2]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_DECLARATION, nodes[3]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, nodes[4]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE_LOCAL, nodes[4]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[5]->term.type);
         TEST_ASSERT_EQUAL_INT32(1, nodes[5]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
@@ -86,7 +87,7 @@ test_resolver(void)
         };
         rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_INT32);
         AZOVariable *var = azo_frame_declare_this(rctx.frame, AZ_TYPE_INT32);
-        rctx.this_variant = AZO_COMPILER_THIS_IS_ARGUMENT;
+        rctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
         rctx.this_var_pos = var->pos;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);
@@ -195,7 +196,7 @@ test_resolver(void)
         };
         rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
         AZString *str = az_string_new((const uint8_t *) "a");
-        AZOVariable *var = azo_frame_declare_variable(rctx.frame, str, AZ_TYPE_ACTIVE_OBJECT);
+        AZOVariable *var = azo_frame_declare_variable(rctx.frame, str, AZ_TYPE_ACTIVE_OBJECT, 0);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);

@@ -221,12 +221,15 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			/* If const add to list, if not const remove from list (overwriting can only happen in function body) */
 			AZONode *name = node->children;
 			/* Variable declaration is the only place where variable reference survives */
-			assert(AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE));
+			assert(name->term.type == AZO_TERM_VARIABLE);
 			AZONode *init = name->next;
-			if (init && init->term.type == AZO_TERM_CONSTANT) {
-				vars = azo_var_list_set(vars, name->value.v.string, name->var_pos, init);
-			} else {
-				vars = azo_var_list_remove(vars, name->value.v.string);
+			/* Only stack (local) variables are const-substitutable */
+			if (AZO_NODE_IS(name, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
+				if (init && init->term.type == AZO_TERM_CONSTANT) {
+					vars = azo_var_list_set(vars, name->value.v.string, name->var_pos, init);
+				} else {
+					vars = azo_var_list_remove(vars, name->value.v.string);
+				}
 			}
 			break;
 		}
@@ -439,7 +442,7 @@ static int
 optimize_declaration(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	AZONode *name = node->children;
-	assert(name->term.subtype == AZO_TERM_REFERENCE_VARIABLE);
+	assert(name->term.type == AZO_TERM_VARIABLE);
 	if (name->next) {
 		int result = optimize_node(opt, ctx, name->next, flags);
 		if (result) return result;

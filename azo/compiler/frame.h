@@ -107,7 +107,7 @@ unsigned int azo_frame_append_object (AZOFrame *frame, AZObject *obj);
  * @return The variable object
  *
  */
-AZOVariable *azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type);
+AZOVariable *azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, unsigned int flags);
 AZOVariable *azo_frame_declare_this(AZOFrame *frame, unsigned int type);
 /**
  * @brief Ensure variable exists in current frame

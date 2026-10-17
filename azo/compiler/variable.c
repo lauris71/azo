@@ -156,6 +156,7 @@ azo_var_list_duplicate(AZOVariableList *list)
 		assert(v->var.name != NULL);
 		result = azo_var_list_prepend(result, v->var.name, v->var.pos);
 		result->var.const_node = v->var.const_node;
+		result->var.flags = v->var.flags;
 	}
 	return result;
 }

@@ -517,6 +517,30 @@ interpret_STORE_CAPTURE(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uns
 }
 
 static const unsigned char *
+interpret_JMP_IF_SHARED_SET(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	uint32_t loc;
+	int32_t raddr;
+	memcpy (&loc, ip + 1, 4);
+	memcpy (&raddr, ip + 5, 4);
+	const unsigned char *dst = ip + 9;
+	if (ictx->shared_data->entries[loc].flags & AZO_DATABLOCK_FLAG_SET) dst += raddr;
+	return dst;
+}
+
+static const unsigned char *
+interpret_JMP_IF_CAPTURE_SET(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	uint32_t loc;
+	int32_t raddr;
+	memcpy (&loc, ip + 1, 4);
+	memcpy (&raddr, ip + 5, 4);
+	const unsigned char *dst = ip + 9;
+	if (ictx->static_data->entries[loc].flags & AZO_DATABLOCK_FLAG_SET) dst += raddr;
+	return dst;
+}
+
+static const unsigned char *
 interpret_DUPLICATE (AZOInterpreter *intr, const unsigned char *ip)
 {
 	uint32_t pos;
@@ -1879,6 +1903,12 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 			break;
 		case AZO_TC_STORE_CAPTURE:
 			ipc = interpret_STORE_CAPTURE (intr, ictx, ipc);
+			break;
+		case AZO_TC_JMP_IF_SHARED_SET:
+			ipc = interpret_JMP_IF_SHARED_SET (intr, ictx, ipc);
+			break;
+		case AZO_TC_JMP_IF_CAPTURE_SET:
+			ipc = interpret_JMP_IF_CAPTURE_SET (intr, ictx, ipc);
 			break;
 		case AZO_TC_DUPLICATE:
 			ipc = interpret_DUPLICATE (intr, ipc);

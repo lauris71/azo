@@ -10,6 +10,9 @@
 typedef struct _AZOVariable AZOVariable;
 typedef struct _AZOVariableList AZOVariableList;
 
+#define AZO_VARIABLE_FLAG_STATIC 1
+#define AZO_VARIABLE_FLAG_SHARED 2
+
 #include <az/string.h>
 
 #include <azo/node.h>
@@ -33,6 +36,8 @@ struct _AZOVariable {
 	AZString *name;
 	/* Stack or data position */
 	unsigned int pos;
+	/* Storage class flags (AZO_VARIABLE_FLAG_*) */
+	unsigned int flags;
 	/* Link to parent for data variables (for resolver) */
 	AZOVariable *parent;
     /* Link to const node if determined to be constand (for optimizer) */

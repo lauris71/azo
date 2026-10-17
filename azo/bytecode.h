@@ -326,6 +326,20 @@ enum {
 	 * Throws INVALID_VALUE if the attribute cannot be set
 	 */
 	AZO_TC_SET_ATTRIBUTE,
+	/**
+	 * @brief Jump forward if shared datablock entry is set
+	 * 
+	 * JMP_IF_SHARED_SET U32:POS I32:RADDR
+	 * Skips (static/shared) initializer if the entry is already initialized
+	 */
+	AZO_TC_JMP_IF_SHARED_SET,
+	/**
+	 * @brief Jump forward if static datablock entry is set
+	 * 
+	 * JMP_IF_CAPTURE_SET U32:POS I32:RADDR
+	 * Skips (static/shared) initializer if the entry is already initialized
+	 */
+	AZO_TC_JMP_IF_CAPTURE_SET,
 	AZO_TC_END
 };
 

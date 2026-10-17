@@ -227,7 +227,7 @@ resolve_new (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 }
 
 static unsigned int
-resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
+resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, unsigned int term_flags)
 {
 	AZONode *name = node->children;
 	assert(AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE));
@@ -241,9 +241,21 @@ resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		unsigned int result = azo_compiler_resolve_node (comp, rctx, value);
 		if (result) return result;
 	}
+	unsigned int var_flags = 0;
+	if (term_flags & AZO_TERM_FLAG_STATIC) var_flags |= AZO_VARIABLE_FLAG_STATIC;
+	if (term_flags & AZO_TERM_FLAG_SHARED) var_flags |= AZO_VARIABLE_FLAG_SHARED;
 	// fixme: Use type
-	AZOVariable *var = azo_frame_declare_variable (rctx->frame, name->value.v.string, AZ_TYPE_ANY);
+	AZOVariable *var = azo_frame_declare_variable (rctx->frame, name->value.v.string, AZ_TYPE_ANY, var_flags);
+	/* The declaration name node becomes a resolved variable node */
+	name->term.type = AZO_TERM_VARIABLE;
 	name->var_pos = var->pos;
+	if (var->flags & AZO_VARIABLE_FLAG_STATIC) {
+		name->term.subtype = AZO_TERM_VARIABLE_STATIC;
+	} else if (var->flags & AZO_VARIABLE_FLAG_SHARED) {
+		name->term.subtype = AZO_TERM_VARIABLE_SHARED;
+	} else {
+		name->term.subtype = AZO_TERM_VARIABLE_LOCAL;
+	}
 	return 0;
 }
 
@@ -256,7 +268,7 @@ resolve_declaration_list (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	result = azo_compiler_resolve_type_expression(comp, rctx, type);
 	if (result) return result;
 	for (child = type->next; child; child = child->next) {
-		if (resolve_declaration (comp, rctx, child)) {
+		if (resolve_declaration (comp, rctx, child, expr->term.flags)) {
 			return 1;
 		}
 	}
@@ -340,7 +352,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 		AZONode *type = child->children;
 		AZONode *name = type->next;
 		// fixme: Use type
-		if (!azo_frame_declare_variable (fctx.frame, name->value.v.string, AZ_TYPE_ANY)) {
+		if (!azo_frame_declare_variable (fctx.frame, name->value.v.string, AZ_TYPE_ANY, 0)) {
 			fprintf (stderr, "resolve_function: Repeated variable name %s\n", name->value.v.string->str);
 			return 1;
 		}
@@ -545,12 +557,7 @@ resolve_this(AZOCompiler *comp, AZOResolveCtx *ctx, AZONode *node)
 		case AZO_COMPILER_NO_THIS:
 			fprintf(stderr, "resolve_this: 'this' used outside of class context\n");
 			return 1;
-		case AZO_COMPILER_THIS_IS_ARGUMENT:
-			node->term.type = AZO_TERM_VARIABLE;
-			node->term.subtype = AZO_TERM_VARIABLE_LOCAL;
-			node->var_pos = 0;
-			break;
-		case AZO_COMPILER_THIS_IS_VARIABLE:
+		case AZO_COMPILER_THIS_IS_STACK:
 			node->term.type = AZO_TERM_VARIABLE;
 			node->term.subtype = AZO_TERM_VARIABLE_LOCAL;
 			node->var_pos = ctx->this_var_pos;
@@ -601,7 +608,7 @@ resolve_member_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		/* If context this is any known variable type we can use it directly */
 		switch (this_node->term.subtype) {
 			case AZO_TERM_VARIABLE_LOCAL:
-				lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
+				lctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
 				lctx.this_var_pos = this_node->var_pos;
 				break;
 			case AZO_TERM_VARIABLE_SHARED:
@@ -620,7 +627,7 @@ resolve_member_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		/* Context 'this' was not resolved, reserve a variable spot ('this' is not valid name anyways)*/
 		AZOVariable *var = azo_frame_declare_this(rctx->frame, AZ_TYPE_ANY);
 		node->var_pos = var->pos;
-		lctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
+		lctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
 		lctx.this_var_pos = var->pos;
 	}
 	/* The block child creates the scope */

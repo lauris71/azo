@@ -718,6 +718,7 @@ static unsigned int
 parse_step_statement (AZOParser *parser, AZOToken *token, int quals, AZONode *expr)
 {
 	if (quals < 0) {
+		quals = 0;
 		int result = parse_qualifiers(parser, token, &quals);
 		if (result) return result;
 	}

@@ -66,11 +66,11 @@ azo_program_new(AZOContext *ctx, AZOFrame *frame, AZONode *tree, AZOSource *src)
 	prog->n_const = code->data_len;
 	prog->n_shared = frame->n_shared;
 
-	/* Initialize static datablock */
-	azo_datablock_init(&prog->shared_data, prog->n_const, prog->n_const + prog->n_shared);
-	/* Write constants to static block */
+	/* Initialize static datablock: shared variables first, then constants */
+	azo_datablock_init(&prog->shared_data, prog->n_shared + prog->n_const);
+	/* Write constants to static block after shared region */
 	for (unsigned int i = 0; i < code->data_len; i++) {
-		azo_datablock_transfer_val(&prog->shared_data, i, code->data[i].impl, &code->data[i].v, 0);
+		azo_datablock_transfer_val(&prog->shared_data, prog->n_shared + i, code->data[i].impl, &code->data[i].v, AZO_DATABLOCK_FLAG_FINAL);
 	}
 	free (code->data);
 	code->data = NULL;
@@ -124,7 +124,7 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
 		/* This is argument 0 */
 		AZOVariable *var = azo_frame_declare_this(comp_ctx.frame, AZ_IMPL_TYPE(this_impl));
-		comp_ctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
+		comp_ctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
 		comp_ctx.this_var_pos = var->pos;
 	} else {
 		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
@@ -132,7 +132,7 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 		comp_ctx.this_static_pos = azo_frame_append(comp_ctx.frame, this_impl, this_inst);
 	}
 	for (unsigned int i = 0; i < n_args; i++) {
-		if (!azo_frame_declare_variable(comp_ctx.frame, arg_names[i], arg_types[i])) {
+		if (!azo_frame_declare_variable(comp_ctx.frame, arg_names[i], arg_types[i], 0)) {
 			fprintf(stderr, "Variable %s is already defined in current scope\n", arg_names[i]->str);
 		}
 		// fixme: fail

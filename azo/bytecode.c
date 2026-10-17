@@ -21,6 +21,7 @@ enum BCArgs {
 	ARG_U32,
 	ARG_U32_U32,
 	ARG_ADDR32,
+	ARG_U32_ADDR32,
 	ARG_TYPE32,
 	ARG_VALUE32,
 	ARG_TYPE8_VALUE
@@ -121,7 +122,9 @@ AZOBCInfo bc_info[] = {
 	{AZO_TC_GET_STATIC_PROPERTY, "GET STATIC PROPERTY", ARG_NONE},
 	{AZO_TC_GET_STATIC_FUNCTION, "GET STATIC FUNCTION", ARG_U8},
 	{AZO_TC_GET_ATTRIBUTE, "GET ATTRIBUTE", ARG_NONE},
-	{AZO_TC_SET_ATTRIBUTE, "SET ATTRIBUTE", ARG_NONE}
+	{AZO_TC_SET_ATTRIBUTE, "SET ATTRIBUTE", ARG_NONE},
+	{AZO_TC_JMP_IF_SHARED_SET, "JMP IF SHARED SET", ARG_U32_ADDR32},
+	{AZO_TC_JMP_IF_CAPTURE_SET, "JMP IF CAPTURE SET", ARG_U32_ADDR32}
 };
 
 static AZOBCInfo
@@ -204,11 +207,22 @@ azo_bc_print_instruction(uint8_t *d, unsigned int d_len, const uint8_t *bc, unsi
 			p += arikkei_strncpy(d + p, d_len - p, (const uint8_t *) " ");
 			p += arikkei_strncpy(d + p, d_len - p, b0);
 			break;
+		case ARG_U32_ADDR32:
+			CHECK_PRINT_BC_LEN(d, d_len, len, 9);
+			memcpy(&u32a, ipc + 1, 4);
+			memcpy(&u32b, ipc + 5, 4);
+			arikkei_itoa(b0, 256, u32a);
+			p += arikkei_strncpy(d + p, d_len - p, (const uint8_t *) " ");
+			p += arikkei_strncpy(d + p, d_len - p, b0);
+			arikkei_itoa(b1, 256, pos + 9 + u32b);
+			p += arikkei_strncpy(d + p, d_len - p, (const uint8_t *) " ");
+			p += arikkei_strncpy(d + p, d_len - p, b1);
+			break;
 		case ARG_TYPE32:
 			CHECK_PRINT_BC_LEN(d, d_len, len, 5);
 			memcpy(&u32a, ipc + 1, 4);
 			p += arikkei_strncpy(d + p, d_len - p, (const uint8_t *) " ");
-			p += arikkei_strncpy(d + p, d_len - p, az_type_get_name(u32a));
+			p += arikkei_strncpy(d + p, d_len - p, (u32a) ? az_type_get_name(u32a) : (const uint8_t *) "null");
 			break;
 		case ARG_VALUE32:
 			CHECK_PRINT_BC_LEN(d, d_len, len, 5);
@@ -274,6 +288,10 @@ azo_bc_next_instruction(const uint8_t *bc, unsigned int pos, unsigned int len)
 		case ARG_VALUE32:
 			if ((pos + 5) >= len) return len;
 			pos += 5;
+			break;
+		case ARG_U32_ADDR32:
+			if ((pos + 9) >= len) return len;
+			pos += 9;
 			break;
 		case ARG_TYPE8_VALUE:
 			if ((pos + 2) >= len) return len;

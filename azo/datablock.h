@@ -11,6 +11,7 @@ typedef struct _AZODataBlockEntry AZODataBlockEntry;
 
 #define AZO_DATABLOCK_FLAG_SET 1
 #define AZO_DATABLOCK_FLAG_WEAK 2
+#define AZO_DATABLOCK_FLAG_FINAL 4
 
 #include <stdint.h>
 #include <stdio.h>
@@ -33,19 +34,18 @@ struct _AZODataBlockEntry {
 };
 
 struct _AZODataBlock {
-    unsigned int size_const;
     unsigned int size_total;
     AZODataBlockEntry *entries;
 };
 
-void azo_datablock_init(AZODataBlock *block, unsigned int size_const, unsigned int size_total);
+void azo_datablock_init(AZODataBlock *block, unsigned int size_total);
 void azo_datablock_finalize(AZODataBlock *block);
 
 void azo_datablock_clear(AZODataBlock *block);
 
-void azo_datablock_set(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, void *inst, unsigned int weak);
-void azo_datablock_set_from_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, const AZValue *val, unsigned int weak);
-void azo_datablock_transfer_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZValue *val, unsigned int weak);
+void azo_datablock_set(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, void *inst, unsigned int flags);
+void azo_datablock_set_from_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, const AZValue *val, unsigned int flags);
+void azo_datablock_transfer_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZValue *val, unsigned int flags);
 void azo_datablock_set_weak(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZActiveObject *object);
 
 void azo_datablock_print(AZODataBlock *block, FILE *ofs);

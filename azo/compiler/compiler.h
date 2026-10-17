@@ -25,9 +25,7 @@ extern "C" {
 
 enum {
 	AZO_COMPILER_NO_THIS,
-	// fixme: Join argument and variable -> stack
-	AZO_COMPILER_THIS_IS_ARGUMENT,
-	AZO_COMPILER_THIS_IS_VARIABLE,
+	AZO_COMPILER_THIS_IS_STACK,
 	AZO_COMPILER_THIS_IS_SHARED,
 	AZO_COMPILER_THIS_IS_CAPTURE
 };
@@ -49,21 +47,19 @@ struct _AZOCompilerContext {
 	/**
 	 * @brief This handling
 	 * 
-	 * This may be resolved in 4 different ways
-	 * - As just one variable (happens in member block)
+	 * This may be resolved in 3 different ways
+	 * - As a stack variable (this argument or member block variable)
 	 * - As a captured variable (happens in lambda)
-	 * - As the first program argument (if program is compiled as a member of class)
 	 * - As a static constant (if program is compiled as a member of specific instance)
 	 *
-	 * During resolve explici or implici 'this' is replaced by specific access variant (VARIABLE or CONSTANT)
+	 * During resolve explicit or implicit 'this' is replaced by specific access variant (VARIABLE or CONSTANT)
 	 */
 	unsigned int this_variant;
 	union {
-		/* For variable */
+		/* For stack */
 		unsigned int this_var_pos;
 		/* For capture */
 		unsigned int this_capture_pos;
-		/* Argument is always 0 */
 		/* For static constant */
 		unsigned int this_static_pos;
 	};

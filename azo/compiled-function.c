@@ -140,7 +140,7 @@ azo_compiled_function_new(AZOProgram *prog)
 	azo_program_ref(prog);
 	cfunc->signature = az_function_signature_new_any(AZ_TYPE_NONE, prog->ret_type, prog->n_args);
 
-	azo_datablock_init(&cfunc->static_data, prog->n_captures, prog->n_captures + prog->n_static);
+	azo_datablock_init(&cfunc->static_data, prog->n_captures + prog->n_static);
 	return cfunc;
 }
 
@@ -148,8 +148,8 @@ void
 azo_compiled_function_bind (AZOCompiledFunction *cfunc, unsigned int pos, const AZImplementation *impl, void *inst)
 {
 	if (impl && az_type_is_a(AZ_IMPL_TYPE(impl), AZ_TYPE_ACTIVE_OBJECT)) {
-		azo_datablock_set(&cfunc->static_data, pos, impl, inst, 1);
+		azo_datablock_set(&cfunc->static_data, pos, impl, inst, AZO_DATABLOCK_FLAG_WEAK | AZO_DATABLOCK_FLAG_FINAL);
 	} else {
-		azo_datablock_set(&cfunc->static_data, pos, impl, inst, 0);
+		azo_datablock_set(&cfunc->static_data, pos, impl, inst, AZO_DATABLOCK_FLAG_FINAL);
 	}
 }

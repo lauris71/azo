@@ -66,7 +66,7 @@ test_program(AZOContext *ctx, const char *text, const AZImplementation *this_imp
 		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
 		/* This is argument 0 */
 		AZOVariable *var = azo_frame_declare_this(comp_ctx.frame, AZ_IMPL_TYPE(this_impl));
-		comp_ctx.this_variant = AZO_COMPILER_THIS_IS_VARIABLE;
+		comp_ctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
 		comp_ctx.this_var_pos = var->pos;
 	} else {
 		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
@@ -75,7 +75,7 @@ test_program(AZOContext *ctx, const char *text, const AZImplementation *this_imp
 	}
 	for (unsigned int i = 0; i < n_args; ++i) {
 		AZString *str = az_string_new((const uint8_t *) arg_names[i]);
-		azo_frame_declare_variable(comp_ctx.frame, str, AZ_IMPL_TYPE(arg_impls[i]));
+		azo_frame_declare_variable(comp_ctx.frame, str, AZ_IMPL_TYPE(arg_impls[i]), 0);
 	}
 
 	int result = azo_compiler_resolve_program(&comp, &comp_ctx, tree);
