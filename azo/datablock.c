@@ -53,13 +53,13 @@ azo_datablock_clear(AZODataBlock *block)
     block->size_total = 0;
 }
 
-void
+int
 azo_datablock_set(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, void *inst, unsigned int flags)
 {
-    arikkei_return_if_fail(idx < block->size_total);
+    arikkei_return_val_if_fail(idx < block->size_total, AZ_INTERNAL_INCONSISTENCY);
     AZODataBlockEntry *entry = &block->entries[idx];
     if (entry->flags & AZO_DATABLOCK_FLAG_FINAL) {
-        arikkei_return_if_fail(!(entry->flags & AZO_DATABLOCK_FLAG_SET));
+        if (entry->flags & AZO_DATABLOCK_FLAG_SET) return AZ_VALUE_IS_FINAL;
     } else {
         azo_datablock_clear_entry(entry);
     }
@@ -67,7 +67,7 @@ azo_datablock_set(AZODataBlock *block, unsigned int idx, const AZImplementation 
     if (impl) {
         if (AZ_IMPL_IS_REFERENCE(impl) && inst) {
             if (flags & AZO_DATABLOCK_FLAG_WEAK) {
-                arikkei_return_if_fail(az_type_is_a(AZ_IMPL_TYPE(impl), AZ_TYPE_ACTIVE_OBJECT));
+                arikkei_return_val_if_fail(az_type_is_a(AZ_IMPL_TYPE(impl), AZ_TYPE_ACTIVE_OBJECT), AZ_INVALID_TYPE);
                 az_weak_reference_set(&entry->weak_ref, (AZActiveObject *) inst);
                 entry->flags = AZO_DATABLOCK_FLAG_WEAK;
             } else {
@@ -79,15 +79,16 @@ azo_datablock_set(AZODataBlock *block, unsigned int idx, const AZImplementation 
         }
     }
     entry->flags |= AZO_DATABLOCK_FLAG_SET | (flags & AZO_DATABLOCK_FLAG_FINAL);
+    return AZ_OK;
 }
 
-void
+int
 azo_datablock_set_from_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, const AZValue *val, unsigned int flags)
 {
-    arikkei_return_if_fail(idx < block->size_total);
+    arikkei_return_val_if_fail(idx < block->size_total, AZ_INTERNAL_INCONSISTENCY);
     AZODataBlockEntry *entry = &block->entries[idx];
     if (entry->flags & AZO_DATABLOCK_FLAG_FINAL) {
-        arikkei_return_if_fail(!(entry->flags & AZO_DATABLOCK_FLAG_SET));
+        if (entry->flags & AZO_DATABLOCK_FLAG_SET) return AZ_VALUE_IS_FINAL;
     } else {
         azo_datablock_clear_entry(entry);
     }
@@ -95,7 +96,7 @@ azo_datablock_set_from_val(AZODataBlock *block, unsigned int idx, const AZImplem
     if (impl) {
         if (AZ_IMPL_IS_REFERENCE(impl) && (val->reference)) {
             if (flags & AZO_DATABLOCK_FLAG_WEAK) {
-                arikkei_return_if_fail(az_type_is_a(AZ_IMPL_TYPE(impl), AZ_TYPE_ACTIVE_OBJECT));
+                arikkei_return_val_if_fail(az_type_is_a(AZ_IMPL_TYPE(impl), AZ_TYPE_ACTIVE_OBJECT), AZ_INVALID_TYPE);
                 az_weak_reference_set(&entry->weak_ref, (AZActiveObject *) val->reference);
                 entry->flags = AZO_DATABLOCK_FLAG_WEAK;
             } else {
@@ -107,20 +108,22 @@ azo_datablock_set_from_val(AZODataBlock *block, unsigned int idx, const AZImplem
         }
     }
     entry->flags |= AZO_DATABLOCK_FLAG_SET | (flags & AZO_DATABLOCK_FLAG_FINAL);
+    return AZ_OK;
 }
 
-void
+int
 azo_datablock_transfer_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZValue *val, unsigned int flags)
 {
-    azo_datablock_set_from_val(block, idx, impl, val, flags);
+    int result = azo_datablock_set_from_val(block, idx, impl, val, flags);
     az_value_clear(impl, val);
+    return result;
 }
 
-void
+int
 azo_datablock_set_weak(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZActiveObject *object)
 {
-    arikkei_return_if_fail(az_type_is_a(AZ_IMPL_TYPE(impl), AZ_TYPE_ACTIVE_OBJECT));
-    azo_datablock_set_from_val(block, idx, impl, (AZValue *) &object, AZO_DATABLOCK_FLAG_WEAK);
+    arikkei_return_val_if_fail(az_type_is_a(AZ_IMPL_TYPE(impl), AZ_TYPE_ACTIVE_OBJECT), AZ_INVALID_TYPE);
+    return azo_datablock_set_from_val(block, idx, impl, (AZValue *) &object, AZO_DATABLOCK_FLAG_WEAK);
 }
 
 void

@@ -43,10 +43,10 @@ void azo_datablock_finalize(AZODataBlock *block);
 
 void azo_datablock_clear(AZODataBlock *block);
 
-void azo_datablock_set(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, void *inst, unsigned int flags);
-void azo_datablock_set_from_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, const AZValue *val, unsigned int flags);
-void azo_datablock_transfer_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZValue *val, unsigned int flags);
-void azo_datablock_set_weak(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZActiveObject *object);
+int azo_datablock_set(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, void *inst, unsigned int flags);
+int azo_datablock_set_from_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, const AZValue *val, unsigned int flags);
+int azo_datablock_transfer_val(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZValue *val, unsigned int flags);
+int azo_datablock_set_weak(AZODataBlock *block, unsigned int idx, const AZImplementation *impl, AZActiveObject *object);
 
 void azo_datablock_print(AZODataBlock *block, FILE *ofs);
 

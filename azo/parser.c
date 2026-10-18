@@ -2105,5 +2105,6 @@ parse_qualifiers(AZOParser *parser, AZOToken *token, int *quals)
 	if (parse_keyword(parser, token, AZO_KEYWORD_FINAL)) *quals |= AZO_TERM_FLAG_FINAL;
 	if (parse_keyword(parser, token, AZO_KEYWORD_WEAK)) *quals |= AZO_TERM_FLAG_WEAK;
 	if (parse_keyword(parser, token, AZO_KEYWORD_CONST)) *quals |= AZO_TERM_FLAG_CONST;
+	if ((*quals & AZO_TERM_FLAG_WEAK) && !(*quals & (AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_SHARED))) return AZO_PARSER_ERROR_WEAK_NOT_STATIC;
 	return 0;
 }

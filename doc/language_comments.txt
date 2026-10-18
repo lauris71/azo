@@ -430,7 +430,7 @@ myobj.func2(some myobj, 42)
 myobj.func3(42)
 myobj.func4(42)
 myobj.func4(some myobj, 42)
-Where the actual values of func1...func4 can either be lambdas from script or C-level function objects below that
+Where the actual values of func1...func4 can either be lambdas from script or C-level function objects at az level
 ...and assignments:
 MyObj.func1 = (int32 a) => { ... }
 MyObj.func1 = some function object -  may be defined somewhere in script or be an object encapsulating C function

@@ -19,6 +19,7 @@ enum BCArgs {
 	ARG_U8,
 	ARG_U8_U32,
 	ARG_U32,
+	ARG_U32_U8,
 	ARG_U32_U32,
 	ARG_ADDR32,
 	ARG_ADDR32_U32,
@@ -50,9 +51,9 @@ AZOBCInfo bc_info[] = {
 	{AZO_TC_PUSH_EMPTY, "PUSH EMPTY", ARG_TYPE32},
 	{AZO_TC_PUSH_IMMEDIATE, "PUSH IMMEDIATE", ARG_TYPE8_VALUE},
 	{AZO_TC_PUSH_VALUE, "PUSH VALUE", ARG_VALUE32},
-	{AZO_TC_STORE_VALUE, "STORE VALUE", ARG_VALUE32},
+	{AZO_TC_STORE_VALUE, "STORE VALUE", ARG_U32_U8},
 	{AZO_TC_PUSH_CAPTURE, "PUSH CAPTURE", ARG_U32},
-	{AZO_TC_STORE_CAPTURE, "STORE CAPTURE", ARG_U32},
+	{AZO_TC_STORE_CAPTURE, "STORE CAPTURE", ARG_U32_U8},
 	{AZO_TC_DUPLICATE, "DUPLICATE", ARG_U32},
 	{AZO_TC_DUPLICATE_FRAME, "DUPLICATE FRAME", ARG_U32},
 	{AZO_TC_EXCHANGE, "EXCHANGE", ARG_U32},
@@ -144,7 +145,7 @@ get_bc_info(unsigned int bc)
 		}
 		initialized = 1;
 	}
-	return bc_info[bc & 127];
+	return bc_info[bc];
 }
 
 static const uint8_t *
@@ -193,6 +194,16 @@ azo_bc_print_instruction(uint8_t *d, unsigned int d_len, const uint8_t *bc, unsi
 			arikkei_itoa(b0, 256, u32a);
 			p += arikkei_strncpy(d + p, d_len - p, (const uint8_t *) " ");
 			p += arikkei_strncpy(d + p, d_len - p, b0);
+			break;
+		case ARG_U32_U8:
+			CHECK_PRINT_BC_LEN(d, d_len, len, 6);
+			memcpy(&u32a, ipc + 1, 4);
+			arikkei_itoa(b0, 256, u32a);
+			arikkei_itoa(b1, 256, ipc[5]);
+			p += arikkei_strncpy(d + p, d_len - p, (const uint8_t *) " ");
+			p += arikkei_strncpy(d + p, d_len - p, b0);
+			p += arikkei_strncpy(d + p, d_len - p, (const uint8_t *) " ");
+			p += arikkei_strncpy(d + p, d_len - p, b1);
 			break;
 		case ARG_U32_U32:
 			CHECK_PRINT_BC_LEN(d, d_len, len, 9);
@@ -283,6 +294,10 @@ azo_bc_next_instruction(const uint8_t *bc, unsigned int pos, unsigned int len)
 		case ARG_U32:
 			if ((pos + 5) >= len) return len;
 			pos += 5;
+			break;
+		case ARG_U32_U8:
+			if ((pos + 6) >= len) return len;
+			pos += 6;
 			break;
 		case ARG_U32_U32:
 			if ((pos + 9) >= len) return len;
@@ -410,7 +425,7 @@ azo_print_bytecode (AZOProgram *prog)
 	end = code + length;
 	while (ip < end) {
 		fprintf (stdout, "%04X ", (int) (ip - code));
-		switch (*ip & 127) {
+		switch (*ip) {
 		case NOP:
 			ip = print_0x00 (ip);
 			break;

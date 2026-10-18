@@ -50,7 +50,10 @@ static const char *excnames[] = {
 	"NULL dereference",
 	"Out of bounds",
 	"Invalid property",
-	"Invalid value"
+	"Invalid value",
+	"Divide by zero",
+	"Integer overflow",
+	"Not writable"
 };
 
 unsigned int

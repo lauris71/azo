@@ -184,6 +184,7 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	if (var) {
 		DBG_PRINTF("resolve_variable: Local %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
+		expr->term.flags = var->flags;
 		expr->var_pos = var->pos;
 		if (var->flags & AZO_VARIABLE_FLAG_STATIC) {
 			expr->term.subtype = AZO_TERM_VARIABLE_STATIC;

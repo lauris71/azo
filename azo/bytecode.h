@@ -15,7 +15,6 @@ extern "C" {
 
 #define AZO_TC_HAS_DEBUG 1
 
-#define AZO_TC_CHECK_ARGS 128
 #define MAX_TYPED AZO_TC_MAX_TYPED
 
 enum {

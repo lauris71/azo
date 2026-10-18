@@ -14,6 +14,7 @@
 #include <az/function.h>
 #include <az/field.h>
 #include <az/classes/value-array.h>
+#include <az/classes/active-object.h>
 
 #include <azo/compiler/compiler.h>
 #include <azo/node.h>
@@ -227,7 +228,7 @@ resolve_new (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 }
 
 static unsigned int
-resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, unsigned int term_flags)
+resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, unsigned int term_flags, unsigned int type)
 {
 	AZONode *name = node->children;
 	assert(AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE));
@@ -244,10 +245,25 @@ resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, unsi
 	unsigned int var_flags = 0;
 	if (term_flags & AZO_TERM_FLAG_STATIC) var_flags |= AZO_VARIABLE_FLAG_STATIC;
 	if (term_flags & AZO_TERM_FLAG_SHARED) var_flags |= AZO_VARIABLE_FLAG_SHARED;
+	if (term_flags & AZO_TERM_FLAG_FINAL) {
+		if (!value) {
+			fprintf (stderr, "resolve_declaration: final variable %s requires an initializer\n", name->value.v.string->str);
+			return 1;
+		}
+		var_flags |= AZO_VARIABLE_FLAG_FINAL;
+	}
+	if (term_flags & AZO_TERM_FLAG_WEAK) {
+		if (!az_type_is_a (type, AZ_TYPE_ACTIVE_OBJECT)) {
+			fprintf (stderr, "resolve_declaration: weak variable %s requires ActiveObject type\n", name->value.v.string->str);
+			return 1;
+		}
+		var_flags |= AZO_VARIABLE_FLAG_WEAK;
+	}
 	// fixme: Use type
 	AZOVariable *var = azo_frame_declare_variable (rctx->frame, name->value.v.string, AZ_TYPE_ANY, var_flags);
 	/* The declaration name node becomes a resolved variable node */
 	name->term.type = AZO_TERM_VARIABLE;
+	name->term.flags = var->flags;
 	name->var_pos = var->pos;
 	if (var->flags & AZO_VARIABLE_FLAG_STATIC) {
 		name->term.subtype = AZO_TERM_VARIABLE_STATIC;
@@ -267,8 +283,9 @@ resolve_declaration_list (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	AZONode *child = type->next;
 	result = azo_compiler_resolve_type_expression(comp, rctx, type);
 	if (result) return result;
+	unsigned int resolved_type = type->term.subtype;
 	for (child = type->next; child; child = child->next) {
-		if (resolve_declaration (comp, rctx, child, expr->term.flags)) {
+		if (resolve_declaration (comp, rctx, child, expr->term.flags, resolved_type)) {
 			return 1;
 		}
 	}
@@ -416,8 +433,22 @@ azo_compiler_resolve_literal_array (AZOCompiler *comp, AZOResolveCtx *rctx, AZON
 }
 
 static unsigned int
+resolve_check_final_assignment (AZOResolveCtx *rctx, AZONode *target)
+{
+	if (AZO_NODE_IS(target, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE)) {
+		AZOVariable *var = azo_frame_lookup_local_var (rctx->frame, target->value.v.string);
+		if (var && (var->flags & AZO_VARIABLE_FLAG_FINAL)) {
+			fprintf (stderr, "resolve: Cannot assign to final variable %s\n", target->value.v.string->str);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static unsigned int
 resolve_prefix_suffix (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 {
+	if (resolve_check_final_assignment (rctx, expr->children)) return 1;
 	unsigned int result = resolve_children(comp, rctx, expr);
 	if (result) return result;
 	return 0;
@@ -427,6 +458,7 @@ static unsigned int
 resolve_plain_assign(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
 	assert(AZO_NODE_IS(node, AZO_TERM_ASSIGN, AZO_TERM_ASSIGN_PLAIN));
+	if (resolve_check_final_assignment (rctx, node->children)) return 1;
 	for (AZONode *child = node->children; child; child = child->next) {
 		/* The parser has already wrapped member lambdas into MEMBER_BLOCK */
 		int result = azo_compiler_resolve_node (comp, rctx, child);

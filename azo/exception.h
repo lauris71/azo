@@ -50,6 +50,8 @@ extern AZOExceptionClass *azo_exception_class;
 #define AZO_EXCEPTION_DIVIDE_BY_ZERO 11
 /* Integer overflow */
 #define AZO_EXCEPTION_INTEGER_OVERFLOW 12
+/* Value is final and cannot be written */
+#define AZO_EXCEPTION_NOT_WRITABLE 13
 
 struct _AZOException {
 	unsigned int type;

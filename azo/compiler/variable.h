@@ -12,6 +12,8 @@ typedef struct _AZOVariableList AZOVariableList;
 
 #define AZO_VARIABLE_FLAG_STATIC 1
 #define AZO_VARIABLE_FLAG_SHARED 2
+#define AZO_VARIABLE_FLAG_FINAL 4
+#define AZO_VARIABLE_FLAG_WEAK 8
 
 #include <az/string.h>
 

@@ -147,9 +147,11 @@ azo_code_write_PUSH_VALUE(AZOCode *code, unsigned int pos, const AZONode *node)
 }
 
 static inline void
-azo_code_write_STORE_VALUE(AZOCode *code, unsigned int pos, const AZONode *node)
+azo_code_write_STORE_VALUE(AZOCode *code, unsigned int pos, unsigned int flags, const AZONode *node)
 {
+	uint8_t f = flags;
 	azo_code_write_ic_u32(code, AZO_TC_STORE_VALUE, pos, node);
+	azo_code_write_bc(code, &f, 1, node);
 }
 
 static inline void
@@ -159,9 +161,11 @@ azo_code_write_PUSH_CAPTURE(AZOCode *code, unsigned int pos, const AZONode *node
 }
 
 static inline void
-azo_code_write_STORE_CAPTURE(AZOCode *code, unsigned int pos, const AZONode *node)
+azo_code_write_STORE_CAPTURE(AZOCode *code, unsigned int pos, unsigned int flags, const AZONode *node)
 {
+	uint8_t f = flags;
 	azo_code_write_ic_u32(code, AZO_TC_STORE_CAPTURE, pos, node);
+	azo_code_write_bc(code, &f, 1, node);
 }
 
 static inline void

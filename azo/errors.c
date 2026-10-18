@@ -22,6 +22,7 @@ static const char *azo_errors[] = {
 	"Closing brace missing",
 	"Invalid start of expression",
 	"Invalid type expression (expected NAME[.NAME...] resolvable from globals)",
+	"Weak variable requires static or shared",
 	"Too many errors",
     /* Resolver */
 	"Variable already defined",

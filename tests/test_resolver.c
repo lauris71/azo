@@ -290,4 +290,58 @@ test_resolver(void)
         azo_compiler_release(&comp);
         free_parse(&parser, src, tree);
     }
+    /* Final tracking: final with initializer resolves */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = () int32 => { final int32 a = 1; return a; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(!result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Final tracking: final without initializer fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = () int32 => { final int32 a; return 0; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Final tracking: reassignment of final fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = () int32 => { final int32 a = 1; a = 2; return a; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
 }

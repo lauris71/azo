@@ -61,6 +61,8 @@ struct _LValue {
 	unsigned int type;
 	/* Variable location */
 	unsigned int pos;
+	/* Datablock flags (AZO_DATABLOCK_FLAG_*) for STORE_VALUE/STORE_CAPTURE */
+	unsigned int flags;
 	/* Number of elements pushed */
 	unsigned int n_elements;
 };
@@ -230,11 +232,11 @@ compile_assign_to_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, LValue *lv
 		/* [] */
 	} else if (lval->type == LVALUE_SHARED) {
 		/* [value] */
-		azo_code_write_STORE_VALUE (code, lval->pos, expr);
+		azo_code_write_STORE_VALUE (code, lval->pos, lval->flags, expr);
 		/* [] */
 	} else if (lval->type == LVALUE_STATIC) {
 		/* [value] */
-		azo_code_write_STORE_CAPTURE (code, lval->pos, expr);
+		azo_code_write_STORE_CAPTURE (code, lval->pos, lval->flags, expr);
 		/* [] */
 	} else {
 		fprintf (stderr, "Unassignable lvalue type\n");
@@ -269,6 +271,7 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			 */
 			lvalue->type = LVALUE_SHARED;
 			lvalue->pos = expr->var_pos;
+			lvalue->flags = (expr->term.flags & AZO_VARIABLE_FLAG_WEAK) ? AZO_DATABLOCK_FLAG_WEAK : 0;
 			lvalue->n_elements = 0;
 			return 1;
 		} else if (expr->term.subtype == AZO_TERM_VARIABLE_STATIC) {
@@ -279,6 +282,7 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			 */
 			lvalue->type = LVALUE_STATIC;
 			lvalue->pos = ctx->frame->n_captures + expr->var_pos;
+			lvalue->flags = (expr->term.flags & AZO_VARIABLE_FLAG_WEAK) ? AZO_DATABLOCK_FLAG_WEAK : 0;
 			lvalue->n_elements = 0;
 			return 1;
 		} else if (expr->term.subtype == AZO_TERM_VARIABLE_CAPTURE) {
@@ -1074,6 +1078,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 	name = node->children;
 	value = name->next;
 	if (name->term.type == AZO_TERM_VARIABLE) {
+		unsigned int dflags = (name->term.flags & AZO_VARIABLE_FLAG_WEAK) ? AZO_DATABLOCK_FLAG_WEAK : 0;
 		if (name->term.subtype == AZO_TERM_VARIABLE_STATIC) {
 			unsigned int pos = ctx->frame->n_captures + name->var_pos;
 			/* Lazy init: skip if static datablock entry is already set */
@@ -1085,7 +1090,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 				azo_code_write_PUSH_EMPTY (code, type, node);
 			}
 			/* [value] -> store into static datablock */
-			azo_code_write_STORE_CAPTURE (code, pos, node);
+			azo_code_write_STORE_CAPTURE (code, pos, dflags, node);
 			azo_code_update_JMP32 (code, jmp);
 			return 1;
 		} else if (name->term.subtype == AZO_TERM_VARIABLE_SHARED) {
@@ -1099,7 +1104,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 				azo_code_write_PUSH_EMPTY (code, type, node);
 			}
 			/* [value] -> store into shared datablock */
-			azo_code_write_STORE_VALUE (code, pos, node);
+			azo_code_write_STORE_VALUE (code, pos, dflags, node);
 			azo_code_update_JMP32 (code, jmp);
 			return 1;
 		}
