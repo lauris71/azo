@@ -521,10 +521,10 @@ interpret_JMP_IF_SHARED_SET(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const
 {
 	uint32_t loc;
 	int32_t raddr;
-	memcpy (&loc, ip + 1, 4);
-	memcpy (&raddr, ip + 5, 4);
+	memcpy (&raddr, ip + 1, 4);
+	memcpy (&loc, ip + 5, 4);
 	const unsigned char *dst = ip + 9;
-	if (ictx->shared_data->entries[loc].flags & AZO_DATABLOCK_FLAG_SET) dst += raddr;
+	if (ictx->shared_data->entries[loc].flags & AZO_DATABLOCK_FLAG_SET) dst = ip + 5 + raddr;
 	return dst;
 }
 
@@ -533,10 +533,10 @@ interpret_JMP_IF_CAPTURE_SET(AZOInterpreter *intr, AZOInterpreterCtx *ictx, cons
 {
 	uint32_t loc;
 	int32_t raddr;
-	memcpy (&loc, ip + 1, 4);
-	memcpy (&raddr, ip + 5, 4);
+	memcpy (&raddr, ip + 1, 4);
+	memcpy (&loc, ip + 5, 4);
 	const unsigned char *dst = ip + 9;
-	if (ictx->static_data->entries[loc].flags & AZO_DATABLOCK_FLAG_SET) dst += raddr;
+	if (ictx->static_data->entries[loc].flags & AZO_DATABLOCK_FLAG_SET) dst = ip + 5 + raddr;
 	return dst;
 }
 

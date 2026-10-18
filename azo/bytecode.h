@@ -151,7 +151,7 @@ enum {
 	JMP_32,
 	JMP_32_IF,
 	JMP_32_IF_NOT,
-	/* JMP depending on U32 value */
+	/* JMP depending on I32 value */
 	JMP_32_IF_ZERO,
 	JMP_32_IF_POSITIVE,
 	JMP_32_IF_NEGATIVE,
@@ -329,14 +329,14 @@ enum {
 	/**
 	 * @brief Jump forward if shared datablock entry is set
 	 * 
-	 * JMP_IF_SHARED_SET U32:POS I32:RADDR
+	 * JMP_IF_SHARED_SET I32:RADDR U32:POS
 	 * Skips (static/shared) initializer if the entry is already initialized
 	 */
 	AZO_TC_JMP_IF_SHARED_SET,
 	/**
 	 * @brief Jump forward if static datablock entry is set
 	 * 
-	 * JMP_IF_CAPTURE_SET U32:POS I32:RADDR
+	 * JMP_IF_CAPTURE_SET I32:RADDR U32:POS
 	 * Skips (static/shared) initializer if the entry is already initialized
 	 */
 	AZO_TC_JMP_IF_CAPTURE_SET,

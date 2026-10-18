@@ -1086,7 +1086,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 			}
 			/* [value] -> store into static datablock */
 			azo_code_write_STORE_CAPTURE (code, pos, node);
-			azo_code_update_JMP_IF_SET32 (code, jmp);
+			azo_code_update_JMP32 (code, jmp);
 			return 1;
 		} else if (name->term.subtype == AZO_TERM_VARIABLE_SHARED) {
 			unsigned int pos = name->var_pos;
@@ -1100,7 +1100,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 			}
 			/* [value] -> store into shared datablock */
 			azo_code_write_STORE_VALUE (code, pos, node);
-			azo_code_update_JMP_IF_SET32 (code, jmp);
+			azo_code_update_JMP32 (code, jmp);
 			return 1;
 		}
 	}

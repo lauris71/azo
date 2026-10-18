@@ -210,22 +210,16 @@ azo_code_update_JMP32 (AZOCode *code, unsigned int loc)
 	memcpy(code->bc + loc + 1, &raddr, 4);
 }
 
-/* JMP_IF_*_SET: opcode + U32:pos + I32:raddr (9 bytes) */
+/* JMP_IF_*_SET: opcode + I32:raddr + U32:pos (9 bytes); raddr at loc+1 so
+ * azo_code_update_JMP32 can be used to fix the jump target */
 static inline unsigned int
 azo_code_write_JMP_IF_SET32 (AZOCode *code, unsigned int ic, unsigned int pos, const AZONode *node)
 {
 	unsigned int loc = code->bc_len;
 	int32_t raddr = 0;
-	azo_code_write_ic_u32(code, ic, pos, node);
-	azo_code_write_bc(code, &raddr, 4, node);
+	azo_code_write_ic_i32(code, ic, raddr, node);
+	azo_code_write_bc(code, &pos, 4, node);
 	return loc;
-}
-
-static inline void
-azo_code_update_JMP_IF_SET32 (AZOCode *code, unsigned int loc)
-{
-	int32_t raddr = (int) code->bc_len - (int) (loc + 9);
-	memcpy(code->bc + loc + 5, &raddr, 4);
 }
 
 static inline void

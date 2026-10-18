@@ -15,6 +15,7 @@ typedef struct _AZOFrame AZOFrame;
 #include <stdio.h>
 
 #include <az/packed-value.h>
+#include <azo/calculate.h>
 #include <azo/source.h>
 #include <azo/tokenizer.h>
 
@@ -317,21 +318,7 @@ enum {
 	AZO_TERM_PREFIX_TILDE
 };
 
-/* Arithmetic subtypes */
-enum {
-	AZO_TERM_ARITHMETIC_PLUS,
-	AZO_TERM_ARITHMETIC_MINUS,
-	AZO_TERM_ARITHMETIC_SLASH,
-	AZO_TERM_ARITHMETIC_STAR,
-	AZO_TERM_ARITHMETIC_PERCENT,
-	AZO_TERM_ARITHMETIC_SHIFT_LEFT,
-	AZO_TERM_ARITHMETIC_SHIFT_RIGHT,
-	AZO_TERM_ARITHMETIC_AND,
-	AZO_TERM_ARITHMETIC_ANDAND,
-	AZO_TERM_ARITHMETIC_OR,
-	AZO_TERM_ARITHMETIC_OROR,
-	AZO_TERM_ARITHMETIC_CARET
-};
+/* Arithmetic subtypes are defined in <azo/calculate.h> */
 
 /* Comparison subtypes */
 enum {

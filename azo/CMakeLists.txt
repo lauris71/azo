@@ -1,5 +1,6 @@
 set(AZO_HEADERS
 	bytecode.h
+	calculate.h
 	code.h
 	compare.h
 	compiled-function.h
@@ -23,6 +24,7 @@ set(AZO_HEADERS
 
 set(AZO_SOURCES
 	bytecode.c
+	calculate.c
 	code.c
 	compare.c
 	compiled-function.c
