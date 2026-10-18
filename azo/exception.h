@@ -46,6 +46,10 @@ extern AZOExceptionClass *azo_exception_class;
 #define AZO_EXCEPTION_INVALID_PROPERTY 9
 /* Cannot write value */
 #define AZO_EXCEPTION_INVALID_VALUE 10
+/* Division by zero */
+#define AZO_EXCEPTION_DIVIDE_BY_ZERO 11
+/* Integer overflow */
+#define AZO_EXCEPTION_INTEGER_OVERFLOW 12
 
 struct _AZOException {
 	unsigned int type;

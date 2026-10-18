@@ -319,6 +319,146 @@ test_calculate(void)
 		TEST_ASSERT_EQUAL_STRING("m=1 n=1 m=2 n=2 m=3 n=3 m=4 n=1 m=5 n=2 m=6 n=3 m=7 n=1 m=8 n=2 m=9 n=3 ", str);
 		free(str);
     }
+	/* Binary arithmetic operations int32-int32 (runtime values, not pre-computed) */
+    {
+        arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[1].int32_v = 31;
+        arg_vals[1] = &vals[1];
+        arg_impls[2] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[2].int32_v = 3;
+        arg_vals[2] = &vals[2];
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(globals, binary_arithmetic_typed_src, 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+		char *str = strndup((const char *) bostream->buffer, bostream->pos);
+		fprintf(stderr, "Output: %s\n", str);
+		TEST_ASSERT_EQUAL_STRING("34 28 10 93 1", str);
+		free(str);
+    }
+	/* Division by zero throws AZO_EXCEPTION_DIVIDE_BY_ZERO */
+    {
+        arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[1].int32_v = 31;
+        arg_vals[1] = &vals[1];
+        arg_impls[2] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[2].int32_v = 0;
+        arg_vals[2] = &vals[2];
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, "return a / b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_DIVIDE_BY_ZERO, globals->intr->exc.type);
+    }
+	/* Modulo by zero throws AZO_EXCEPTION_DIVIDE_BY_ZERO */
+    {
+        arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[1].int32_v = 31;
+        arg_vals[1] = &vals[1];
+        arg_impls[2] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[2].int32_v = 0;
+        arg_vals[2] = &vals[2];
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, "return a % b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_DIVIDE_BY_ZERO, globals->intr->exc.type);
+    }
+	/* int32 addition overflow throws AZO_EXCEPTION_INTEGER_OVERFLOW */
+    {
+        arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[1].int32_v = INT32_MAX;
+        arg_vals[1] = &vals[1];
+        arg_impls[2] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[2].int32_v = 1;
+        arg_vals[2] = &vals[2];
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, "return a + b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INTEGER_OVERFLOW, globals->intr->exc.type);
+    }
+	/* int64 multiplication overflow throws AZO_EXCEPTION_INTEGER_OVERFLOW */
+    {
+        arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT64);
+        vals[1].int64_v = INT64_MAX;
+        arg_vals[1] = &vals[1];
+        arg_impls[2] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT64);
+        vals[2].int64_v = 2;
+        arg_vals[2] = &vals[2];
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, "return a * b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INTEGER_OVERFLOW, globals->intr->exc.type);
+    }
+	/* int64 addition with int32 promotes to int64 without overflow */
+    {
+        arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT64);
+        vals[1].int64_v = 3000000000LL;
+        arg_vals[1] = &vals[1];
+        arg_impls[2] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[2].int32_v = 1;
+        arg_vals[2] = &vals[2];
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, "return a + b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT64), ret_impl);
+        TEST_ASSERT_EQUAL_INT64(3000000001LL, ret_val.int64_v);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.type);
+    }
+	/* Bitwise and shift operations int32 (runtime values) */
+    {
+        static const char *src = ""
+"ofs.print(a << b);ofs.print(\" \");\n"
+"ofs.print(a >> b);ofs.print(\" \");\n"
+"ofs.print(a & b);ofs.print(\" \");\n"
+"ofs.print(a | b);ofs.print(\" \");\n"
+"ofs.print(a ^ b);\n"
+"return 42;\n";
+        arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[1].int32_v = 31;
+        arg_vals[1] = &vals[1];
+        arg_impls[2] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[2].int32_v = 3;
+        arg_vals[2] = &vals[2];
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(globals, src, 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+		char *str = strndup((const char *) bostream->buffer, bostream->pos);
+		fprintf(stderr, "Output: %s\n", str);
+		TEST_ASSERT_EQUAL_STRING("248 3 3 31 28", str);
+		free(str);
+    }
+	/* int64 shift left keeps int64 result */
+    {
+        arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT64);
+        vals[1].int64_v = 8;
+        arg_vals[1] = &vals[1];
+        arg_impls[2] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[2].int32_v = 2;
+        arg_vals[2] = &vals[2];
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, "return a << b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT64), ret_impl);
+        TEST_ASSERT_EQUAL_INT64(32, ret_val.int64_v);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.type);
+    }
+	/* bitwise operations on float throw AZO_EXCEPTION_INVALID_TYPE */
+    {
+        arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_FLOAT);
+        vals[1].float_v = 3.0;
+        arg_vals[1] = &vals[1];
+        arg_impls[2] = AZ_IMPL_FROM_TYPE(AZ_TYPE_FLOAT);
+        vals[2].float_v = 2.0;
+        arg_vals[2] = &vals[2];
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, "return a & b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_TYPE, globals->intr->exc.type);
+    }
 	azo_context_delete(globals);
 }
 

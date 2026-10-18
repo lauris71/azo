@@ -31,6 +31,7 @@
 #include <az/classes/value-array.h>
 
 #include <azo/bytecode.h>
+#include <azo/calculate.h>
 #include <azo/compiled-function.h>
 #include <azo/private.h>
 
@@ -1081,12 +1082,30 @@ interpret_ADD_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_ADD (AZOInterpreter *intr, const unsigned char *ip)
+interpret_binary_calculate (AZOInterpreter *intr, const unsigned char *ip, unsigned int operation)
 {
 	CHECK_UNDERFLOW(2);
-	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
-	CHECK_TYPE_EXACT(1, type);
-	return add(intr, ip, type);
+	unsigned int lhs_type = azo_stack_type_bw (&intr->stack, 1);
+	unsigned int rhs_type = azo_stack_type_bw (&intr->stack, 0);
+	const AZValue *lhs = azo_stack_value_bw (&intr->stack, 1);
+	const AZValue *rhs = azo_stack_value_bw (&intr->stack, 0);
+	AZValue result;
+	unsigned int result_type;
+	unsigned int flags;
+	unsigned int result_code = azo_calculate_binary (lhs_type, lhs, rhs_type, rhs, operation, &result_type, &result, &flags);
+	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZO_EXCEPTION_INVALID_TYPE);
+	if (result_code == AZO_CALCULATE_OVERFLOW) EXCEPTION_THROW (AZO_EXCEPTION_INTEGER_OVERFLOW);
+	if (result_code == AZO_CALCULATE_DIVIDE_BY_ZERO) EXCEPTION_THROW (AZO_EXCEPTION_DIVIDE_BY_ZERO);
+	/* Replace both operands with the result */
+	azo_stack_pop (&intr->stack, 2);
+	azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE (result_type), &result);
+	return ip + 1;
+}
+
+static const unsigned char *
+interpret_ADD (AZOInterpreter *intr, const unsigned char *ip)
+{
+	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_PLUS);
 }
 
 static const unsigned char *
@@ -1141,10 +1160,7 @@ interpret_SUBTRACT_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 static const uint8_t *
 interpret_SUBTRACT (AZOInterpreter *intr, const uint8_t *ip)
 {
-	CHECK_UNDERFLOW(2);
-	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
-	CHECK_TYPE_EXACT(1, type);
-	return subtract(intr, ip, type);
+	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_MINUS);
 }
 
 static const uint8_t *
@@ -1199,10 +1215,7 @@ interpret_MULTIPLY_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 static const unsigned char *
 interpret_MULTIPLY (AZOInterpreter *intr, const unsigned char *ip)
 {
-	CHECK_UNDERFLOW(2);
-	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
-	CHECK_TYPE_EXACT(1, type);
-	return multiply(intr, ip, type);
+	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_STAR);
 }
 
 static const uint8_t *
@@ -1267,10 +1280,7 @@ interpret_DIVIDE_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 static const uint8_t *
 interpret_DIVIDE (AZOInterpreter *intr, const uint8_t *ip)
 {
-	CHECK_UNDERFLOW(2);
-	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
-	CHECK_TYPE_EXACT(1, type);
-	return divide(intr, ip, type);
+	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_SLASH);
 }
 
 static const uint8_t *
@@ -1317,10 +1327,55 @@ interpret_MODULO_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 static const uint8_t *
 interpret_MODULO (AZOInterpreter *intr, const uint8_t *ip)
 {
+	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_PERCENT);
+}
+
+static const unsigned char *
+interpret_binary_shift (AZOInterpreter *intr, const unsigned char *ip, unsigned int operation)
+{
 	CHECK_UNDERFLOW(2);
-	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
-	CHECK_TYPE_EXACT(1, type);
-	return modulo(intr, ip, type);
+	unsigned int lhs_type = azo_stack_type_bw (&intr->stack, 1);
+	unsigned int rhs_type = azo_stack_type_bw (&intr->stack, 0);
+	const AZValue *lhs = azo_stack_value_bw (&intr->stack, 1);
+	const AZValue *rhs = azo_stack_value_bw (&intr->stack, 0);
+	AZValue result;
+	unsigned int result_type;
+	unsigned int result_code = azo_calculate_shift (lhs_type, lhs, rhs_type, rhs, operation, &result_type, &result);
+	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZO_EXCEPTION_INVALID_TYPE);
+	/* Replace both operands with the result */
+	azo_stack_pop (&intr->stack, 2);
+	azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE (result_type), &result);
+	return ip + 1;
+}
+
+static const unsigned char *
+interpret_BITWISE_AND (AZOInterpreter *intr, const unsigned char *ip)
+{
+	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_AND);
+}
+
+static const unsigned char *
+interpret_BITWISE_OR (AZOInterpreter *intr, const unsigned char *ip)
+{
+	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_OR);
+}
+
+static const unsigned char *
+interpret_BITWISE_XOR (AZOInterpreter *intr, const unsigned char *ip)
+{
+	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_CARET);
+}
+
+static const unsigned char *
+interpret_SHIFT_LEFT (AZOInterpreter *intr, const unsigned char *ip)
+{
+	return interpret_binary_shift (intr, ip, AZO_TERM_ARITHMETIC_SHIFT_LEFT);
+}
+
+static const unsigned char *
+interpret_SHIFT_RIGHT (AZOInterpreter *intr, const unsigned char *ip)
+{
+	return interpret_binary_shift (intr, ip, AZO_TERM_ARITHMETIC_SHIFT_RIGHT);
 }
 
 static const unsigned char *
@@ -2021,6 +2076,21 @@ azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 			break;
 		case AZO_TC_MODULO:
 			ipc = interpret_MODULO (intr, ipc);
+			break;
+		case AZO_TC_BITWISE_AND:
+			ipc = interpret_BITWISE_AND (intr, ipc);
+			break;
+		case AZO_TC_BITWISE_OR:
+			ipc = interpret_BITWISE_OR (intr, ipc);
+			break;
+		case AZO_TC_BITWISE_XOR:
+			ipc = interpret_BITWISE_XOR (intr, ipc);
+			break;
+		case AZO_TC_SHIFT_LEFT:
+			ipc = interpret_SHIFT_LEFT (intr, ipc);
+			break;
+		case AZO_TC_SHIFT_RIGHT:
+			ipc = interpret_SHIFT_RIGHT (intr, ipc);
 			break;
 
 		case AZO_TC_MIN_TYPED:

@@ -14,87 +14,6 @@
 #include <azo/compiler/helpers.h>
 
 static uint8_t uint8_one = 1;
-static uint32_t uint16_type = AZ_TYPE_UINT16;
-static uint32_t int32_type = AZ_TYPE_INT32;
-
-static unsigned int
-compile_arithmetic_any_any (AZOCode *code, unsigned int operation, const AZONode *node)
-{
-	unsigned int lhs_type_lt_min, lhs_type_gt_max, rhs_type_lt_min, rhs_type_gt_max;
-	unsigned int max_ge_i32, types_equal_1, types_equal_2, lhs_type_gt_rhs_type, types_equal_3;
-	unsigned int finished;
-
-	/* Test LHS and RHS is in range */
-	if (operation == AZO_TERM_ARITHMETIC_PERCENT) {
-		azo_code_compile_type_is_in_range (code, 1, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, node, &lhs_type_lt_min, &lhs_type_gt_max);
-		azo_code_compile_type_is_in_range (code, 0, AZ_TYPE_INT8, AZ_TYPE_DOUBLE, node, &rhs_type_lt_min, &rhs_type_gt_max);
-	} else {
-		azo_code_compile_type_is_in_range (code, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, node, &lhs_type_lt_min, &lhs_type_gt_max);
-		azo_code_compile_type_is_in_range (code, 0, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, node, &rhs_type_lt_min, &rhs_type_gt_max);
-	}
-
-	/* Determine max type */
-	azo_code_write_TYPE_OF (code, 1, node);
-	azo_code_write_TYPE_OF (code, 1, node);
-	azo_code_write_MINMAX_TYPED (code, AZO_TC_MAX_TYPED, AZ_TYPE_UINT32, node);
-	/* If max < Int32 promote both */
-	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_UINT32, (const AZValue *) &uint16_type, node);
-	azo_code_write_COMPARE_TYPED (code, AZ_TYPE_UINT32, node);
-	max_ge_i32 = azo_code_write_JMP32 (code, JMP_32_IF_POSITIVE, 0, node);
-	/* Promote both to int32 */
-	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_UINT32, (const AZValue *) &int32_type, node);
-	azo_code_write_PROMOTE (code, 2, node);
-	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_UINT32, (const AZValue *) &int32_type, node);
-	azo_code_write_PROMOTE (code, 1, node);
-	types_equal_1 = azo_code_write_JMP32 (code, JMP_32, 0, node);
-	/* if LHS.type == RHS.type goto types_equal */
-	azo_code_update_JMP32 (code, max_ge_i32);
-	azo_code_write_TYPE_OF (code, 1, node);
-	azo_code_write_TYPE_OF (code, 1, node);
-	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_UINT32, node);
-	types_equal_2 = azo_code_write_JMP32 (code, JMP_32_IF, 0, node);
-	/* if LHS.type > RHS.type goto lhs_gt_rhs */
-	azo_code_write_TYPE_OF (code, 1, node);
-	azo_code_write_TYPE_OF (code, 1, node);
-	azo_code_write_COMPARE_TYPED (code, AZ_TYPE_UINT32, node);
-	lhs_type_gt_rhs_type = azo_code_write_JMP32 (code, JMP_32_IF_POSITIVE, 0, node);
-	/* Promote LHS and goto types_equal */
-	azo_code_write_TYPE_OF (code, 0, node);
-	azo_code_write_PROMOTE (code, 2, node);
-	types_equal_3 = azo_code_write_JMP32 (code, JMP_32, 0, node);
-	/* Promote RHS */
-	azo_code_update_JMP32 (code, lhs_type_gt_rhs_type);
-	azo_code_write_TYPE_OF (code, 1, node);
-	azo_code_write_PROMOTE (code, 1, node);
-	/* Types_equal */
-	azo_code_update_JMP32 (code, types_equal_1);
-	azo_code_update_JMP32 (code, types_equal_2);
-	azo_code_update_JMP32 (code, types_equal_3);
-	if (operation == AZO_TERM_ARITHMETIC_PLUS) {
-		azo_code_write_ic (code, AZO_TC_ADD, node);
-	} else if (operation == AZO_TERM_ARITHMETIC_MINUS) {
-		azo_code_write_ic (code, AZO_TC_SUBTRACT, node);
-	} else if (operation == AZO_TERM_ARITHMETIC_STAR) {
-		azo_code_write_ic (code, AZO_TC_MULTIPLY, node);
-	} else if (operation == AZO_TERM_ARITHMETIC_SLASH) {
-		azo_code_write_ic (code, AZO_TC_DIVIDE, node);
-	} else if (operation == AZO_TERM_ARITHMETIC_PERCENT) {
-		azo_code_write_ic (code, AZO_TC_MODULO, node);
-	}
-	finished = azo_code_write_JMP32 (code, JMP_32, 0, node);
-
-	/* invalid_type */
-	azo_code_update_JMP32 (code, lhs_type_lt_min);
-	azo_code_update_JMP32 (code, lhs_type_gt_max);
-	azo_code_update_JMP32 (code, rhs_type_lt_min);
-	azo_code_update_JMP32 (code, rhs_type_gt_max);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, node);
-
-	/* finished */
-	azo_code_update_JMP32 (code, finished);
-
-	return 1;
-}
 
 static unsigned int
 compile_arithmetic_boolean (AZOCode *code, unsigned int operation, const AZONode *expr)
@@ -128,21 +47,40 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	/* LHS RHS */
 	switch (expr->term.subtype) {
 	case AZO_TERM_ARITHMETIC_PLUS:
+		azo_code_write_ic (&ctx->frame->code, AZO_TC_ADD, expr);
+		return 1;
 	case AZO_TERM_ARITHMETIC_MINUS:
+		azo_code_write_ic (&ctx->frame->code, AZO_TC_SUBTRACT, expr);
+		return 1;
 	case AZO_TERM_ARITHMETIC_SLASH:
+		azo_code_write_ic (&ctx->frame->code, AZO_TC_DIVIDE, expr);
+		return 1;
 	case AZO_TERM_ARITHMETIC_STAR:
+		azo_code_write_ic (&ctx->frame->code, AZO_TC_MULTIPLY, expr);
+		return 1;
 	case AZO_TERM_ARITHMETIC_PERCENT:
+		azo_code_write_ic (&ctx->frame->code, AZO_TC_MODULO, expr);
+		return 1;
 	case AZO_TERM_ARITHMETIC_SHIFT_LEFT:
+		azo_code_write_ic (&ctx->frame->code, AZO_TC_SHIFT_LEFT, expr);
+		return 1;
 	case AZO_TERM_ARITHMETIC_SHIFT_RIGHT:
+		azo_code_write_ic (&ctx->frame->code, AZO_TC_SHIFT_RIGHT, expr);
+		return 1;
 	case AZO_TERM_ARITHMETIC_AND:
+		azo_code_write_ic (&ctx->frame->code, AZO_TC_BITWISE_AND, expr);
+		return 1;
 	case AZO_TERM_ARITHMETIC_OR:
+		azo_code_write_ic (&ctx->frame->code, AZO_TC_BITWISE_OR, expr);
+		return 1;
 	case AZO_TERM_ARITHMETIC_CARET:
-		return compile_arithmetic_any_any (&ctx->frame->code, expr->term.subtype, expr);
+		azo_code_write_ic (&ctx->frame->code, AZO_TC_BITWISE_XOR, expr);
+		return 1;
 	case AZO_TERM_ARITHMETIC_ANDAND:
 	case AZO_TERM_ARITHMETIC_OROR:
 		return compile_arithmetic_boolean (&ctx->frame->code, expr->term.subtype, expr);
 	default:
-		fprintf (stderr, "azo_compiler_compile_arithmetic: Unknown subtype %u\n", expr->term.subtype);
+		fprintf (stderr, "azo_compiler_compile_arithmetic: operation %u is not implemented in bytecode\n", expr->term.subtype);
 		break;
 	}
 	return 0;

@@ -190,7 +190,7 @@ resolve_if (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 #define noDEBUG_RESOLVE_NEW
 
 // fixme: I ma not sure about this
-// What happens is that we call an method on class intance (the actual class)
+// What happens is that we call an method on class instance (the actual class)
 // It has to resolve either to:
 // Class own method (toString() result in "xyz class")
 // Static method of null instance

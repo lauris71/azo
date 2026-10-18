@@ -210,6 +210,13 @@ enum {
 	AZO_TC_MULTIPLY,
 	AZO_TC_DIVIDE,
 	AZO_TC_MODULO,
+	/* Allowed types integers */
+	AZO_TC_BITWISE_AND,
+	AZO_TC_BITWISE_OR,
+	AZO_TC_BITWISE_XOR,
+	/* Allowed types integers; shift count is read as int32 */
+	AZO_TC_SHIFT_LEFT,
+	AZO_TC_SHIFT_RIGHT,
 
 	/* MIN TYPE(U8) */
 	/* Allowed types integers and reals */
