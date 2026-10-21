@@ -40,6 +40,8 @@ struct _AZOVariable {
 	unsigned int pos;
 	/* Storage class flags (AZO_VARIABLE_FLAG_*) */
 	unsigned int flags;
+	/* Declared type (AZ_TYPE_*) */
+	unsigned int type;
 	/* Link to parent for data variables (for resolver) */
 	AZOVariable *parent;
     /* Link to const node if determined to be constand (for optimizer) */

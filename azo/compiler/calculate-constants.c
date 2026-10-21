@@ -124,7 +124,7 @@ static void
 node_replace_with_constant(AZONode *node, unsigned int type, const AZValue *val)
 {
 	node->term.type = AZO_TERM_CONSTANT;
-	node->term.subtype = type;
+	node->type = type;
 	az_packed_value_set_from_type_value(&node->value, type, val);
 	/* Children mus be cleared after the value is set in case the value refers into the subtree */
 	azo_node_clear_children(node);
@@ -137,9 +137,9 @@ calculate_logic (AZOOptimizer *opt, AZONode *expr, AZOSource *src)
 	AZONode *rhs = lhs->next;
 	assert((lhs->term.type == AZO_TERM_CONSTANT) && (rhs->term.type == AZO_TERM_CONSTANT));
 	AZValue result;
-	unsigned int result_code = azo_calculate_logic (lhs->term.subtype, &lhs->value.v, rhs->term.subtype, &rhs->value.v, expr->term.subtype, &result);
+	unsigned int result_code = azo_calculate_logic (lhs->type, &lhs->value.v, rhs->type, &rhs->value.v, expr->term.subtype, &result);
 	if (result_code == AZO_CALCULATE_INVALID_TYPE) {
-		calculate_report ("ERROR", expr, lhs->term.subtype, &lhs->value.v, rhs->term.subtype, &rhs->value.v, "invalid type", src);
+		calculate_report ("ERROR", expr, lhs->type, &lhs->value.v, rhs->type, &rhs->value.v, "invalid type", src);
 		return 1;
 	}
 	node_replace_with_constant(expr, AZ_TYPE_BOOLEAN, &result);
@@ -157,9 +157,9 @@ calculate_shift (AZOOptimizer *opt, AZONode *expr, AZOSource *src)
 	AZONode *rhs = lhs->next;
 	assert((lhs->term.type == AZO_TERM_CONSTANT) && (rhs->term.type == AZO_TERM_CONSTANT));
 
-	unsigned int result_code = azo_calculate_shift (lhs->term.subtype, &lhs->value.v, rhs->term.subtype, &rhs->value.v, expr->term.subtype, &type, &c);
+	unsigned int result_code = azo_calculate_shift (lhs->type, &lhs->value.v, rhs->type, &rhs->value.v, expr->term.subtype, &type, &c);
 	if (result_code == AZO_CALCULATE_INVALID_TYPE) {
-		calculate_report ("ERROR", expr, lhs->term.subtype, &lhs->value.v, rhs->term.subtype, &rhs->value.v, "invalid type", src);
+		calculate_report ("ERROR", expr, lhs->type, &lhs->value.v, rhs->type, &rhs->value.v, "invalid type", src);
 		return 1;
 	}
 	node_replace_with_constant(expr, type, &c);
@@ -229,7 +229,7 @@ azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZONode *node)
 	if (rhs->term.type != AZO_TERM_CONSTANT) return 0;
 	/* Operand is constant expressions */
 	if (node->term.subtype == AZO_TERM_PREFIX_NOT) {
-		if (rhs->term.subtype != AZ_TYPE_BOOLEAN) {
+		if (rhs->type != AZ_TYPE_BOOLEAN) {
 			fprintf (stderr, "calculate_rvalue_prefix: expression is not boolean (%d)\n", AZ_PACKED_VALUE_TYPE(&rhs->value));
 			return 1;
 		}
@@ -239,23 +239,23 @@ azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZONode *node)
 		return 0;
 	}
 	/* '+' '-' '~' require arithmetic types */
-	if (!AZ_TYPE_IS_ARITHMETIC (rhs->term.subtype)) {
+	if (!AZ_TYPE_IS_ARITHMETIC (rhs->type)) {
 		fprintf (stderr, "calculate_rvalue_prefix: rhs is not arithmetic type (%d)\n", AZ_PACKED_VALUE_TYPE(&rhs->value));
 		return 1;
 	}
 	/* '+' is no-op */
 	if (node->term.subtype == AZO_TERM_PREFIX_PLUS) {
-		node_replace_with_constant(node, rhs->term.subtype, &rhs->value.v);
+		node_replace_with_constant(node, rhs->type, &rhs->value.v);
 		opt->n_const_subst += 1;
 		return 0;
 	}
 	/* '-' is not allowed for unsigned types */
 	if (node->term.subtype == AZO_TERM_PREFIX_MINUS) {
-		if (AZ_TYPE_IS_UNSIGNED(rhs->term.subtype)) {
+		if (AZ_TYPE_IS_UNSIGNED(rhs->type)) {
 			fprintf (stderr, "calculate_rvalue_prefix: Invalid operator %u for unsigned type\n", node->term.subtype);
 			return 1;
 		}
-		switch (rhs->term.subtype) {
+		switch (rhs->type) {
 			/* fixme: overflow */
 			case AZ_TYPE_INT8:
 				result.int8_v = -rhs->value.v.int8_v;
@@ -287,16 +287,16 @@ azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZONode *node)
 				assert(0);
 				return 1;
 		}
-		node_replace_with_constant(node, rhs->term.subtype, &result);
+		node_replace_with_constant(node, rhs->type, &result);
 		opt->n_const_subst += 1;
 		return 0;
 	}
 	if (node->term.subtype == AZO_TERM_PREFIX_TILDE) {
-		if ((rhs->term.subtype == AZ_TYPE_FLOAT) || (rhs->term.subtype == AZ_TYPE_DOUBLE)) {
+		if ((rhs->type == AZ_TYPE_FLOAT) || (rhs->type == AZ_TYPE_DOUBLE)) {
 			fprintf (stderr, "calculate_rvalue_prefix: Invalid operator %u for float/double\n", node->term.subtype);
 			return 1;
 		}
-		switch (rhs->term.subtype) {
+		switch (rhs->type) {
 			/* fixme: overflow */
 			case AZ_TYPE_INT8:
 			case AZ_TYPE_UINT8:
@@ -326,7 +326,7 @@ azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZONode *node)
 				assert(0);
 				return 1;
 		}
-		node_replace_with_constant(node, rhs->term.subtype, &result);
+		node_replace_with_constant(node, rhs->type, &result);
 		opt->n_const_subst += 1;
 		return 0;
 	}

@@ -1145,7 +1145,7 @@ test_parser(void)
             unsigned int n = azo_node_flatten(tree, nodes, 16);
             TEST_ASSERT_EQUAL_UINT(4, n);
             TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_CONSTANT, nodes[3]->term.type, cases[i].src);
-            TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].az_type, nodes[3]->term.subtype, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].az_type, nodes[3]->type, cases[i].src);
             if (cases[i].az_type == AZ_TYPE_INT32) TEST_ASSERT_EQUAL_INT32_MESSAGE((int32_t) cases[i].val, nodes[3]->value.v.int32_v, cases[i].src);
             else if (cases[i].az_type == AZ_TYPE_UINT32) TEST_ASSERT_EQUAL_UINT32_MESSAGE((uint32_t) cases[i].val, nodes[3]->value.v.uint32_v, cases[i].src);
             else if (cases[i].az_type == AZ_TYPE_INT64) TEST_ASSERT_EQUAL_INT64_MESSAGE(cases[i].val, nodes[3]->value.v.int64_v, cases[i].src);

@@ -94,7 +94,7 @@ azo_compiler_new_frame(AZOCompiler *comp, AZOFrame *parent, unsigned int capture
 {
 	if (comp->n_frames >= comp->n_frames_allocated) {
 		comp->n_frames_allocated += 8;
-		comp->frames = realloc(comp->frames, comp->n_frames_allocated * sizeof(AZOFrame));
+		comp->frames = realloc(comp->frames, comp->n_frames_allocated * sizeof(AZOFrame *));
 	}
 	AZOFrame *frame = azo_frame_new (parent, capture_this, n_args, ret_type, comp->debug);
 	frame->parent = parent;
@@ -135,26 +135,26 @@ static unsigned int
 azo_compiler_compile_constant (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src)
 {
 	AZOCode *code = &ctx->frame->code;
-	if (expr->term.subtype == AZ_TYPE_NONE) {
+	if (expr->type == AZ_TYPE_NONE) {
 		/* Constant none is NULL */
 		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_NONE, NULL, expr);
-	} else if (AZ_TYPE_IS_PRIMITIVE (expr->term.subtype)) {
-		azo_code_write_PUSH_IMMEDIATE (code, expr->term.subtype, &expr->value.v, expr);
-	} else if (expr->term.subtype == AZ_TYPE_STRING) {
+	} else if (AZ_TYPE_IS_PRIMITIVE (expr->type)) {
+		azo_code_write_PUSH_IMMEDIATE (code, expr->type, &expr->value.v, expr);
+	} else if (expr->type == AZ_TYPE_STRING) {
 		compile_PUSH_VALUE_const_string (comp, ctx, expr->value.v.string, expr);
-	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_OBJECT)) {
+	} else if (az_type_is_a (expr->type, AZ_TYPE_OBJECT)) {
 		compile_PUSH_VALUE_const_object (comp, ctx, ( AZObject *) expr->value.v.reference, expr);
-	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_REFERENCE)) {
+	} else if (az_type_is_a (expr->type, AZ_TYPE_REFERENCE)) {
 		/* fixme: Implement lookup if already pushed */
-		compile_PUSH_VALUE_const (comp, ctx, expr->term.subtype, &expr->value.v, expr);
-	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_BLOCK)) {
+		compile_PUSH_VALUE_const (comp, ctx, expr->type, &expr->value.v, expr);
+	} else if (az_type_is_a (expr->type, AZ_TYPE_BLOCK)) {
 		/* fixme: Implement lookup if already pushed */
-		compile_PUSH_VALUE_const (comp, ctx, expr->term.subtype, &expr->value.v, expr);
-	} else if (az_type_is_a (expr->term.subtype, AZ_TYPE_FUNCTION_VALUE)) {
+		compile_PUSH_VALUE_const (comp, ctx, expr->type, &expr->value.v, expr);
+	} else if (az_type_is_a (expr->type, AZ_TYPE_FUNCTION_VALUE)) {
 		/* fixme: Implement lookup if already pushed */
-		compile_PUSH_VALUE_const (comp, ctx, expr->term.subtype, &expr->value.v, expr);
+		compile_PUSH_VALUE_const (comp, ctx, expr->type, &expr->value.v, expr);
 	} else {
-		fprintf (stderr, "azo_compiler_compile_constant: Unknown constant type %u\n", expr->term.subtype);
+		fprintf (stderr, "azo_compiler_compile_constant: Unknown constant type %u\n", expr->type);
 		return 0;
 	}
 	return 1;
@@ -259,8 +259,8 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			 * No code, bare LValue
 			 */
 			lvalue->type = LVALUE_STACK;
-			//lvalue->pos = comp->current->n_sig_vars + comp->current->n_parent_vars + expr->var_pos;
-			lvalue->pos = expr->var_pos;
+			//lvalue->pos = comp->current->n_sig_vars + comp->current->n_parent_vars + expr->var_idx;
+			lvalue->pos = expr->var_idx;
 			lvalue->n_elements = 0;
 			return 1;
 		} else if (expr->term.subtype == AZO_TERM_VARIABLE_SHARED) {
@@ -270,7 +270,7 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			 * No code, bare LValue
 			 */
 			lvalue->type = LVALUE_SHARED;
-			lvalue->pos = expr->var_pos;
+			lvalue->pos = expr->var_idx;
 			lvalue->flags = (expr->term.flags & AZO_VARIABLE_FLAG_WEAK) ? AZO_DATABLOCK_FLAG_WEAK : 0;
 			lvalue->n_elements = 0;
 			return 1;
@@ -281,7 +281,7 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			 * No code, bare LValue
 			 */
 			lvalue->type = LVALUE_STATIC;
-			lvalue->pos = ctx->frame->n_captures + expr->var_pos;
+			lvalue->pos = ctx->frame->n_captures + expr->var_idx;
 			lvalue->flags = (expr->term.flags & AZO_VARIABLE_FLAG_WEAK) ? AZO_DATABLOCK_FLAG_WEAK : 0;
 			lvalue->n_elements = 0;
 			return 1;
@@ -297,7 +297,7 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 				return 0;
 			}
 			lvalue->type = LVALUE_CAPTURE;
-			lvalue->pos = expr->var_pos;
+			lvalue->pos = expr->var_idx;
 			lvalue->n_elements = 0;
 			return 1;
 		} else {
@@ -548,7 +548,7 @@ compile_new (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *klass, c
 
 	assert(klass->term.type == AZO_TERM_TYPE);
 
-	AZClass *tklass = AZ_CLASS_FROM_TYPE(klass->term.subtype);
+	AZClass *tklass = AZ_CLASS_FROM_TYPE(klass->type);
 	compile_PUSH_VALUE_const(comp, ctx, AZ_TYPE_CLASS, (const AZValue *) &tklass, klass);
 
 	/* [Class] */
@@ -738,12 +738,12 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 
 	/* Return type */
 	assert (type->term.type == AZO_TERM_TYPE);
-	unsigned int ret_type = type->term.subtype;
+	unsigned int ret_type = type->type;
 
 	/* Compile function body in it's own resolved frame */
-	assert(node->frame);
+	assert(node->frame_idx < comp->n_frames);
 
-	AZOFrame *func_frame = node->frame;
+	AZOFrame *func_frame = comp->frames[node->frame_idx];
 
 	AZOCompilerContext func_ctx = *ctx;
 	func_ctx.ret_type = ret_type;
@@ -839,7 +839,7 @@ compile_cast (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, A
 		return 0;
 	}
 	if (!azo_compiler_compile_expression (comp, ctx, val, src)) return 0;
-	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_CONVERT_TYPE, type->term.subtype, node);
+	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_CONVERT_TYPE, type->type, node);
 	return 1;
 }
 
@@ -853,13 +853,13 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 	AZOCode *code = &ctx->frame->code;
 	if (node->term.type == AZO_TERM_VARIABLE) {
 		if (node->term.subtype == AZO_TERM_VARIABLE_LOCAL) {
-			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, node->var_pos, node);
+			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, node->var_idx, node);
 		} else if (node->term.subtype == AZO_TERM_VARIABLE_SHARED) {
-			azo_code_write_PUSH_VALUE(code, node->var_pos, node);
+			azo_code_write_PUSH_VALUE(code, node->var_idx, node);
 		} else if (node->term.subtype == AZO_TERM_VARIABLE_CAPTURE) {
-			azo_code_write_PUSH_CAPTURE(code, node->var_pos, node);
+			azo_code_write_PUSH_CAPTURE(code, node->var_idx, node);
 		} else if (node->term.subtype == AZO_TERM_VARIABLE_STATIC) {
-			azo_code_write_PUSH_CAPTURE(code, ctx->frame->n_captures + node->var_pos, node);
+			azo_code_write_PUSH_CAPTURE(code, ctx->frame->n_captures + node->var_idx, node);
 		} else {
 			fprintf (stderr, "compile_expression_rvalue: Invalid variable subtype %u\n", node->term.subtype);
 			return 0;
@@ -1033,6 +1033,13 @@ compile_assign (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *left,
 	if (!compile_lvalue (comp, ctx, left, src, &lval, 0)) return 0;
 	/* Push value */
 	if (!azo_compiler_compile_expression (comp, ctx, right, src)) return 0;
+	/* Runtime type check for statically-unprovable variable assignments */
+	if (left->term.type == AZO_TERM_VARIABLE) {
+		unsigned int Ta = left->type;
+		if (Ta && (azo_type_assignment_classify_source (right, Ta) == AZO_ASSIGN_CHECK)) {
+			azo_code_write_ic_u32_u32 (&ctx->frame->code, AZO_TC_EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE, 0, Ta, left);
+		}
+	}
 	/* Actual assignment */
 	if (!compile_assign_to_lvalue (comp, ctx, &lval, left)) return 0;
 	return 1;
@@ -1080,7 +1087,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 	if (name->term.type == AZO_TERM_VARIABLE) {
 		unsigned int dflags = (name->term.flags & AZO_VARIABLE_FLAG_WEAK) ? AZO_DATABLOCK_FLAG_WEAK : 0;
 		if (name->term.subtype == AZO_TERM_VARIABLE_STATIC) {
-			unsigned int pos = ctx->frame->n_captures + name->var_pos;
+			unsigned int pos = ctx->frame->n_captures + name->var_idx;
 			/* Lazy init: skip if static datablock entry is already set */
 			unsigned int jmp = azo_code_write_JMP_IF_SET32 (code, AZO_TC_JMP_IF_CAPTURE_SET, pos, node);
 			if (value) {
@@ -1094,7 +1101,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 			azo_code_update_JMP32 (code, jmp);
 			return 1;
 		} else if (name->term.subtype == AZO_TERM_VARIABLE_SHARED) {
-			unsigned int pos = name->var_pos;
+			unsigned int pos = name->var_idx;
 			/* Lazy init: skip if shared datablock entry is already set */
 			unsigned int jmp = azo_code_write_JMP_IF_SET32 (code, AZO_TC_JMP_IF_SHARED_SET, pos, node);
 			if (value) {
@@ -1133,7 +1140,7 @@ compile_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *
 	}
 
 	for (child = type->next; child; child = child->next) {
-		if (!compile_single_declaration (comp, ctx, child, src, type->term.subtype)) return 0;
+		if (!compile_single_declaration (comp, ctx, child, src, type->type)) return 0;
 	}
 	return 1;
 }
@@ -1203,15 +1210,15 @@ compile_member_block_ex(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 		switch (this_node->term.subtype) {
 			case AZO_TERM_VARIABLE_LOCAL:
 				lctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
-				lctx.this_var_pos = this_node->var_pos;
+				lctx.this_var_pos = this_node->var_idx;
 				break;
 			case AZO_TERM_VARIABLE_SHARED:
 				lctx.this_variant = AZO_COMPILER_THIS_IS_SHARED;
-				lctx.this_static_pos = this_node->var_pos;
+				lctx.this_static_pos = this_node->var_idx;
 				break;
 			case AZO_TERM_VARIABLE_CAPTURE:
 				lctx.this_variant = AZO_COMPILER_THIS_IS_CAPTURE;
-				lctx.this_capture_pos = this_node->var_pos;
+				lctx.this_capture_pos = this_node->var_idx;
 				break;
 			default:
 				fprintf(stderr, "compile_member_block: Unknown variable type\n");
@@ -1220,7 +1227,7 @@ compile_member_block_ex(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 	} else {
 		/* Local 'this' was not resolved, it has reserved local variable spot */
 		lctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
-		lctx.this_var_pos = node->var_pos;
+		lctx.this_var_pos = node->var_idx;
 		if (!azo_compiler_compile_expression(comp, ctx, this_node, src)) return 0;
 		lctx.n_stack += 1;
 	}

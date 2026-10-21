@@ -15,6 +15,7 @@
 
 #include <az/string.h>
 #include <az/extend.h>
+#include <az/classes/value-array.h>
 
 #include <azo/errors.h>
 #include <azo/keyword.h>
@@ -1107,14 +1108,16 @@ parse_keyword_expression (AZOParser *parser, AZOToken *token, unsigned int keywo
 	/* Keywords producing a value node */
 	switch (keyword) {
 		case AZO_KEYWORD_NULL:
-			expr = azo_node_new (AZO_TERM_CONSTANT, AZ_TYPE_NONE, token->start, token->end);
+			expr = azo_node_new (AZO_TERM_CONSTANT, AZO_TERM_GENERIC, token->start, token->end);
+			expr->type = AZ_TYPE_NONE;
 			break;
 		case AZO_KEYWORD_THIS:
 			expr = azo_node_new (AZO_TERM_KEYWORD, AZO_KEYWORD_THIS, token->start, token->end);
 			break;
 		case AZO_KEYWORD_TRUE:
 		case AZO_KEYWORD_FALSE:
-			expr = azo_node_new (AZO_TERM_CONSTANT, AZ_TYPE_BOOLEAN, token->start, token->end);
+			expr = azo_node_new (AZO_TERM_CONSTANT, AZO_TERM_GENERIC, token->start, token->end);
+			expr->type = AZ_TYPE_BOOLEAN;
 			az_packed_value_set_boolean (&expr->value, keyword == AZO_KEYWORD_TRUE);
 			break;
 		case AZO_KEYWORD_COMPLEX: {
@@ -1768,6 +1771,7 @@ parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, 
 	}
 	body = parser_detach_last (parser);
 	AZONode *expr = azo_node_new_with_children (AZO_TERM_FUNCTION, AZO_TERM_LAMBDA, start, body->term.end, 3, type, args, body);
+	expr->type = AZ_TYPE_FUNCTION;
 	if (is_static) expr->term.flags = AZO_TERM_FLAG_STATIC;
 	parser_append (parser, expr);
 	return azo_parser_continue_expression (parser, token, left_precedence);
@@ -1822,6 +1826,7 @@ parse_array_literal (AZOParser *parser, AZOToken *token)
 	unsigned int start = token->start;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	AZONode *expr = azo_node_new (AZO_TERM_LITERAL_ARRAY, AZO_TERM_GENERIC, token->start, token->end);
+	expr->type = AZ_TYPE_VALUE_ARRAY;
 	parser_push (parser, expr);
 	unsigned int error = parse_expression_list (parser, token, AZO_TOKEN_RIGHT_BRACE);
 	if (error) {

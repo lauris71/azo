@@ -222,7 +222,7 @@ test_resolver(void)
     {
         AZOParser parser;
         AZOSource *src;
-        AZONode *tree = parse_text("function f = (int32 x) int32 => { if (x) return 1; else return 2; };", &parser, &src);
+        AZONode *tree = parse_text("function f = (int32 x) int32 => { if (x != 0) return 1; else return 2; };", &parser, &src);
         TEST_ASSERT_NOT_NULL(tree);
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
@@ -240,7 +240,7 @@ test_resolver(void)
     {
         AZOParser parser;
         AZOSource *src;
-        AZONode *tree = parse_text("function f = (int32 x) int32 => { if (x) return 1; };", &parser, &src);
+        AZONode *tree = parse_text("function f = (int32 x) int32 => { if (x != 0) return 1; };", &parser, &src);
         TEST_ASSERT_NOT_NULL(tree);
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
@@ -258,7 +258,7 @@ test_resolver(void)
     {
         AZOParser parser;
         AZOSource *src;
-        AZONode *tree = parse_text("function f = (int32 x) int32 => { while (x) return 1; };", &parser, &src);
+        AZONode *tree = parse_text("function f = (int32 x) int32 => { while (x != 0) return 1; };", &parser, &src);
         TEST_ASSERT_NOT_NULL(tree);
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
@@ -276,7 +276,7 @@ test_resolver(void)
     {
         AZOParser parser;
         AZOSource *src;
-        AZONode *tree = parse_text("function f = (int32 x) int32 => { if (x) int32 a = 1; else a = 2; return x; };", &parser, &src);
+        AZONode *tree = parse_text("function f = (int32 x) int32 => { if (x != 0) int32 a = 1; else a = 2; return x; };", &parser, &src);
         TEST_ASSERT_NOT_NULL(tree);
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
@@ -331,6 +331,150 @@ test_resolver(void)
         AZOParser parser;
         AZOSource *src;
         AZONode *tree = parse_text("function f = () int32 => { final int32 a = 1; a = 2; return a; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Assignment type check: matching types resolve */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = () int32 => { int32 a = 1; int32 b = 2; a = b; return a; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(!result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Assignment type check: incompatible types fail */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = () int32 => { int32 a = 1; string s = \"x\"; a = s; return a; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Assignment type check: null to primitive fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = () int32 => { int32 a = 1; a = null; return a; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Assignment type check: null to block resolves */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = () int32 => { string s = \"x\"; s = null; return 0; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(!result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Condition check: non-boolean condition fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = (int32 x) int32 => { if (x) return 1; return 0; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Type propagation: unary minus on string yields string, rejected for int32 target */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = () int32 => { string s = \"x\"; int32 b = 0; b = -s; return b; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Kind check: arithmetic condition fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = () int32 => { int32 a = 1; int32 b = 2; if (a + b) return 1; return 0; };", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .ret_type = AZ_TYPE_NONE
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.this_variant = AZO_COMPILER_NO_THIS;
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(result);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Kind check: arithmetic operand of && fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("function f = () int32 => { boolean a = true; int32 b = 1; int32 c = 2; if (a && (b + c)) return 1; return 0; };", &parser, &src);
         TEST_ASSERT_NOT_NULL(tree);
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);

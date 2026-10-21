@@ -34,17 +34,35 @@ Sentence:
   While_statement
   If_statement
   Do_statement
+  Mode_block
   
 Block:
   { Sentences }
 
 # Static block: the body is evaluated in static context (this == NONE)
-# Note: ; terminates a Line; block-statements (Block, Static_block, if/while/
-# for/do) are not Lines and take no ;. A member block is an expression, so as a
-# statement it is a Line and takes ; (like any expression whose value is
+# Note: ; terminates a Line; block-statements (Block, Static_block, Mode_block,
+# if/while/for/do) are not Lines and take no ;. A member block is an expression,
+# so as a statement it is a Line and takes ; (like any expression whose value is
 # discarded): enemy { ... };
 Static_block:
   static Block
+
+# Computation-mode blocks: finite { ... }, wrap { ... }, saturate { ... }.
+#
+# finite/wrap/saturate are reserved keywords - mode(expr) and mode{...} would
+# otherwise be ambiguous with a function call and a member block. They may not
+# be used as local variable/function names, but remain usable as property/
+# attribute names, which are always qualified (e.g. x.wrap(...)).
+#
+# The block evaluates its statements in the given mode (see arithmetic.md):
+#   finite   - throws NON_FINITE on the first non-finite result
+#   saturate - clamps integer overflow and narrowing
+#   wrap     - wraps integer overflow / truncates narrowing
+# A mode block is a statement (creates a scope, yields no value), takes no ;.
+Mode_block:
+  finite Block
+  wrap Block
+  saturate Block
 
 Line:
   Statement ;
@@ -190,6 +208,15 @@ Parenthesized_expression:
 Naked_expression:
   LValue
   RValue
+  Mode_expression
+
+# The expression form evaluates a single expression in the given mode and
+# yields its value. Inside a member block an unqualified mode keyword wins over
+# a member of the same name - write this.wrap(...) to call the member.
+Mode_expression:
+  finite (Expression)
+  wrap (Expression)
+  saturate (Expression)
 
 LValue:
   Variable_reference

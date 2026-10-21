@@ -94,7 +94,8 @@ azo_node_new_integer (const AZOSource *src, const AZOToken *token)
 			az_type = AZ_TYPE_UINT64;
 		}
 	}
-	AZONode *expr = azo_node_new (AZO_TERM_CONSTANT, az_type, token->start, token->end);
+	AZONode *expr = azo_node_new (AZO_TERM_CONSTANT, AZO_TERM_GENERIC, token->start, token->end);
+	expr->type = az_type;
 	if (az_type == AZ_TYPE_INT32) {
 		az_packed_value_set_int (&expr->value, AZ_TYPE_INT32, (int) val);
 	} else if (az_type == AZ_TYPE_UINT32) {
@@ -141,7 +142,8 @@ azo_node_new_floating_point (const AZOSource *src, const AZOToken *token)
 			az_val.double_v = val;
 		}
 	}
-	expr = azo_node_new (AZO_TERM_CONSTANT, az_type, token->start, token->end);
+	expr = azo_node_new (AZO_TERM_CONSTANT, AZO_TERM_GENERIC, token->start, token->end);
+	expr->type = az_type;
 	az_packed_value_set_from_type_value (&expr->value, az_type, &az_val);
 	return expr;
 }

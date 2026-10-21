@@ -90,7 +90,8 @@ azo_compiler_resolve_type_expression(AZOCompiler *comp, AZOResolveCtx *rctx, AZO
 	}
 
 	node->term.type = AZO_TERM_TYPE;
-	node->term.subtype = AZ_CLASS_TYPE((AZClass *) val.block);
+	node->term.subtype = AZO_TERM_GENERIC;
+	node->type = AZ_CLASS_TYPE((AZClass *) val.block);
 	az_packed_value_clear(&node->value);
 
 	azo_node_clear_children(node);
@@ -141,7 +142,7 @@ resolve_property (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 			return 1;
 		}
 		node->term.type = AZO_TERM_CONSTANT;
-		node->term.subtype = AZ_IMPL_TYPE(impl);
+		node->type = AZ_IMPL_TYPE(impl);
 		az_packed_value_set_from_impl_value(&node->value, impl, &val);
 		az_value_clear(impl, &val);
 		azo_node_clear_children(node);
@@ -169,7 +170,7 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	val.impl = azo_context_lookup (comp->globals, expr->value.v.string, &val.v, AZ_PACKED_VALUE_MAX_SIZE);
 	if (val.impl) {
 		expr->term.type = AZO_TERM_CONSTANT;
-		expr->term.subtype = AZ_IMPL_TYPE(val.impl);
+		expr->type = AZ_IMPL_TYPE(val.impl);
 		az_packed_value_transfer(&expr->value, &val);
 		/* If string resolved to global variable we can be sure it has at least reference left */
 		DBG_REPLACE("resolve_variable: %s replaced with global object [%s]\n", str, expr->value.impl, &expr->value.v);
@@ -185,7 +186,8 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		DBG_PRINTF("resolve_variable: Local %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
 		expr->term.flags = var->flags;
-		expr->var_pos = var->pos;
+		expr->type = var->type;
+		expr->var_idx = var->pos;
 		if (var->flags & AZO_VARIABLE_FLAG_STATIC) {
 			expr->term.subtype = AZO_TERM_VARIABLE_STATIC;
 		} else if (var->flags & AZO_VARIABLE_FLAG_SHARED) {
@@ -205,7 +207,8 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		DBG_PRINTF("resolve_variable: Parent %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
 		expr->term.subtype = AZO_TERM_VARIABLE_CAPTURE;
-		expr->var_pos = var->pos;
+		expr->type = var->type;
+		expr->var_idx = var->pos;
 		return 0;
 	}
 	/*
@@ -228,7 +231,8 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 			DBG_PRINTF("resolve_variable: Created parent variable %s at pos %u\n", expr->value.v.string->str, var->pos);
 			expr->term.type = AZO_TERM_VARIABLE;
 			expr->term.subtype = AZO_TERM_VARIABLE_CAPTURE;
-			expr->var_pos = var->pos;
+			expr->type = var->type;
+			expr->var_idx = var->pos;
 			return 0;
 		}
 	}

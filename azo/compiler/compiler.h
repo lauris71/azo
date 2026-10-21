@@ -23,6 +23,52 @@ typedef struct _AZOCompilerContext AZOCompilerContext;
 extern "C" {
 #endif
 
+/**
+ * @brief Result of compile-time assignment type classification
+ * 
+ * Given target type Ta and inferred source type Ib:
+ * - ACCEPT: the assignment always succeeds, no runtime check needed
+ * - REJECT: the assignment can never succeed, compile-time error
+ * - CHECK:  a runtime check is needed (emit EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE)
+ */
+enum {
+	AZO_ASSIGN_ACCEPT,
+	AZO_ASSIGN_REJECT,
+	AZO_ASSIGN_CHECK
+};
+
+static inline unsigned int
+azo_type_assignment_classify (unsigned int Ta, unsigned int Ib)
+{
+	/* Unknown target type - nothing to check */
+	if (!Ta) return AZO_ASSIGN_ACCEPT;
+	/* Ib assignable to Ta (exact, subtype, interface, or null to block/any) */
+	if (az_type_is_assignable_to (Ib, Ta)) return AZO_ASSIGN_ACCEPT;
+	/* Leaf type - the actual type is exactly Ib, which is not assignable */
+	if (AZ_TYPE_IS_FINAL (Ib)) return AZO_ASSIGN_REJECT;
+	/* A subtype of Ib may be assignable to Ta */
+	if (az_type_is_a (Ta, Ib) || AZ_TYPE_IS_INTERFACE (Ta)) return AZO_ASSIGN_CHECK;
+	return AZO_ASSIGN_REJECT;
+}
+
+/**
+ * @brief Classify an assignment source node against a target type
+ * 
+ * A source with NONE type is either a null literal (CONSTANT) or an unknown
+ * (not-yet-inferred) expression. Unknown sources need a runtime check unless
+ * the target is unrestricted.
+ */
+static inline unsigned int
+azo_type_assignment_classify_source (const AZONode *source, unsigned int Ta)
+{
+	unsigned int Ib = source->type;
+	if (!Ib && (source->term.type != AZO_TERM_CONSTANT)) {
+		if (Ta == AZ_TYPE_ANY) return AZO_ASSIGN_ACCEPT;
+		return AZO_ASSIGN_CHECK;
+	}
+	return azo_type_assignment_classify (Ta, Ib);
+}
+
 enum {
 	AZO_COMPILER_NO_THIS,
 	AZO_COMPILER_THIS_IS_STACK,

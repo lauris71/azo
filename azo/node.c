@@ -91,6 +91,8 @@ AZONode *
 azo_node_duplicate_tree(AZONode *node)
 {
 	AZONode *new_node = azo_node_new (node->term.type, node->term.subtype, node->term.start, node->term.end);
+	new_node->type = node->type;
+	new_node->var_idx = node->var_idx;
 	az_packed_value_transfer (&new_node->value, &node->value);
 	AZONode *prev = NULL;
 	for (AZONode *child = node->children; child; child = child->next) {
@@ -126,7 +128,8 @@ azo_node_flatten (AZONode *node, AZONode **nodes, unsigned int max_nodes)
 AZONode *
 azo_node_new_text (const AZOSource *src, const AZOToken *token)
 {
-	AZONode *expr = azo_node_new (AZO_TERM_CONSTANT, AZ_TYPE_STRING, token->start + 1, token->end - 1);
+	AZONode *expr = azo_node_new (AZO_TERM_CONSTANT, AZO_TERM_GENERIC, token->start + 1, token->end - 1);
+	expr->type = AZ_TYPE_STRING;
 	AZString *str = az_string_new_length (src->cdata + token->start + 1, token->end - token->start - 2);
 	az_packed_value_transfer_string (&expr->value, str);
 	return expr;
@@ -501,7 +504,7 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		fprintf (ofs, "## ");
 		break;
 	case AZO_TERM_TYPE:
-		klass = AZ_CLASS_FROM_TYPE(expr->term.subtype);
+		klass = AZ_CLASS_FROM_TYPE(expr->type);
 		fprintf (ofs, "%s ", klass ? (const char *) klass->name : "NONE");
 		break;
 	default:
@@ -656,10 +659,10 @@ get_subtype_str(AZONode *node, uint8_t *d, unsigned int dlen)
 			}
 		case AZO_TERM_CONSTANT:
 		case AZO_TERM_TYPE:
-			if (!node->term.subtype) {
+			if (!node->type) {
 				return arikkei_strncpy(d, dlen, (const uint8_t *) "NONE");
 			} else {
-				AZClass *klass = AZ_CLASS_FROM_TYPE(node->term.subtype);
+				AZClass *klass = AZ_CLASS_FROM_TYPE(node->type);
 				return arikkei_strncpy(d, dlen, klass->name);
 			}
 			break;
@@ -702,7 +705,7 @@ azo_node_print_info(AZONode *node, FILE *ofs, AZOSource *src, unsigned int inden
 	for (unsigned int i = 0; s_text[i]; i++) if (s_text[i] == '\n') s_text[i] = ' ';
 	const char *name = (node->term.type < AZO_NUM_TERM_TYPES) ? expr_names[node->term.type] : "?";
 	get_value_str(node, s_value, sizeof(s_value));
-	fprintf (ofs, "{%s:%s %d %s [%u,%u] [%s]", name, s_subtype, node->var_pos, s_value, node->term.start, node->term.end, s_text);
+	fprintf (ofs, "{%s:%s %d %s [%u,%u] [%s]", name, s_subtype, node->var_idx, s_value, node->term.start, node->term.end, s_text);
 	if (node->children) {
 		fprintf(ofs, "\n");
 		for (AZONode *child = node->children; child; child = child->next) {

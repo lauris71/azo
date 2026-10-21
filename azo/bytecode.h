@@ -29,6 +29,11 @@ enum {
 	 * Throw INVALID_TYPE if element at pos is not type
 	 */
 	AZO_TC_EXCEPTION_IF_TYPE_IS_NOT,
+	/*
+	 * AZO_TC_EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE pos type
+	 * Throw INVALID_TYPE if element at pos is not assignable to type
+	 */
+	AZO_TC_EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE,
 
 #ifdef AZO_TC_HAS_DEBUG
 	/* DEBUG OP(U32) [STRING] */

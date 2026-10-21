@@ -177,6 +177,7 @@ azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, 
 	}
 	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, name, pos);
 	frame->scope->variables->var.flags = flags;
+	frame->scope->variables->var.type = type;
 	return &frame->scope->variables->var;
 }
 
@@ -184,6 +185,7 @@ AZOVariable *
 azo_frame_declare_this(AZOFrame *frame, unsigned int type)
 {
 	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, azo_keyword_str(AZO_KEYWORD_THIS), frame->scope->next_var_pos++);
+	frame->scope->variables->var.type = type;
 	return &frame->scope->variables->var;
 }
 

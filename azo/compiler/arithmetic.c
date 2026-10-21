@@ -16,26 +16,19 @@
 static uint8_t uint8_one = 1;
 
 static unsigned int
-compile_arithmetic_boolean (AZOCode *code, unsigned int operation, const AZONode *expr)
+compile_arithmetic_boolean (AZOCode *code, unsigned int operation, const AZONode *expr, unsigned int lhs_is_boolean, unsigned int rhs_is_boolean)
 {
-	unsigned int not_boolean_1, not_boolean_2, finished;
-
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_BOOLEAN, expr);
-	not_boolean_1 = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_BOOLEAN, expr);
-	not_boolean_2 = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
+	if (!lhs_is_boolean) {
+		azo_code_write_ic_u32_u32 (code, AZO_TC_EXCEPTION_IF_TYPE_IS_NOT, 1, AZ_TYPE_BOOLEAN, expr);
+	}
+	if (!rhs_is_boolean) {
+		azo_code_write_ic_u32_u32 (code, AZO_TC_EXCEPTION_IF_TYPE_IS_NOT, 0, AZ_TYPE_BOOLEAN, expr);
+	}
 	if (operation == AZO_TERM_ARITHMETIC_ANDAND) {
 		azo_code_write_ic (code, AZO_TC_LOGICAL_AND, expr);
 	} else if (operation == AZO_TERM_ARITHMETIC_OROR) {
 		azo_code_write_ic (code, AZO_TC_LOGICAL_OR, expr);
 	}
-	finished = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	/* invalid_type */
-	azo_code_update_JMP32 (code, not_boolean_1);
-	azo_code_update_JMP32 (code, not_boolean_2);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
-	/* finished */
-	azo_code_update_JMP32 (code, finished);
 	return 1;
 }
 
@@ -78,7 +71,7 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, con
 		return 1;
 	case AZO_TERM_ARITHMETIC_ANDAND:
 	case AZO_TERM_ARITHMETIC_OROR:
-		return compile_arithmetic_boolean (&ctx->frame->code, expr->term.subtype, expr);
+		return compile_arithmetic_boolean (&ctx->frame->code, expr->term.subtype, expr, lhs->type == AZ_TYPE_BOOLEAN, rhs->type == AZ_TYPE_BOOLEAN);
 	default:
 		fprintf (stderr, "azo_compiler_compile_arithmetic: operation %u is not implemented in bytecode\n", expr->term.subtype);
 		break;

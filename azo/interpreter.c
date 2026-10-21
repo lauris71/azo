@@ -356,6 +356,24 @@ interpret_type_EXCEPTION (AZOInterpreter *intr, const uint8_t *ip)
 	return NULL;
 }
 
+/*
+ * AZO_TC_EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE pos type
+ * Throw INVALID_TYPE if element at pos is not assignable to type
+ */
+static const unsigned char *
+interpret_exception_if_not_assignable (AZOInterpreter *intr, const uint8_t *ip)
+{
+	uint32_t pos, type;
+	memcpy (&pos, ip + 1, 4);
+	memcpy (&type, ip + 5, 4);
+	CHECK_UNDERFLOW(pos + 1);
+	if (az_type_is_assignable_to (azo_stack_type_bw (&intr->stack, pos), type)) {
+		return ip + 9;
+	}
+	azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1U << AZO_EXCEPTION_INVALID_TYPE, ip);
+	return NULL;
+}
+
 #ifdef AZO_TC_HAS_DEBUG
 static const unsigned char *
 interpret_DEBUG (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
@@ -1876,6 +1894,9 @@ switch (*ipc) {
 			break;
 		case AZO_TC_EXCEPTION_IF_TYPE_IS_NOT:
 			ipc = interpret_type_EXCEPTION (intr, ipc);
+			break;
+		case AZO_TC_EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE:
+			ipc = interpret_exception_if_not_assignable (intr, ipc);
 			break;
 
 #ifdef AZO_TC_HAS_DEBUG

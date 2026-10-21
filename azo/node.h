@@ -414,17 +414,24 @@ struct _AZONode {
 
 	AZOTerm term;
 
+	/**
+	 * @brief Value type (AZ_TYPE_*)
+	 *
+	 * AZ_TYPE_NONE for non-value nodes; the most precise inferred type for value nodes.
+	 */
+	unsigned int type;
+
 	/* Need to align 16 bytes anyways */
 	union {
-		/* Function frame */
-		AZOFrame *frame;
+		/* Function frame index (only for AZO_TERM_FUNCTION), index into AZOCompiler.frames */
+		unsigned int frame_idx;
 		/**
-		 * @brief Variable position
+		 * @brief Variable index
 		 * 
 		 * AZO_TERM_VARIABLE
-		 *   - position of the variable in the current frame stack (local) or datablock (parent)
+		 *   - position of the variable in the current frame stack (local) or datablock (parent, static, shared)
 		 */
-		unsigned int var_pos;
+		unsigned int var_idx;
 	};
 
 	/* Optimizer */

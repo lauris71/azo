@@ -86,7 +86,9 @@ tag_assigns(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			AZONode *ret = node->children;
 			AZONode *args = ret->next;
 			AZONode *body = args->next;
+			/* Process args for prefix/suffix operations */
 			vars = tag_assigns(opt, args, vars);
+			/* Function body is a separate frame and does not affect locals */
 			break;
 		}
 		case AZO_TERM_PREFIX:
@@ -101,7 +103,7 @@ tag_assigns(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			AZONode *ref = node->children;
 			if (AZO_NODE_IS(ref, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
 				DBG_PRINTF(stderr, "tag_assigns: %s is trashed by ++/--\n", ref->value.v.string->str);
-				vars = azo_var_list_set(vars, ref->value.v.string, ref->var_pos, NULL);
+				vars = azo_var_list_set(vars, ref->value.v.string, ref->var_idx, NULL);
 			}
 			break;
 		}
@@ -109,7 +111,7 @@ tag_assigns(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			for (AZONode *ref = node->children; ref->next; ref = ref->next) {
 				if (AZO_NODE_IS(ref, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
 					DBG_PRINTF(stderr, "tag_assigns: %s is trashed by assign\n", ref->value.v.string->str);
-					vars = azo_var_list_set(vars, ref->value.v.string, ref->var_pos, NULL);
+					vars = azo_var_list_set(vars, ref->value.v.string, ref->var_idx, NULL);
 				}
 			}
 			break;
@@ -226,7 +228,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			/* Only stack (local) variables are const-substitutable */
 			if (AZO_NODE_IS(name, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
 				if (init && init->term.type == AZO_TERM_CONSTANT) {
-					vars = azo_var_list_set(vars, name->value.v.string, name->var_pos, init);
+					vars = azo_var_list_set(vars, name->value.v.string, name->var_idx, init);
 				} else {
 					vars = azo_var_list_remove(vars, name->value.v.string);
 				}
@@ -283,7 +285,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			for (AZONode *child = node->children; child->next; child = child->next) {
 				if (value->term.type == AZO_TERM_CONSTANT) {
 					if (!AZO_NODE_IS(child, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) continue;
-					vars = azo_var_list_set(vars, child->value.v.string, child->var_pos, value);
+					vars = azo_var_list_set(vars, child->value.v.string, child->var_idx, value);
 				} else {
 					if (!AZO_NODE_IS(child, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) continue;
 					vars = azo_var_list_remove(vars, child->value.v.string);
@@ -299,7 +301,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				if (v) {
 					DBG_PRINTF(stderr, "optimize_const_assign: %s is constant\n", node->value.v.string->str);
 					node->term.type = AZO_TERM_CONSTANT;
-					node->term.subtype = AZ_IMPL_TYPE(v->var.const_node->value.impl);
+					node->type = AZ_IMPL_TYPE(v->var.const_node->value.impl);
 					az_packed_value_copy(&node->value, &v->var.const_node->value);
 					opt->n_const_subst += 1;
 				}
@@ -335,10 +337,10 @@ optimize_attribute (AZOOptimizer *opt, AZONode *expr, const AZClass *klass, cons
 			az_packed_value_set_from_impl_value (&expr->value, attr_impl, &attr_val.value);
 			expr->term.type = AZO_TERM_CONSTANT;
 			if (attr_impl) {
-				expr->term.subtype = AZ_IMPL_TYPE(attr_impl);
+				expr->type = AZ_IMPL_TYPE(attr_impl);
 				az_value_clear (attr_impl, &attr_val.value);
 			} else {
-				expr->term.subtype = 0;
+				expr->type = AZ_TYPE_NONE;
 			}
 			azo_node_clear_children(expr);
 			DBG_REPLACE("resolve_attribute: Replaced final attribute %s with '%s'\n", str, expr->value.impl, &expr->value.v);
@@ -373,7 +375,7 @@ optimize_property(AZOOptimizer *opt, AZONode *expr, const AZClass *klass, const 
 			}
 			expr->term.type = AZO_TERM_CONSTANT;
 			/* Final undefined value is not normal but we have to handle it */
-			expr->term.subtype = (expr->value.impl) ? AZ_IMPL_TYPE(expr->value.impl) : 0;
+			expr->type = (expr->value.impl) ? AZ_IMPL_TYPE(expr->value.impl) : AZ_TYPE_NONE;
 			azo_node_clear_children(expr);
 			DBG_REPLACE("resolve_member: Replaced final property %s with '%s'\n", str, expr->value.impl, &expr->value.v);
 			return 0;
@@ -473,7 +475,7 @@ optimize_function(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsign
 	AZONode *body = args->next;
 	// fixme: Think out the frame/context management
 	AZOOptimizerCtx new_ctx = *ctx;
-	new_ctx.frame = node->frame;
+	new_ctx.frame = opt->comp->frames[node->frame_idx];
 	result = optimize_node(opt, &new_ctx, body, flags);
 	if (result) return result;
 	return 0;
@@ -564,7 +566,7 @@ optimize_function_call(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, u
 #if 1
 	az_packed_value_set_from_impl_value (&ref->value, prop_impl, &prop_val.value);
 	ref->term.type = AZO_TERM_CONSTANT;
-	ref->term.subtype = AZ_IMPL_TYPE(prop_impl);
+	ref->type = AZ_IMPL_TYPE(prop_impl);
 	az_value_clear (prop_impl, &prop_val.value);
 #ifdef DEBUG_RESOLVE_FUNCTION_CALL
 	fprintf (stderr, "azo_compiler_resolve_function_call: Replaced final function %s with constant\n", str->str);
@@ -647,7 +649,7 @@ optimize_literal_array(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, u
 	}
 	azo_node_clear_children(node);
 	node->term.type = AZO_TERM_CONSTANT;
-	node->term.subtype = AZ_TYPE_VALUE_ARRAY;
+	node->type = AZ_TYPE_VALUE_ARRAY;
 	az_packed_value_transfer_reference (&node->value, AZ_TYPE_VALUE_ARRAY, &va->reference);
 	opt->n_const_subst += 1;
 	return 0;

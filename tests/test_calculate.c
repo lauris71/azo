@@ -459,6 +459,12 @@ test_calculate(void)
         TEST_ASSERT(test_program(globals, "return a & b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_TYPE, globals->intr->exc.type);
     }
+	/* Promotion: int8 = promoted int32 result is rejected */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, "int8 x = 42;x = x + 1;return x;\n", 0, arg_names, arg_impls, arg_vals, AZ_TYPE_INT8, &ret_impl, &ret_val) == 1);
+    }
 	azo_context_delete(globals);
 }
 
