@@ -44,6 +44,8 @@ main(int argc, const char *argv[])
             RUN_TEST(test_cycles);
         } else if (!strcmp(argv[i], "calculate")) {
             RUN_TEST(test_calculate);
+        } else if (!strcmp(argv[i], "calculate_binary")) {
+            RUN_TEST(test_calculate_binary);
         } else {
             fprintf(stderr, "Unknown test: %s\n", argv[i]);
         }

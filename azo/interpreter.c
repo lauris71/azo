@@ -1088,10 +1088,10 @@ interpret_binary_calculate (AZOInterpreter *intr, const unsigned char *ip, unsig
 	AZValue result;
 	unsigned int result_type;
 	unsigned int flags;
-	unsigned int result_code = azo_calculate_binary (lhs_type, lhs, rhs_type, rhs, operation, &result_type, &result, &flags);
+	unsigned int result_code = azo_calculate_binary (AZO_CALCULATE_MODE_SATURATE, lhs_type, lhs, rhs_type, rhs, operation, &result_type, &result, &flags);
 	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZO_EXCEPTION_INVALID_TYPE);
-	if (result_code == AZO_CALCULATE_OVERFLOW) EXCEPTION_THROW (AZO_EXCEPTION_INTEGER_OVERFLOW);
 	if (result_code == AZO_CALCULATE_DIVIDE_BY_ZERO) EXCEPTION_THROW (AZO_EXCEPTION_DIVIDE_BY_ZERO);
+	if (flags & AZO_CALCULATE_FLAG_OVERFLOW) EXCEPTION_THROW (AZO_EXCEPTION_INTEGER_OVERFLOW);
 	/* Replace both operands with the result */
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE (result_type), &result);

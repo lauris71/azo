@@ -14,6 +14,7 @@ add_executable(azo_test
     test_parser.c
     test_resolver.c
     test_calculate.c
+    test_calculate_binary.c
     test_function.c
 )
 
@@ -45,3 +46,4 @@ add_test(NAME comparison COMMAND azo_test comparison)
 add_test(NAME cycles COMMAND azo_test cycles)
 add_test(NAME function COMMAND azo_test function)
 add_test(NAME calculate COMMAND azo_test calculate)
+add_test(NAME calculate_binary COMMAND azo_test calculate_binary)

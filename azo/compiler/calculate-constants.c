@@ -175,13 +175,9 @@ calculate_arithmetic (AZOOptimizer *opt, AZONode *expr, unsigned int lhs_type, c
 	AZValue c;
 	unsigned int type;
 	unsigned int flags;
-	unsigned int result_code = azo_calculate_binary (lhs_type, lhs, rhs_type, rhs, expr->term.subtype, &type, &c, &flags);
+	unsigned int result_code = azo_calculate_binary (AZO_CALCULATE_MODE_SATURATE, lhs_type, lhs, rhs_type, rhs, expr->term.subtype, &type, &c, &flags);
 	if (result_code == AZO_CALCULATE_INVALID_TYPE) {
 		calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "invalid type", src);
-		return 1;
-	}
-	if (result_code == AZO_CALCULATE_OVERFLOW) {
-		calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "integer overflow", src);
 		return 1;
 	}
 	if (result_code == AZO_CALCULATE_DIVIDE_BY_ZERO) {
@@ -192,9 +188,11 @@ calculate_arithmetic (AZOOptimizer *opt, AZONode *expr, unsigned int lhs_type, c
 		calculate_report ("WARNING", expr, lhs_type, lhs, rhs_type, rhs,
 			fp_result_is_nan (type, &c) ? "result is NaN" : "result is infinite (overflow)", src);
 	}
-	if (flags & AZO_CALCULATE_FLAG_CLAMPED) {
-		calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_CLAMPED, src);
-	} else if (flags & AZO_CALCULATE_FLAG_ROUNDED) {
+	if (flags & AZO_CALCULATE_FLAG_OVERFLOW) {
+		calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "integer overflow", src);
+		return 1;
+	}
+	if (flags & AZO_CALCULATE_FLAG_ROUNDED) {
 		calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_ROUNDED, src);
 	}
 	/* The children are freed here, after all operand reads */

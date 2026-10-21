@@ -934,8 +934,7 @@ azo_parser_parse_expression (AZOParser *parser, AZOToken *token, unsigned int le
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 		if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
 		result = azo_parser_parse_parenthesized_expression(parser, token, 1, left_precedence);
-	} else
-	if (token->type == AZO_TOKEN_LEFT_PARENTHESIS) {
+	} else if (token->type == AZO_TOKEN_LEFT_PARENTHESIS) {
 		/* Parenthesized_expression */
 		result = azo_parser_parse_parenthesized_expression(parser, token, 0, left_precedence);
 	} else {
