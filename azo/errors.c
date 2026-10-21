@@ -89,6 +89,6 @@ azo_compiler_printf_message(AZOCompiler *comp, FILE *ofs, unsigned int type, uns
 void
 azo_compiler_print_error(AZOCompiler *comp, FILE *ofs, unsigned int subsystem, unsigned int code_start, unsigned int code_end, unsigned int errval)
 {
-	return azo_compiler_printf_message(comp, stderr, AZO_MESSAGE_ERROR, subsystem, code_start, code_end, "%s", azo_get_error_str(errval));
+	return azo_compiler_printf_message(comp, ofs, AZO_MESSAGE_ERROR, subsystem, code_start, code_end, "%s", azo_get_error_str(errval));
 }
 

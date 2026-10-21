@@ -26,6 +26,10 @@ extern "C" {
 #define _REGISTER_THIS 0
 
 #define AZO_INTR_FLAG_CHECK_ARGS 1
+/* Wrap integer overflow/clamping (vs saturate) when masked */
+#define AZO_INTR_FLAG_WRAP 0x8000
+/* Exceptions masked (suppressed) by default */
+#define AZO_INTR_FLAG_MASK_DEFAULT AZO_EXCEPTION_MASK_DEFAULT
 
 struct _AZOInterpreter {
 	AZOContext *ctx;

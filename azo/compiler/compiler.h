@@ -18,6 +18,7 @@ typedef struct _AZOCompilerContext AZOCompilerContext;
 #include <azo/node.h>
 #include <azo/interpreter.h>
 #include <azo/source.h>
+#include <azo/calculate.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -75,6 +76,33 @@ enum {
 	AZO_COMPILER_THIS_IS_SHARED,
 	AZO_COMPILER_THIS_IS_CAPTURE
 };
+
+/* Default computation-mode exception mask: rounding and non-finite results are
+ * masked (suppressed); magnitude change and integer overflow throw by default */
+#define AZO_COMPILER_DEFAULT_EXCEPTION_MASK \
+	(AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_PRECISION) | AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_NOT_FINITE))
+
+/* Adjust an exception mask for a computation mode (AZO_TERM_FLAG_* mode bits) */
+static inline unsigned int
+azo_compiler_mode_mask (unsigned int mask, unsigned int mode_flags)
+{
+	if (mode_flags & AZO_TERM_FLAG_FINITE) {
+		/* finite: non-finite results throw */
+		mask &= ~AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_NOT_FINITE);
+	}
+	if (mode_flags & (AZO_TERM_FLAG_SATURATE | AZO_TERM_FLAG_WRAP)) {
+		/* saturate/wrap: magnitude change and integer overflow are suppressed */
+		mask |= AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE) | AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_INTEGER_OVERFLOW);
+	}
+	return mask;
+}
+
+/* Calculation mode for a computation mode (AZO_TERM_FLAG_* mode bits) */
+static inline unsigned int
+azo_compiler_mode_calc (unsigned int mode_flags)
+{
+	return (mode_flags & AZO_TERM_FLAG_WRAP) ? AZO_CALCULATE_MODE_WRAP : AZO_CALCULATE_MODE_SATURATE;
+}
 /**
  * @brief Compiler context
  * 
@@ -89,6 +117,16 @@ struct _AZOCompilerContext {
 	unsigned int ret_type;
 	/* The current frame */
 	AZOFrame *frame;
+
+	/**
+	 * @brief Computation-mode state
+	 * 
+	 * Exception mask of currently masked (suppressed) exceptions, using the
+	 * same bit layout as the interpreter (1U << AZO_EXCEPTION_*).
+	 */
+	unsigned int exception_mask;
+	/* Integer overflow/clamp handling: AZO_CALCULATE_MODE_SATURATE or _WRAP */
+	unsigned int calc_mode;
 
 	/**
 	 * @brief This handling

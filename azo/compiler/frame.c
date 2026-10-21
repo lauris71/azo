@@ -81,6 +81,12 @@ azo_frame_pop_scope (AZOFrame *frame)
 	azo_scope_delete (scope);
 }
 
+void
+azo_frame_reserve_pos (AZOFrame *frame)
+{
+	frame->scope->next_var_pos++;
+}
+
 AZOVariable *
 azo_frame_lookup_local_var (AZOFrame *frame, AZString *name)
 {

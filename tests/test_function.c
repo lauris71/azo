@@ -57,7 +57,9 @@ test_program(AZOContext *ctx, const char *text, const AZImplementation *this_imp
     comp.debug = 1;
 
 	AZOCompilerContext comp_ctx = {
-		.ret_type = ret_type
+		.ret_type = ret_type,
+		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
 	if (!this_impl) {
 		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);

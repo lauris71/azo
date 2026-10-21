@@ -42,11 +42,16 @@ enum {
 	AZO_CALCULATE_DIVIDE_BY_ZERO
 };
 
-/* Binary arithmetic result flags */
+/* Binary arithmetic result flags - each corresponds to a maskable exception */
 enum {
+	/* Operand promotion rounded (CHANGE_OF_PRECISION) */
 	AZO_CALCULATE_FLAG_ROUNDED = 1,
-	AZO_CALCULATE_FLAG_OVERFLOW = 2,
-	AZO_CALCULATE_FLAG_NON_FINITE = 4
+	/* Operand promotion clamped/narrowed (CHANGE_OF_MAGNITUDE) */
+	AZO_CALCULATE_FLAG_MAGNITUDE = 2,
+	/* Arithmetic result overflowed its type (INTEGER_OVERFLOW) */
+	AZO_CALCULATE_FLAG_OVERFLOW = 4,
+	/* Finite operands produced a non-finite result (NON_FINITE) */
+	AZO_CALCULATE_FLAG_NON_FINITE = 8
 };
 
 /**
@@ -89,6 +94,25 @@ unsigned int azo_calculate_binary (unsigned int mode, unsigned int lhs_type, con
  * @return the result code (AZO_CALCULATE_*)
  */
 unsigned int azo_calculate_typed (unsigned int mode, unsigned int type, const AZValue *lhs, const AZValue *rhs, unsigned int operation, AZValue *result, unsigned int *flags);
+
+/**
+ * @brief Calculate unary arithmetic negation
+ * 
+ * Negates @c val in its own type, preserving the type. Negating a non-zero
+ * unsigned value or the most negative signed value (e.g. -int8(-128)) overflows:
+ * the result is computed (clamped under AZO_CALCULATE_MODE_SATURATE, wrapped
+ * under AZO_CALCULATE_MODE_WRAP) and AZO_CALCULATE_FLAG_OVERFLOW is set.
+ * 
+ * @param mode the calculation mode (AZO_CALCULATE_MODE_*)
+ * @param type the operand (and result) type
+ * @param val the operand value
+ * @param result the location to store the result value
+ * @param flags the location to store result flags (AZO_CALCULATE_FLAG_*);
+ *   only OVERFLOW is set here, existing flags are preserved
+ * 
+ * @return the result code (AZO_CALCULATE_*)
+ */
+unsigned int azo_calculate_negate (unsigned int mode, unsigned int type, const AZValue *val, AZValue *result, unsigned int *flags);
 
 /**
  * @brief Calculate the value of a binary logical operation

@@ -31,8 +31,8 @@ void azo_optimizer_release(AZOOptimizer *opt);
 
 int azo_compiler_optimize_program(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *root, unsigned int flags);
 
-int azo_compiler_calculate_constant_binary(AZOOptimizer *opt, AZONode *node);
-int azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZONode *node);
+int azo_compiler_calculate_constant_binary(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node);
+int azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node);
 
 #ifdef __cplusplus
 }

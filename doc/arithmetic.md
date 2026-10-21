@@ -235,10 +235,14 @@ The result type is the promoted operand type.
 
 `-` is arithmetic negation — it preserves the type.
 
-Unary `-` on an unsigned type throws `INVALID_TYPE`.
+If the result cannot be represented in the operand type — negating a non-zero
+unsigned value, or the most negative signed value (e.g. `-int8(-128)`) —
+`INTEGER_OVERFLOW` follows the computation mode:
 
-If the result cannot be represented (e.g. `-int8(-128)`), `INVALID_VALUE` is
-thrown.
+- constant folding: an error by default; a warning and the clamped value under
+  `saturate`; the wrapped value under `wrap`.
+- runtime: `INTEGER_OVERFLOW` is thrown by default; the clamped value is used
+  under `saturate`; the wrapped value under `wrap`.
 
 `~` on integers is bitwise NOT — it produces the unsigned type of the same
 width.
@@ -249,8 +253,12 @@ Rationale:
 
 Unary operations do not have to manage mixed operand types; they are simple
 transformations of a single value, so no promotion or cross-type conversion is
-involved. The invalid values for `-` (unsigned types, `INT_MIN`) are genuine
-domain constraints that should not be overlooked.
+involved.
+
+Negation is an arithmetic operation, so a result that does not fit the operand
+type is `INTEGER_OVERFLOW` (not `CHANGE_OF_MAGNITUDE`, which is reserved for
+conversion/narrowing). This matches binary subtraction: `0 - x` for an unsigned
+`x` underflows as `INTEGER_OVERFLOW`, and so does `-x`.
 
 `~` is overloaded for bitwise NOT and complex conjugate. These are two
 completely different programming domains, so accidental misuse is very
@@ -275,9 +283,10 @@ signed range). The examples stay exact only because the target is unsigned.
 `~int8(x)` yields `uint8`. This is deliberate (flip only the operand's bits),
 but it differs from C.
 
-**NOTE:** unary `-` on unsigned is a hard error. In C, `-uint` wraps (and
-`x & -x` is a standard lowest-set-bit idiom). Use `wrap` or `twosComplement`
-(see "Remarks") instead.
+**NOTE:** unary `-` on unsigned overflows (the result is negative and does not
+fit the unsigned type), so it follows the computation mode rather than wrapping
+silently as in C. For the C two's-complement idiom (`x & -x`) use `wrap` or
+`twosComplement` (see "Remarks").
 
 ## Increment and decrement (++ --)
 

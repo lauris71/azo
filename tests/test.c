@@ -70,7 +70,9 @@ test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, con
 	azo_node_print_info(tree, stderr, src, 0);
 
 	AZOCompilerContext comp_ctx = {
-		.ret_type = AZ_TYPE_INT32
+		.ret_type = AZ_TYPE_INT32,
+		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, globals, src);
@@ -90,7 +92,9 @@ test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, con
 	AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
 	comp_ctx = (AZOCompilerContext) {
-		.ret_type = AZ_TYPE_INT32
+		.ret_type = AZ_TYPE_INT32,
+		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
 	comp_ctx.frame = frame;
 	result = azo_compiler_optimize_program(&opt, &comp_ctx, tree, AZO_OPTIMIZER_FLAG_ALL);
@@ -103,7 +107,9 @@ test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, con
 	}
 
 	comp_ctx = (AZOCompilerContext) {
-		.ret_type = AZ_TYPE_INT32
+		.ret_type = AZ_TYPE_INT32,
+		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
 	comp_ctx.frame = frame;
 	AZOProgram *prog = azo_compiler_compile (&comp, &comp_ctx, tree, src);

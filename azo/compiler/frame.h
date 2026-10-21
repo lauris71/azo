@@ -85,6 +85,16 @@ void azo_frame_delete_tree (AZOFrame *frame);
 void azo_frame_push_scope (AZOFrame *frame);
 void azo_frame_pop_scope (AZOFrame *frame);
 
+/**
+ * @brief Reserve a stack position in the current scope without a variable
+ * 
+ * Advances the current scope's next-free position by one, so subsequently
+ * declared variables get positions above the reserved slot. Used to keep the
+ * resolver's variable positions in sync with compiler-emitted transient stack
+ * values (e.g. a computation-mode block's saved flags).
+ */
+void azo_frame_reserve_pos (AZOFrame *frame);
+
 AZOVariable *azo_frame_lookup_local_var (AZOFrame *frame, AZString *name);
 AZOVariable *azo_frame_lookup_parent_var (AZOFrame *frame, AZString *name);
 AZOVariable *azo_frame_lookup_chained (AZOFrame *frame, AZString *name);

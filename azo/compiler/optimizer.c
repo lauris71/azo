@@ -410,7 +410,12 @@ optimize_program(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigne
 static int
 optimize_block(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
-	return optimize_children(opt, ctx, node, flags);
+	AZOOptimizerCtx lctx = *ctx;
+	if (node->term.subtype == AZO_TERM_BLOCK_MODE) {
+		lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
+		lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
+	}
+	return optimize_children(opt, &lctx, node, flags);
 }
 
 static int
@@ -674,11 +679,11 @@ optimize_suffix(AZOOptimizer *opt, AZONode *node, unsigned int flags)
 }
 
 static int
-optimize_prefix(AZOOptimizer *opt, AZONode *node, unsigned int flags)
+optimize_prefix(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	if ((node->term.subtype != AZO_TERM_PREFIX_INCREMENT) && (node->term.subtype != AZO_TERM_PREFIX_DECREMENT)) {
 		if ((node->term.type == AZO_TERM_CONSTANT) && (flags & AZO_OPTIMIZER_FLAG_CALC_CONST_EXPRESSIONS)) {
-			return azo_compiler_calculate_rvalue_prefix(opt, node);
+			return azo_compiler_calculate_rvalue_prefix(opt, ctx, node);
 		}
 	}
 	return 0;
@@ -697,7 +702,7 @@ optimize_binary(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned
 	if (result) return result;
 	if ((lhs->term.type == AZO_TERM_CONSTANT) && (rhs->term.type == AZO_TERM_CONSTANT) && (flags & AZO_OPTIMIZER_FLAG_CALC_CONST_EXPRESSIONS)) {
 		/* Calculate result */
-		return azo_compiler_calculate_constant_binary(opt, node);
+		return azo_compiler_calculate_constant_binary(opt, ctx, node);
 	}
 	return 0;
 }
@@ -827,7 +832,7 @@ optimize_node(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned i
 		case AZO_TERM_SUFFIX:
 			return optimize_suffix(opt, node, flags);
 		case AZO_TERM_PREFIX:
-			return optimize_prefix(opt, node, flags);
+			return optimize_prefix(opt, ctx, node, flags);
 		case AZO_TERM_BINARY:
 			return optimize_binary(opt, ctx, node, flags);
 		case AZO_TERM_COMPARISON:
@@ -838,6 +843,12 @@ optimize_node(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned i
 			return optimize_test(opt, ctx, node, flags);
 		case AZO_TERM_SELECT:
 			return optimize_select(opt, ctx, node, flags);
+		case AZO_TERM_MODE_EXPRESSION: {
+			AZOOptimizerCtx lctx = *ctx;
+			lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
+			lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
+			return optimize_children(opt, &lctx, node, flags);
+		}
 		case  AZO_TERM_CONSTANT:
 			return optimize_constant(opt, node, flags);
 		case AZO_TERM_VARIABLE:

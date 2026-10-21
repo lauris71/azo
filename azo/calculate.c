@@ -185,7 +185,7 @@ static void
 accumulate_conversion_flags (unsigned int conv_a, unsigned int conv_b, unsigned int *flags)
 {
 	if ((conv_a == AZ_CONVERSION_ROUNDED) || (conv_b == AZ_CONVERSION_ROUNDED)) *flags |= AZO_CALCULATE_FLAG_ROUNDED;
-	if ((conv_a == AZ_CONVERSION_CLAMPED) || (conv_b == AZ_CONVERSION_CLAMPED)) *flags |= AZO_CALCULATE_FLAG_OVERFLOW;
+	if ((conv_a == AZ_CONVERSION_CLAMPED) || (conv_b == AZ_CONVERSION_CLAMPED)) *flags |= AZO_CALCULATE_FLAG_MAGNITUDE;
 }
 
 unsigned int
@@ -318,6 +318,80 @@ azo_calculate_typed (unsigned int mode, unsigned int type, const AZValue *lhs, c
 	default:
 		return AZO_CALCULATE_INVALID_TYPE;
 	}
+}
+
+unsigned int
+azo_calculate_negate (unsigned int mode, unsigned int type, const AZValue *val, AZValue *result, unsigned int *flags)
+{
+	int overflow = 0;
+	switch (type) {
+	case AZ_TYPE_INT8: {
+		int32_t r = -(int32_t) val->int8_v;
+		if (r > INT8_MAX) {
+			overflow = 1;
+			result->int8_v = (mode == AZO_CALCULATE_MODE_SATURATE) ? INT8_MAX : (int8_t) r;
+		} else {
+			result->int8_v = (int8_t) r;
+		}
+		break;
+	}
+	case AZ_TYPE_INT16: {
+		int32_t r = -(int32_t) val->int16_v;
+		if (r > INT16_MAX) {
+			overflow = 1;
+			result->int16_v = (mode == AZO_CALCULATE_MODE_SATURATE) ? INT16_MAX : (int16_t) r;
+		} else {
+			result->int16_v = (int16_t) r;
+		}
+		break;
+	}
+	case AZ_TYPE_INT32:
+		overflow = calc_sub_i32 (mode, 0, val->int32_v, &result->int32_v);
+		break;
+	case AZ_TYPE_INT64:
+		overflow = calc_sub_i64 (mode, 0, val->int64_v, &result->int64_v);
+		break;
+	case AZ_TYPE_UINT8:
+		if (val->uint8_v) {
+			overflow = 1;
+			result->uint8_v = (mode == AZO_CALCULATE_MODE_SATURATE) ? 0 : (uint8_t) (0u - (uint32_t) val->uint8_v);
+		} else {
+			result->uint8_v = 0;
+		}
+		break;
+	case AZ_TYPE_UINT16:
+		if (val->uint16_v) {
+			overflow = 1;
+			result->uint16_v = (mode == AZO_CALCULATE_MODE_SATURATE) ? 0 : (uint16_t) (0u - (uint32_t) val->uint16_v);
+		} else {
+			result->uint16_v = 0;
+		}
+		break;
+	case AZ_TYPE_UINT32:
+		overflow = calc_sub_u32 (mode, 0, val->uint32_v, &result->uint32_v);
+		break;
+	case AZ_TYPE_UINT64:
+		overflow = calc_sub_u64 (mode, 0, val->uint64_v, &result->uint64_v);
+		break;
+	case AZ_TYPE_FLOAT:
+		result->float_v = -val->float_v;
+		break;
+	case AZ_TYPE_DOUBLE:
+		result->double_v = -val->double_v;
+		break;
+	case AZ_TYPE_COMPLEX_FLOAT:
+		result->cfloat_v.r = -val->cfloat_v.r;
+		result->cfloat_v.i = -val->cfloat_v.i;
+		break;
+	case AZ_TYPE_COMPLEX_DOUBLE:
+		result->cdouble_v.r = -val->cdouble_v.r;
+		result->cdouble_v.i = -val->cdouble_v.i;
+		break;
+	default:
+		return AZO_CALCULATE_INVALID_TYPE;
+	}
+	if (overflow) *flags |= AZO_CALCULATE_FLAG_OVERFLOW;
+	return AZO_CALCULATE_OK;
 }
 
 unsigned int

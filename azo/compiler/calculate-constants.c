@@ -31,7 +31,7 @@
 
 static int calculate_logic (AZOOptimizer *opt, AZONode *expr, AZOSource *src);
 static int calculate_shift (AZOOptimizer *opt, AZONode *expr, AZOSource *src);
-static int calculate_arithmetic (AZOOptimizer *opt, AZONode *expr, unsigned int lhs_type, const AZValue *lhs, unsigned int rhs_type, const AZValue *rhs, AZOSource *src);
+static int calculate_arithmetic (AZOOptimizer *opt, AZOCompilerContext *ctx, AZONode *expr, unsigned int lhs_type, const AZValue *lhs, unsigned int rhs_type, const AZValue *rhs, AZOSource *src);
 
 /* Arithmetic operator symbols indexed by AZO_TERM_ARITHMETIC_* subtype */
 static const char *arithmetic_op_names[] = { "+", "-", "/", "*", "%", "<<", ">>", "&", "&&", "|", "||", "^" };
@@ -170,12 +170,12 @@ calculate_shift (AZOOptimizer *opt, AZONode *expr, AZOSource *src)
 /* #define DEBUG_CALCULATE_ARITHMETIC */
 
 static int
-calculate_arithmetic (AZOOptimizer *opt, AZONode *expr, unsigned int lhs_type, const AZValue *lhs, unsigned int rhs_type, const AZValue *rhs, AZOSource *src)
+calculate_arithmetic (AZOOptimizer *opt, AZOCompilerContext *ctx, AZONode *expr, unsigned int lhs_type, const AZValue *lhs, unsigned int rhs_type, const AZValue *rhs, AZOSource *src)
 {
 	AZValue c;
 	unsigned int type;
 	unsigned int flags;
-	unsigned int result_code = azo_calculate_binary (AZO_CALCULATE_MODE_SATURATE, lhs_type, lhs, rhs_type, rhs, expr->term.subtype, &type, &c, &flags);
+	unsigned int result_code = azo_calculate_binary (ctx->calc_mode, lhs_type, lhs, rhs_type, rhs, expr->term.subtype, &type, &c, &flags);
 	if (result_code == AZO_CALCULATE_INVALID_TYPE) {
 		calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "invalid type", src);
 		return 1;
@@ -185,15 +185,37 @@ calculate_arithmetic (AZOOptimizer *opt, AZONode *expr, unsigned int lhs_type, c
 		return 1;
 	}
 	if (flags & AZO_CALCULATE_FLAG_NON_FINITE) {
-		calculate_report ("WARNING", expr, lhs_type, lhs, rhs_type, rhs,
-			fp_result_is_nan (type, &c) ? "result is NaN" : "result is infinite (overflow)", src);
+		const char *msg = fp_result_is_nan (type, &c) ? "result is NaN" : "result is infinite (overflow)";
+		if (ctx->exception_mask & AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_NOT_FINITE)) {
+			calculate_report ("WARNING", expr, lhs_type, lhs, rhs_type, rhs, msg, src);
+		} else {
+			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, msg, src);
+			return 1;
+		}
+	}
+	if (flags & AZO_CALCULATE_FLAG_MAGNITUDE) {
+		if (ctx->exception_mask & AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE)) {
+			calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_CLAMPED, src);
+		} else {
+			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "value clamping", src);
+			return 1;
+		}
 	}
 	if (flags & AZO_CALCULATE_FLAG_OVERFLOW) {
-		calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "integer overflow", src);
-		return 1;
+		if (ctx->exception_mask & AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_INTEGER_OVERFLOW)) {
+			calculate_report ("WARNING", expr, lhs_type, lhs, rhs_type, rhs, "integer overflow", src);
+		} else {
+			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "integer overflow", src);
+			return 1;
+		}
 	}
 	if (flags & AZO_CALCULATE_FLAG_ROUNDED) {
-		calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_ROUNDED, src);
+		if (ctx->exception_mask & AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_PRECISION)) {
+			calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_ROUNDED, src);
+		} else {
+			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "conversion changes precision", src);
+			return 1;
+		}
 	}
 	/* The children are freed here, after all operand reads */
 	node_replace_with_constant(expr, type, &c);
@@ -202,7 +224,7 @@ calculate_arithmetic (AZOOptimizer *opt, AZONode *expr, unsigned int lhs_type, c
 }
 
 int
-azo_compiler_calculate_constant_binary (AZOOptimizer *opt, AZONode *node)
+azo_compiler_calculate_constant_binary (AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node)
 {
 	AZONode *lhs = node->children;
 	AZONode *rhs = lhs->next;
@@ -214,13 +236,13 @@ azo_compiler_calculate_constant_binary (AZOOptimizer *opt, AZONode *node)
 	} else {
 		unsigned int lhs_type = AZ_IMPL_TYPE(lhs->value.impl);
 		unsigned int rhs_type = AZ_IMPL_TYPE(rhs->value.impl);
-		return calculate_arithmetic (opt, node, lhs_type, &lhs->value.v, rhs_type, &rhs->value.v, opt->comp->src);
+		return calculate_arithmetic (opt, ctx, node, lhs_type, &lhs->value.v, rhs_type, &rhs->value.v, opt->comp->src);
 	}
 	return 0;
 }
 
 int
-azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZONode *node)
+azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node)
 {
 	AZValue result;
 	AZONode *rhs = node->children;
@@ -247,43 +269,21 @@ azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZONode *node)
 		opt->n_const_subst += 1;
 		return 0;
 	}
-	/* '-' is not allowed for unsigned types */
+	/* '-' negates in place; overflow (unsigned, or most negative signed) follows the mode */
 	if (node->term.subtype == AZO_TERM_PREFIX_MINUS) {
-		if (AZ_TYPE_IS_UNSIGNED(rhs->type)) {
-			fprintf (stderr, "calculate_rvalue_prefix: Invalid operator %u for unsigned type\n", node->term.subtype);
+		unsigned int flags = 0;
+		unsigned int result_code = azo_calculate_negate (ctx->calc_mode, rhs->type, &rhs->value.v, &result, &flags);
+		if (result_code != AZO_CALCULATE_OK) {
+			fprintf (stderr, "calculate_rvalue_prefix: invalid type for negation (%d)\n", rhs->type);
 			return 1;
 		}
-		switch (rhs->type) {
-			/* fixme: overflow */
-			case AZ_TYPE_INT8:
-				result.int8_v = -rhs->value.v.int8_v;
-				break;
-			case AZ_TYPE_INT16:
-				result.int16_v = -rhs->value.v.int16_v;
-				break;
-			case AZ_TYPE_INT32:
-				result.int32_v = -rhs->value.v.int32_v;
-				break;
-			case AZ_TYPE_INT64:
-				result.int64_v = -rhs->value.v.int64_v;
-				break;
-			case AZ_TYPE_FLOAT:
-				result.float_v = -rhs->value.v.float_v;
-				break;
-			case AZ_TYPE_DOUBLE:
-				result.double_v = -rhs->value.v.double_v;
-				break;
-			case AZ_TYPE_COMPLEX_FLOAT:
-				result.cfloat_v.r = -rhs->value.v.cfloat_v.r;
-				result.cfloat_v.i = -rhs->value.v.cfloat_v.i;
-				break;
-			case AZ_TYPE_COMPLEX_DOUBLE:
-				result.cdouble_v.r = -rhs->value.v.cdouble_v.r;
-				result.cdouble_v.i = -rhs->value.v.cdouble_v.i;
-				break;
-			default:
-				assert(0);
+		if (flags & AZO_CALCULATE_FLAG_OVERFLOW) {
+			if (ctx->exception_mask & AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_INTEGER_OVERFLOW)) {
+				fprintf (stderr, "WARNING: unary minus overflows (value clamped/wrapped)\n");
+			} else {
+				fprintf (stderr, "ERROR: unary minus overflows\n");
 				return 1;
+			}
 		}
 		node_replace_with_constant(node, rhs->type, &result);
 		opt->n_const_subst += 1;
@@ -295,35 +295,34 @@ azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZONode *node)
 			return 1;
 		}
 		switch (rhs->type) {
-			/* fixme: overflow */
-			case AZ_TYPE_INT8:
-			case AZ_TYPE_UINT8:
-				result.uint8_v = ~rhs->value.v.uint8_v;
-				break;
-			case AZ_TYPE_INT16:
-			case AZ_TYPE_UINT16:
-				result.uint16_v = ~rhs->value.v.uint16_v;
-				break;
-			case AZ_TYPE_INT32:
-			case AZ_TYPE_UINT32:
-				result.uint32_v = ~rhs->value.v.uint32_v;
-				break;
-			case AZ_TYPE_INT64:
-			case AZ_TYPE_UINT64:
-				result.uint64_v = ~rhs->value.v.uint64_v;
-				break;
-			case AZ_TYPE_COMPLEX_FLOAT:
-				result.cfloat_v.r = rhs->value.v.cfloat_v.r;
-				result.cfloat_v.i = -rhs->value.v.cfloat_v.i;
-				break;
-			case AZ_TYPE_COMPLEX_DOUBLE:
-				result.cdouble_v.r = rhs->value.v.cdouble_v.r;
-				result.cdouble_v.i = -rhs->value.v.cdouble_v.i;
-				break;
-			default:
-				assert(0);
-				return 1;
-		}
+		case AZ_TYPE_INT8:
+		case AZ_TYPE_UINT8:
+			result.uint8_v = ~rhs->value.v.uint8_v;
+			break;
+		case AZ_TYPE_INT16:
+		case AZ_TYPE_UINT16:
+			result.uint16_v = ~rhs->value.v.uint16_v;
+			break;
+		case AZ_TYPE_INT32:
+		case AZ_TYPE_UINT32:
+			result.uint32_v = ~rhs->value.v.uint32_v;
+			break;
+		case AZ_TYPE_INT64:
+		case AZ_TYPE_UINT64:
+			result.uint64_v = ~rhs->value.v.uint64_v;
+			break;
+		case AZ_TYPE_COMPLEX_FLOAT:
+			result.cfloat_v.r = rhs->value.v.cfloat_v.r;
+			result.cfloat_v.i = -rhs->value.v.cfloat_v.i;
+			break;
+		case AZ_TYPE_COMPLEX_DOUBLE:
+			result.cdouble_v.r = rhs->value.v.cdouble_v.r;
+			result.cdouble_v.i = -rhs->value.v.cdouble_v.i;
+			break;
+		default:
+			assert(0);
+			return 1;
+	}
 		node_replace_with_constant(node, rhs->type, &result);
 		opt->n_const_subst += 1;
 		return 0;

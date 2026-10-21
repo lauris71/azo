@@ -21,6 +21,7 @@
 #include <azo/keyword.h>
 #include <azo/compiler/resolver.h>
 #include <azo/calculate.h>
+#include <azo/errors.h>
 
 static unsigned int
 resolve_chain(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
@@ -40,7 +41,7 @@ resolve_children (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	return resolve_chain(comp, rctx, node->children);
 }
 
-static unsigned int resolve_check_boolean (AZOResolveCtx *rctx, AZONode *node);
+static unsigned int resolve_check_boolean (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node);
 
 /* Resolve children and mark the node as a boolean-producing expression */
 static unsigned int
@@ -61,8 +62,8 @@ resolve_binary (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	unsigned int subtype = node->term.subtype;
 	if ((subtype == AZO_TERM_ARITHMETIC_ANDAND) || (subtype == AZO_TERM_ARITHMETIC_OROR)) {
 		node->type = AZ_TYPE_BOOLEAN;
-		if (resolve_check_boolean (rctx, node->children)) return 1;
-		if (resolve_check_boolean (rctx, node->children->next)) return 1;
+		if (resolve_check_boolean (comp, rctx, node->children)) return 1;
+		if (resolve_check_boolean (comp, rctx, node->children->next)) return 1;
 	} else {
 		/* Infer the promoted result type when both operand types are known */
 		unsigned int lhs_type = node->children->type;
@@ -132,11 +133,11 @@ resolve_node_kind (const AZONode *node)
 
 /* Reject expressions that are statically known to be non-boolean */
 static unsigned int
-resolve_check_boolean (AZOResolveCtx *rctx, AZONode *node)
+resolve_check_boolean (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
 	unsigned int kind = resolve_node_kind (node);
 	if ((kind == AZO_KIND_UNKNOWN) || (kind == AZO_KIND_BOOLEAN)) return 0;
-	fprintf (stderr, "resolve: expression is not boolean\n");
+	azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Expression is not boolean\n");
 	return 1;
 }
 
@@ -149,7 +150,7 @@ resolve_select (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	AZONode *if_false = if_true->next;
 	unsigned int result = resolve_children (comp, rctx, node);
 	if (result) return result;
-	if (resolve_check_boolean (rctx, cond)) return 1;
+	if (resolve_check_boolean (comp, rctx, cond)) return 1;
 	/* Common branch type */
 	if (if_true->type && (if_true->type == if_false->type)) {
 		node->type = if_true->type;
@@ -188,7 +189,7 @@ azo_compiler_resolve_frame(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node
 	if (result) return result;
 
 	if (rctx->frame->ret_type && !rctx->frame->ret_is_last) {
-		fprintf (stderr, "azo_compiler_resolve_frame: Missing return statement\n");
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Missing return statement\n");
 		return 1;
 	}
 	if (rctx->frame->parent_vars) {
@@ -212,7 +213,7 @@ resolve_for (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	if (lresult) result = 1;
 	lresult = azo_compiler_resolve_node (comp, rctx, test);
 	if (lresult) result = 1;
-	if (resolve_check_boolean (rctx, test)) result = 1;
+	if (resolve_check_boolean (comp, rctx, test)) result = 1;
 	lresult = azo_compiler_resolve_node (comp, rctx, step);
 	if (lresult) result = 1;
 	lresult = azo_compiler_resolve_node (comp, rctx, content);
@@ -239,7 +240,7 @@ resolve_while (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	azo_frame_push_scope (rctx->frame);
 	unsigned int lresult = azo_compiler_resolve_node (comp, rctx, test);
 	if (lresult) result = 1;
-	if (resolve_check_boolean (rctx, test)) result = 1;
+	if (resolve_check_boolean (comp, rctx, test)) result = 1;
 	lresult = azo_compiler_resolve_node (comp, rctx, content);
 	if (lresult) result = 1;
 	azo_frame_pop_scope (rctx->frame);
@@ -266,7 +267,7 @@ resolve_do (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	if (lresult) result = 1;
 	lresult = azo_compiler_resolve_node (comp, rctx, test);
 	if (lresult) result = 1;
-	if (resolve_check_boolean (rctx, test)) result = 1;
+	if (resolve_check_boolean (comp, rctx, test)) result = 1;
 	azo_frame_pop_scope (rctx->frame);
 	/* Do not analyze loop paths */
 	rctx->frame->ret_is_last = 0;
@@ -289,7 +290,7 @@ resolve_if (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	AZONode *if_false = if_true->next;
 	unsigned int lresult = azo_compiler_resolve_node (comp, rctx, test);
 	if (lresult) result = 1;
-	if (resolve_check_boolean (rctx, test)) result = 1;
+	if (resolve_check_boolean (comp, rctx, test)) result = 1;
 	/* Each branch is its own scope */
 	azo_frame_push_scope (rctx->frame);
 	lresult = azo_compiler_resolve_node (comp, rctx, if_true);
@@ -355,7 +356,7 @@ resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, unsi
 	assert(AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE));
 	AZONode *value = name->next;
 	if (azo_scope_lookup_local_var (rctx->frame->scope, name->value.v.string)) {
-		fprintf (stderr, "resolve_declaration: Variable %s already declared in scope\n", name->value.v.string->str);
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Variable %s already declared in scope\n", name->value.v.string->str);
 		return 1;
 	}
 	/* Value has to be solved first so it cannot refer to name */
@@ -368,14 +369,14 @@ resolve_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, unsi
 	if (term_flags & AZO_TERM_FLAG_SHARED) var_flags |= AZO_VARIABLE_FLAG_SHARED;
 	if (term_flags & AZO_TERM_FLAG_FINAL) {
 		if (!value) {
-			fprintf (stderr, "resolve_declaration: final variable %s requires an initializer\n", name->value.v.string->str);
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Final variable %s requires an initializer\n", name->value.v.string->str);
 			return 1;
 		}
 		var_flags |= AZO_VARIABLE_FLAG_FINAL;
 	}
 	if (term_flags & AZO_TERM_FLAG_WEAK) {
 		if (!az_type_is_a (type, AZ_TYPE_ACTIVE_OBJECT)) {
-			fprintf (stderr, "resolve_declaration: weak variable %s requires ActiveObject type\n", name->value.v.string->str);
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Weak variable %s requires ActiveObject type\n", name->value.v.string->str);
 			return 1;
 		}
 		var_flags |= AZO_VARIABLE_FLAG_WEAK;
@@ -449,7 +450,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 	unsigned int n_args = 0;
 	for (AZONode *decl = args->children; decl; decl = decl->next) {
 		if (decl->term.type != AZO_TERM_ARGUMENT_DECLARATION) {
-			fprintf (stderr, "resolve_function: Invalid expression type %u/%u in signature\n", decl->term.type, decl->term.subtype);
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, decl->term.start, decl->term.end, "Invalid expression type %u/%u in signature\n", decl->term.type, decl->term.subtype);
 			return 1;
 		}
 		AZONode *type = decl->children;
@@ -462,7 +463,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 			if (result) return result;
 		}
 		if (!AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE)) {
-			fprintf (stderr, "resolve_function: Invalid expression type %u/%u in signature\n", name->term.type, name->term.subtype);
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Invalid expression type %u/%u in signature\n", name->term.type, name->term.subtype);
 			return 1;
 		}
 		n_args += 1;
@@ -494,7 +495,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 		AZONode *type = child->children;
 		AZONode *name = type->next;
 		if (!azo_frame_declare_variable (fctx.frame, name->value.v.string, type->type, 0)) {
-			fprintf (stderr, "resolve_function: Repeated variable name %s\n", name->value.v.string->str);
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Repeated variable name %s\n", name->value.v.string->str);
 			return 1;
 		}
 	}
@@ -514,7 +515,7 @@ resolve_function_call (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 	AZONode *args = ref->next;
 	assert (!args->next);
 	if (args->term.type != AZO_TERM_LIST) {
-		fprintf (stderr, "resolve_function_call: arguments node is not list\n");
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, args->term.start, args->term.end, "Arguments node is not a list\n");
 		return 1;
 	}
 	unsigned int result = azo_compiler_resolve_reference (comp, rctx, ref);
@@ -534,7 +535,7 @@ resolve_function_call (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 				func->term.subtype = AZO_TERM_FUNCTION_CALL_PROPERTY_OR_ATTRIBUTE;
 				break;
 			default:
-				fprintf (stderr, "resolve_function_call: Invalid reference subtype %u\n", ref->term.subtype);
+				azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, ref->term.start, ref->term.end, "Invalid reference subtype %u\n", ref->term.subtype);
 				return 1;
 		}
 		/* FUNCTION(REF(BASE,NAME),ARGS) -> FUNCTION(BASE,NAME,ARGS) */
@@ -557,12 +558,12 @@ azo_compiler_resolve_literal_array (AZOCompiler *comp, AZOResolveCtx *rctx, AZON
 }
 
 static unsigned int
-resolve_check_final_assignment (AZOResolveCtx *rctx, AZONode *target)
+resolve_check_final_assignment (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *target)
 {
 	if (AZO_NODE_IS(target, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE)) {
 		AZOVariable *var = azo_frame_lookup_local_var (rctx->frame, target->value.v.string);
 		if (var && (var->flags & AZO_VARIABLE_FLAG_FINAL)) {
-			fprintf (stderr, "resolve: Cannot assign to final variable %s\n", target->value.v.string->str);
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, target->term.start, target->term.end, "Cannot assign to final variable %s\n", target->value.v.string->str);
 			return 1;
 		}
 	}
@@ -570,13 +571,13 @@ resolve_check_final_assignment (AZOResolveCtx *rctx, AZONode *target)
 }
 
 static unsigned int
-resolve_check_assignment_type (AZOResolveCtx *rctx, AZONode *lvalue, AZONode *rvalue)
+resolve_check_assignment_type (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *lvalue, AZONode *rvalue)
 {
 	/* Only simple variable assignment is type-checked for now */
 	if (lvalue->term.type != AZO_TERM_VARIABLE) return 0;
 	unsigned int Ta = lvalue->type;
 	if (azo_type_assignment_classify_source (rvalue, Ta) == AZO_ASSIGN_REJECT) {
-		fprintf (stderr, "resolve: Cannot assign type %u to type %u\n", rvalue->type, Ta);
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, rvalue->term.start, rvalue->term.end, "Cannot assign type %u to type %u\n", rvalue->type, Ta);
 		return 1;
 	}
 	return 0;
@@ -585,7 +586,7 @@ resolve_check_assignment_type (AZOResolveCtx *rctx, AZONode *lvalue, AZONode *rv
 static unsigned int
 resolve_prefix_suffix (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 {
-	if (resolve_check_final_assignment (rctx, expr->children)) return 1;
+	if (resolve_check_final_assignment (comp, rctx, expr->children)) return 1;
 	unsigned int result = resolve_children(comp, rctx, expr);
 	if (result) return result;
 	/* ++ and -- yield the operand type */
@@ -597,14 +598,14 @@ static unsigned int
 resolve_plain_assign(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
 	assert(AZO_NODE_IS(node, AZO_TERM_ASSIGN, AZO_TERM_ASSIGN_PLAIN));
-	if (resolve_check_final_assignment (rctx, node->children)) return 1;
+	if (resolve_check_final_assignment (comp, rctx, node->children)) return 1;
 	for (AZONode *child = node->children; child; child = child->next) {
 		/* The parser has already wrapped member lambdas into MEMBER_BLOCK */
 		int result = azo_compiler_resolve_node (comp, rctx, child);
 		if (result) return result;
 	}
 	/* Reject statically-invalid variable assignments */
-	if (resolve_check_assignment_type (rctx, node->children, node->children->next)) return 1;
+	if (resolve_check_assignment_type (comp, rctx, node->children, node->children->next)) return 1;
 	return 0;
 }
 
@@ -651,7 +652,7 @@ resolve_assign (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 			break;
 	}
 	if (binary_type < 0) {
-		fprintf(stderr, "resolve_assign: unknown shorthand assignment type %d\n", node->term.subtype);
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Unknown shorthand assignment type %d\n", node->term.subtype);
 		return 1;
 	}
 	AZONode *ref = node->children;
@@ -677,7 +678,7 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 			// fixme: Have to check is assignable
 			if (!az_type_is_a (val->type, rctx->frame->ret_type)) {
 				if (az_value_convert_in_place (&val->value.impl, &val->value.v, rctx->frame->ret_type, AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
-					fprintf (stderr, "azo_compiler_resolve_expression: Return value is wrong type\n");
+					azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, val->term.start, val->term.end, "Return value is wrong type\n");
 					result = 1;
 				} else {
 					val->type = AZ_PACKED_VALUE_TYPE(&val->value);
@@ -686,7 +687,7 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 		}
 	} else {
 		if (rctx->frame->ret_type != AZ_TYPE_NONE) {
-			fprintf (stderr, "azo_compiler_resolve_expression: Must return a value\n");
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, term->term.start, term->term.end, "Must return a value\n");
 			result = 1;
 		}
 	}
@@ -702,17 +703,17 @@ azo_compiler_resolve_cast (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr
 	unsigned int result;
 	if (expr->term.subtype != AZO_TERM_CAST_CONVERT) {
 		/* fixme: implement checked class/interface conversion (as) */
-		fprintf (stderr, "azo_compiler_resolve_cast: only primitive conversion casts are implemented\n");
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, expr->term.start, expr->term.end, "Only primitive conversion casts are implemented\n");
 		return 1;
 	}
 	result = azo_compiler_resolve_node (comp, rctx, type);
 	if (result) return result;
 	if (type->term.type != AZO_TERM_CONSTANT) {
-		fprintf (stderr, "azo_compiler_resolve_cast: Type expression is not a compile-time constant\n");
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, type->term.start, type->term.end, "Type expression is not a compile-time constant\n");
 		return 1;
 	}
 	if (type->type != AZ_TYPE_CLASS) {
-		fprintf (stderr, "azo_compiler_resolve_cast: Type is not a class\n");
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, type->term.start, type->term.end, "Type is not a class\n");
 		return 1;
 	}
 	type->term.type = AZO_TERM_TYPE;
@@ -730,7 +731,7 @@ resolve_this(AZOCompiler *comp, AZOResolveCtx *ctx, AZONode *node)
 {
 	switch (ctx->this_variant) {
 		case AZO_COMPILER_NO_THIS:
-			fprintf(stderr, "resolve_this: 'this' used outside of class context\n");
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "'this' used outside of class context\n");
 			return 1;
 		case AZO_COMPILER_THIS_IS_STACK:
 			node->term.type = AZO_TERM_VARIABLE;
@@ -748,7 +749,7 @@ resolve_this(AZOCompiler *comp, AZOResolveCtx *ctx, AZONode *node)
 			node->var_idx = ctx->this_capture_pos;
 			break;
 		default:
-			fprintf(stderr, "resolve_this: Unknown this variant\n");
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Unknown this variant\n");
 			return 1;
 	}
 	az_packed_value_set_string(&node->value, azo_keyword_str(AZO_KEYWORD_THIS));
@@ -762,8 +763,16 @@ resolve_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	AZOResolveCtx lctx = *rctx;
 	/* Static block evaluates in static context (this == NONE) */
 	if (node->term.subtype == AZO_TERM_BLOCK_STATIC) lctx.this_variant = AZO_COMPILER_NO_THIS;
+	/* Mode block starts a new computation mode */
+	if (node->term.subtype == AZO_TERM_BLOCK_MODE) {
+		lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
+		lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
+	}
 	/* Create new scope */
 	azo_frame_push_scope(lctx.frame);
+	/* Mode block reserves a stack slot for the compiler-emitted saved flags,
+	 * so variable positions inside stay in sync with the runtime stack */
+	if (node->term.subtype == AZO_TERM_BLOCK_MODE) azo_frame_reserve_pos (lctx.frame);
 	/* Block children are sentences (per-sentence return tracking) */
 	result = resolve_sentences(comp, &lctx, node->children);
 	azo_frame_pop_scope(lctx.frame);
@@ -795,7 +804,7 @@ resolve_member_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 				lctx.this_capture_pos = this_node->var_idx;
 				break;
 			default:
-				fprintf(stderr, "resolve_member_block: Unknown variable type\n");
+				azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, this_node->term.start, this_node->term.end, "Unknown variable type\n");
 				return 1;
 		}
 	} else {
@@ -818,7 +827,7 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	unsigned int result = 0;
 	switch (node->term.type) {
 		case AZO_TERM_INVALID:
-			fprintf(stderr, "resolve_node: type = INVALID\n");
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Invalid node type\n");
 			return 1;
 		case AZO_TERM_EMPTY:
 			return 0;
@@ -884,7 +893,7 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 				if (result) return result;
 				if (node->term.subtype == AZO_TERM_PREFIX_NOT) {
 					node->type = AZ_TYPE_BOOLEAN;
-					if (resolve_check_boolean (rctx, node->children)) return 1;
+					if (resolve_check_boolean (comp, rctx, node->children)) return 1;
 				} else {
 					/* Unary + - ~ yield the operand type */
 					node->type = node->children->type;
@@ -903,6 +912,16 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 			return resolve_boolean_expression (comp, rctx, node);
 		case AZO_TERM_SELECT:
 			return resolve_select (comp, rctx, node);
+		case AZO_TERM_MODE_EXPRESSION: {
+			AZOResolveCtx lctx = *rctx;
+			lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
+			lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
+			result = resolve_children (comp, &lctx, node);
+			if (result) return result;
+			/* The mode expression yields the operand value/type */
+			if (node->children) node->type = node->children->type;
+			return 0;
+		}
 		case AZO_TERM_CONSTANT:
 			return resolve_children(comp, rctx, node);
 		case AZO_TERM_TYPE:

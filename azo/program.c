@@ -111,7 +111,9 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	//azo_node_print_info(expr, stderr, src, 0);
 
 	AZOCompilerContext comp_ctx = {
-		.ret_type = ret_type
+		.ret_type = ret_type,
+		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, globals, src);

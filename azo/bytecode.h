@@ -111,6 +111,27 @@ enum {
 	 * [...; ..., val2, ..., val1]
 	 */
 	AZO_TC_EXCHANGE_FRAME,
+	/**
+	 * @brief Pushes the current interpreter flags onto the data stack as a uint32
+	 * 
+	 * PUSH_FLAGS
+	 * [..., val] -> [..., val, flags]
+	 */
+	AZO_TC_PUSH_FLAGS,
+	/**
+	 * @brief Pops a uint32 from the data stack and writes it to interpreter flags
+	 * 
+	 * STORE_FLAGS
+	 * [..., val, flags] -> [..., val]
+	 */
+	AZO_TC_STORE_FLAGS,
+	/**
+	 * @brief Modifies the interpreter flags: flags = (flags & AND) | OR
+	 * 
+	 * SET_FLAGS AND(U32) OR(U32)
+	 * Applies a computation-mode delta to the current flags.
+	 */
+	AZO_TC_SET_FLAGS,
 
 	/* Type tests */
 	/* TEST POS(U8) */

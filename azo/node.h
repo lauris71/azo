@@ -198,6 +198,8 @@ enum {
 	AZO_TERM_TEST,
 	/* Selection (ternary) - CONDITION, TRUE_EXPRESSION, FALSE_EXPRESSION */
 	AZO_TERM_SELECT,
+	/* Computation-mode expression (finite/saturate/wrap) - MODE_EXPRESSION: EXPRESSION */
+	AZO_TERM_MODE_EXPRESSION,
 
 	/* Resolved expressions */
 	/* Subtype is value type (or 0), value is set */
@@ -215,7 +217,9 @@ enum {
 /* Block subtypes */
 enum {
 	AZO_TERM_BLOCK_PLAIN,
-	AZO_TERM_BLOCK_STATIC
+	AZO_TERM_BLOCK_STATIC,
+	/* Computation-mode block; the mode is carried in term.flags (AZO_TERM_FLAG_*) */
+	AZO_TERM_BLOCK_MODE
 };
 
 /**
@@ -392,19 +396,26 @@ struct _AZOTerm {
 
 /* Term flags */
 enum {
-	/* Cast qualifiers ((int16 rounded) x - allow rounding, (int16 exact) x - throw unless exact) */
+	/* Cast qualifier ((int16 exact) x - throw unless exact) */
 	AZO_TERM_FLAG_EXACT = 1,
-	AZO_TERM_FLAG_ROUNDED = 2,
 	/* Declaration qualifiers */
 	AZO_TERM_FLAG_STATIC = 4,
 	AZO_TERM_FLAG_SHARED = 8,
 	AZO_TERM_FLAG_FINAL = 16,
 	AZO_TERM_FLAG_WEAK = 32,
 	AZO_TERM_FLAG_CONST = 64,
+	/* Computation modes (finite/saturate/wrap) - one bit each; combinable in
+	 * principle but currently mutually exclusive */
+	AZO_TERM_FLAG_FINITE = 0x800,
+	AZO_TERM_FLAG_SATURATE = 0x1000,
+	AZO_TERM_FLAG_WRAP = 0x2000,
 	AZO_TERM_DEBUG_RESOLVER_TREE = 0x100,
 	AZO_TERM_DEBUG_OPTIMIZER_TREE = 0x200,
 	AZO_TERM_DEBUG_INTERPRETER_STACK = 0x400,
 };
+
+/* The set of computation-mode flags */
+#define AZO_TERM_FLAG_MODE_MASK (AZO_TERM_FLAG_FINITE | AZO_TERM_FLAG_SATURATE | AZO_TERM_FLAG_WRAP)
 
 struct _AZONode {
 	/* Tree implementation */

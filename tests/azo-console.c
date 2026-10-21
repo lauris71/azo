@@ -39,7 +39,9 @@ main(int argc, const char *argv[])
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, globals, src);
     AZOResolveCtx rctx = {
-        .ret_type = AZ_TYPE_NONE
+        .ret_type = AZ_TYPE_NONE,
+        .exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+        .calc_mode = AZO_CALCULATE_MODE_SATURATE
     };
 	rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
 	int result = azo_compiler_resolve_program(&comp, &rctx, expr);
@@ -49,7 +51,9 @@ main(int argc, const char *argv[])
     AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
     AZOOptimizerCtx opt_ctx = {
-        .ret_type = AZ_TYPE_NONE
+        .ret_type = AZ_TYPE_NONE,
+        .exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+        .calc_mode = AZO_CALCULATE_MODE_SATURATE
     };
 	result = azo_compiler_optimize_program(&opt, &opt_ctx, expr, AZO_OPTIMIZER_FLAG_ALL);
     azo_node_print_info(expr, stdout, src, 0);

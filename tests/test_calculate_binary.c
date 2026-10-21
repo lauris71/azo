@@ -19,6 +19,7 @@
 
 #define ASSERT_NO_FLAGS(f) TEST_ASSERT_EQUAL_UINT32(0u, (f))
 #define ASSERT_HAS_OVERFLOW(f) TEST_ASSERT_TRUE(((f) & AZO_CALCULATE_FLAG_OVERFLOW) != 0)
+#define ASSERT_HAS_MAGNITUDE(f) TEST_ASSERT_TRUE(((f) & AZO_CALCULATE_FLAG_MAGNITUDE) != 0)
 #define ASSERT_HAS_ROUNDED(f) TEST_ASSERT_TRUE(((f) & AZO_CALCULATE_FLAG_ROUNDED) != 0)
 #define ASSERT_HAS_NON_FINITE(f) TEST_ASSERT_TRUE(((f) & AZO_CALCULATE_FLAG_NON_FINITE) != 0)
 
@@ -163,12 +164,12 @@ test_calculate_binary(void)
 		TEST_ASSERT_EQUAL_UINT32(AZO_CALCULATE_OK, code);
 		TEST_ASSERT_EQUAL_UINT32(AZ_TYPE_INT64, rtype);
 		TEST_ASSERT_EQUAL_INT64(INT64_MAX, result.int64_v);
-		ASSERT_HAS_OVERFLOW(flags);
+		ASSERT_HAS_MAGNITUDE(flags);
 
 		code = calc(AZO_CALCULATE_MODE_WRAP, AZ_TYPE_UINT64, &lhs, AZ_TYPE_INT64, &rhs, AZO_TERM_ARITHMETIC_PLUS, &rtype, &result, &flags);
 		TEST_ASSERT_EQUAL_UINT32(AZO_CALCULATE_OK, code);
 		TEST_ASSERT_EQUAL_INT64(-1, result.int64_v);
-		ASSERT_HAS_OVERFLOW(flags);
+		ASSERT_HAS_MAGNITUDE(flags);
 	}
 
 	/* Division by zero reports DIVIDE_BY_ZERO (integer) */
@@ -223,5 +224,55 @@ test_calculate_binary(void)
 		TEST_ASSERT_EQUAL_UINT32(AZ_TYPE_COMPLEX_DOUBLE, rtype);
 		TEST_ASSERT_EQUAL_DOUBLE(2.0, result.cdouble_v.r);
 		TEST_ASSERT_EQUAL_DOUBLE(2.0, result.cdouble_v.i);
+	}
+
+	/* Unary negation: exact */
+	{
+		lhs.int32_v = 5;
+		code = azo_calculate_negate(AZO_CALCULATE_MODE_SATURATE, AZ_TYPE_INT32, &lhs, &result, &flags);
+		TEST_ASSERT_EQUAL_UINT32(AZO_CALCULATE_OK, code);
+		TEST_ASSERT_EQUAL_INT(-5, result.int32_v);
+		ASSERT_NO_FLAGS(flags);
+
+		lhs.int8_v = 127;
+		code = azo_calculate_negate(AZO_CALCULATE_MODE_SATURATE, AZ_TYPE_INT8, &lhs, &result, &flags);
+		TEST_ASSERT_EQUAL_UINT32(AZO_CALCULATE_OK, code);
+		TEST_ASSERT_EQUAL_INT(-127, result.int8_v);
+		ASSERT_NO_FLAGS(flags);
+	}
+
+	/* Unary negation: signed overflow (INT_MIN) saturates/wraps */
+	{
+		lhs.int32_v = INT32_MIN;
+		code = azo_calculate_negate(AZO_CALCULATE_MODE_SATURATE, AZ_TYPE_INT32, &lhs, &result, &flags);
+		TEST_ASSERT_EQUAL_UINT32(AZO_CALCULATE_OK, code);
+		TEST_ASSERT_EQUAL_INT(INT32_MAX, result.int32_v);
+		ASSERT_HAS_OVERFLOW(flags);
+
+		code = azo_calculate_negate(AZO_CALCULATE_MODE_WRAP, AZ_TYPE_INT32, &lhs, &result, &flags);
+		TEST_ASSERT_EQUAL_UINT32(AZO_CALCULATE_OK, code);
+		TEST_ASSERT_EQUAL_INT(INT32_MIN, result.int32_v);
+		ASSERT_HAS_OVERFLOW(flags);
+	}
+
+	/* Unary negation: unsigned saturates to 0, wraps modulo */
+	{
+		lhs.uint32_v = 5;
+		code = azo_calculate_negate(AZO_CALCULATE_MODE_SATURATE, AZ_TYPE_UINT32, &lhs, &result, &flags);
+		TEST_ASSERT_EQUAL_UINT32(AZO_CALCULATE_OK, code);
+		TEST_ASSERT_EQUAL_UINT32(0, result.uint32_v);
+		ASSERT_HAS_OVERFLOW(flags);
+
+		code = azo_calculate_negate(AZO_CALCULATE_MODE_WRAP, AZ_TYPE_UINT32, &lhs, &result, &flags);
+		TEST_ASSERT_EQUAL_UINT32(AZO_CALCULATE_OK, code);
+		TEST_ASSERT_EQUAL_UINT32((uint32_t)-5, result.uint32_v);
+		ASSERT_HAS_OVERFLOW(flags);
+
+		/* uint8 wraps to 256 - 5 = 251 */
+		lhs.uint8_v = 5;
+		code = azo_calculate_negate(AZO_CALCULATE_MODE_WRAP, AZ_TYPE_UINT8, &lhs, &result, &flags);
+		TEST_ASSERT_EQUAL_UINT32(AZO_CALCULATE_OK, code);
+		TEST_ASSERT_EQUAL_UINT32(251, result.uint8_v);
+		ASSERT_HAS_OVERFLOW(flags);
 	}
 }

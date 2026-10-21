@@ -108,7 +108,9 @@ test_program(AZOContext *ctx, const char *text,
 	if (print_tree) azo_node_print_info(tree, stderr, src, 0);
 
 	AZOCompilerContext comp_ctx = {
-		.ret_type = AZ_TYPE_INT32
+		.ret_type = AZ_TYPE_INT32,
+		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, globals, src);
@@ -133,7 +135,9 @@ test_program(AZOContext *ctx, const char *text,
 	AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
 	comp_ctx = (AZOCompilerContext) {
-		.ret_type = AZ_TYPE_INT32
+		.ret_type = AZ_TYPE_INT32,
+		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
 	comp_ctx.frame = frame;
 	result = azo_compiler_optimize_program(&opt, &comp_ctx, tree, AZO_OPTIMIZER_FLAG_ALL);
@@ -146,7 +150,9 @@ test_program(AZOContext *ctx, const char *text,
 	}
 
 	comp_ctx = (AZOCompilerContext) {
-		.ret_type = AZ_TYPE_INT32
+		.ret_type = AZ_TYPE_INT32,
+		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
 	comp_ctx.frame = frame;
 	AZOProgram *prog = azo_compiler_compile (&comp, &comp_ctx, tree, src);
@@ -464,6 +470,71 @@ test_calculate(void)
         const AZImplementation *ret_impl;
         AZValue ret_val;
         TEST_ASSERT(test_program(globals, "int8 x = 42;x = x + 1;return x;\n", 0, arg_names, arg_impls, arg_vals, AZ_TYPE_INT8, &ret_impl, &ret_val) == 1);
+    }
+	/* Mode block and mode expression fall back to generic processing */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, "return wrap (2 + 3);\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(5, ret_val.int32_v);
+        TEST_ASSERT(test_program(globals, "saturate { return 10 + 5; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(15, ret_val.int32_v);
+        TEST_ASSERT(test_program(globals, "int32 v = finite (2 * 4); return v;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(8, ret_val.int32_v);
+    }
+	/* Computation mode drives constant folding of overflow/non-finite */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        /* Default: constant integer overflow is an error */
+        TEST_ASSERT(test_program(globals, "int32 x = 2147483647 + 1; return x;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 1);
+        /* saturate: clamps with a warning */
+        TEST_ASSERT(test_program(globals, "saturate { int32 x = 2147483647 + 1; return x; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(INT32_MAX, ret_val.int32_v);
+        /* wrap: wraps with a warning */
+        TEST_ASSERT(test_program(globals, "wrap { int32 x = 2147483647 + 1; return x; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(INT32_MIN, ret_val.int32_v);
+	/* finite: constant non-finite result is an error */
+        TEST_ASSERT(test_program(globals, "finite { double d = 1.0 / 0.0; return d; }\n", 0, NULL, NULL, NULL, AZ_TYPE_DOUBLE, &ret_impl, &ret_val) == 1);
+    }
+	/* Unary minus is constant-folded with overflow detection */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        /* Exact negation */
+        TEST_ASSERT(test_program(globals, "int32 v = -7; return v;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(-7, ret_val.int32_v);
+        /* Negating INT8_MIN under wrap folds to -128 (wrapped), not an error */
+        TEST_ASSERT(test_program(globals, "wrap { int8 v = -(int8) -128; return v; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(-128, ret_val.int8_v);
+    }
+	/* Runtime computation mode (non-constant operands) */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        /* Default: runtime integer overflow throws */
+        TEST_ASSERT(test_program(globals, "int32 x = 2147483647; x = x + 1; return x;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 1);
+        /* wrap: wraps at runtime */
+        TEST_ASSERT(test_program(globals, "wrap { int32 x = 2147483647; x = x + 1; return x; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(INT32_MIN, ret_val.int32_v);
+        /* saturate: clamps at runtime */
+        TEST_ASSERT(test_program(globals, "saturate { int32 x = 2147483647; x = x + 1; return x; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(INT32_MAX, ret_val.int32_v);
+        /* finite: runtime non-finite result throws */
+        TEST_ASSERT(test_program(globals, "finite { double d = 1.0; double e = 0.0; d = d / e; return d; }\n", 0, NULL, NULL, NULL, AZ_TYPE_DOUBLE, &ret_impl, &ret_val) == 1);
+    }
+	/* Nested modes and mode expressions with surrounding variables */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        /* Inner saturate overrides outer wrap (variable x declared in outer block) */
+        TEST_ASSERT(test_program(globals, "wrap { int32 x = 2147483647; saturate { x = x + 1; } return x; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(INT32_MAX, ret_val.int32_v);
+        /* Mode expression with surrounding variables */
+        TEST_ASSERT(test_program(globals, "int32 x = 2147483647; int32 y = 1; int32 z = wrap (x + y); return z;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(INT32_MIN, ret_val.int32_v);
     }
 	azo_context_delete(globals);
 }

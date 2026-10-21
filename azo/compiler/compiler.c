@@ -843,6 +843,40 @@ compile_cast (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, A
 	return 1;
 }
 
+/* Emit code to save the interpreter flags and apply the computation mode delta
+ * carried in node->term.flags. The saved flags go on the interpreter's flags
+ * stack (not the data stack), so frame-relative variable offsets are unaffected. */
+static void
+compile_mode_flags_enter (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node)
+{
+	AZOCode *code = &ctx->frame->code;
+	unsigned int mode_flags = node->term.flags;
+	unsigned int or_mask = 0;
+	unsigned int and_mask = ~0u;
+
+	if (mode_flags & AZO_TERM_FLAG_FINITE) {
+		and_mask &= ~AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_NOT_FINITE);
+	}
+	if (mode_flags & AZO_TERM_FLAG_SATURATE) {
+		or_mask |= AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE) | AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_INTEGER_OVERFLOW);
+		and_mask &= ~AZO_INTR_FLAG_WRAP;
+	}
+	if (mode_flags & AZO_TERM_FLAG_WRAP) {
+		or_mask |= AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE) | AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_INTEGER_OVERFLOW) | AZO_INTR_FLAG_WRAP;
+	}
+
+	azo_code_write_ic (code, AZO_TC_PUSH_FLAGS, node);
+	azo_code_write_ic_u32_u32 (code, AZO_TC_SET_FLAGS, and_mask, or_mask, node);
+}
+
+/* Emit code to restore the flags saved by compile_mode_flags_enter. */
+static void
+compile_mode_flags_leave (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node)
+{
+	AZOCode *code = &ctx->frame->code;
+	azo_code_write_ic (code, AZO_TC_STORE_FLAGS, node);
+}
+
 /* Compile rvalue expression (this, null, literal...) */
 
 #define noDEBUG_PARENT_VAR
@@ -890,6 +924,15 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 		if (!compile_test (comp, ctx, node, src)) return 0;
 	} else if (node->term.type == AZO_TERM_CAST) {
 		if (!compile_cast (comp, ctx, node, src)) return 0;
+	} else if (node->term.type == AZO_TERM_MODE_EXPRESSION) {
+		compile_mode_flags_enter (comp, ctx, node);
+		AZOCompilerContext lctx = *ctx;
+		lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
+		lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
+		if (!azo_compiler_compile_expression (comp, &lctx, node->children, src)) return 0;
+		/* [saved, value] -> [value, saved], then STORE_FLAGS pops [saved] */
+		azo_code_write_EXCHANGE (code, 1, node);
+		compile_mode_flags_leave (comp, ctx, node);
 	} else {
 		fprintf (stderr, "compile_expression_rvalue: Invalid expression type %u\n", node->term.type);
 		return 0;
@@ -1186,12 +1229,29 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 {
 	AZOCode *code = &ctx->frame->code;
 	AZONode *child = node->children;
-	unsigned int n_stack = ctx->n_stack;
-	unsigned int result = compile_sentences(comp, ctx, child, src);
-	/* Clear scope */
-	if (ctx->n_stack > n_stack) {
-		azo_code_write_POP (code, ctx->n_stack - n_stack, node);
-		ctx->n_stack = n_stack;
+	unsigned int mode = (node->term.subtype == AZO_TERM_BLOCK_MODE);
+	unsigned int result;
+
+	if (mode) {
+		compile_mode_flags_enter (comp, ctx, node);
+		ctx->n_stack += 1;
+	}
+
+	AZOCompilerContext lctx = *ctx;
+	if (mode) {
+		lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
+		lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
+	}
+	result = compile_sentences(comp, &lctx, child, src);
+
+	/* Pop everything the block added to the data stack */
+	if (lctx.n_stack > ctx->n_stack) {
+		azo_code_write_POP (code, lctx.n_stack - ctx->n_stack, node);
+	}
+
+	if (mode) {
+		compile_mode_flags_leave (comp, ctx, node);
+		ctx->n_stack -= 1;
 	}
 	return result;
 }
@@ -1394,7 +1454,7 @@ compile_sentence (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 {
 	if (AZO_NODE_IS(node, AZO_TERM_MEMBER_BLOCK, 0)) {
 		if (!compile_member_block(comp, ctx, node, src)) return 0;
-	} else if (AZO_NODE_IS(node, AZO_TERM_BLOCK, 0)) {
+	} else if (node->term.type == AZO_TERM_BLOCK) {
 		if (!compile_block (comp, ctx, node, src)) return 0;
 	} else if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_FOR)) {
 		if (!compile_for (comp, ctx, node, src)) return 0;

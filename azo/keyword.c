@@ -52,7 +52,9 @@ const char *azo_keywords[] = {
 	"break",
 	"continue",
 	"exact",
-	"rounded"
+	"finite",
+	"saturate",
+	"wrap"
 };
 
 unsigned int

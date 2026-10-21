@@ -25,7 +25,7 @@
 static unsigned int parse_program (AZOParser *parser, AZOToken *token);
 static unsigned int parse_sentences (AZOParser *parser, AZOToken *token);
 static unsigned int parse_sentence (AZOParser *parser, AZOToken *token);
-static unsigned int parse_block (AZOParser *parser, AZOToken *token, unsigned int subtype);
+static unsigned int parse_block (AZOParser *parser, AZOToken *token, unsigned int subtype, unsigned int flags);
 static unsigned int parse_member_block (AZOParser *parser, AZOToken *token, unsigned int left_precedence);
 static unsigned int parse_line (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
 static unsigned int parse_statement (AZOParser *parser, AZOToken *token, int quals, AZONode *expr);
@@ -330,6 +330,7 @@ static unsigned int parse_multi_statement (AZOParser *parser, AZOToken *token, u
 static unsigned int parse_argument_definition (AZOParser *parser, AZOToken *token, unsigned int *has_type);
 static unsigned int continue_arguments_definition (AZOParser *parser, AZOToken *token, unsigned int *any_typed, unsigned int *any_untyped);
 static unsigned int parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, unsigned int start, unsigned int type_allowed, unsigned int is_static);
+static unsigned int parse_mode_expression (AZOParser *parser, AZOToken *token, unsigned int mode_flag, unsigned int left_precedence);
 static int parse_keyword(AZOParser *parser, AZOToken *token, unsigned int keyword);
 static int parse_qualifiers(AZOParser *parser, AZOToken *token, int *quals);
 
@@ -441,6 +442,22 @@ parse_sentence (AZOParser *parser, AZOToken *token)
 #endif
 	}
 	/* Block, Step_statement */
+	/* Computation mode block: finite/wrap/saturate { Sentences } */
+	{
+		unsigned int mode_flag = 0;
+		if (azo_token_is_keyword (token, AZO_KEYWORD_FINITE, parser->src)) {
+			mode_flag = AZO_TERM_FLAG_FINITE;
+		} else if (azo_token_is_keyword (token, AZO_KEYWORD_SATURATE, parser->src)) {
+			mode_flag = AZO_TERM_FLAG_SATURATE;
+		} else if (azo_token_is_keyword (token, AZO_KEYWORD_WRAP, parser->src)) {
+			mode_flag = AZO_TERM_FLAG_WRAP;
+		}
+		if (mode_flag) {
+			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+			if (token->type != AZO_TOKEN_LEFT_BRACE) return AZO_PARSER_ERROR_SYNTAX;
+			return parse_block (parser, token, AZO_TERM_BLOCK_MODE, mode_flag);
+		}
+	}
 	/* First start with qualifiers because these may go to both */
 	int quals = 0;
 	unsigned int result = parse_qualifiers(parser, token, &quals);
@@ -450,10 +467,10 @@ parse_sentence (AZOParser *parser, AZOToken *token)
 		/* Plain or static block */
 		if (!quals) {
 			/* Plain block */
-			return parse_block (parser, token, AZO_TERM_BLOCK_PLAIN);
+			return parse_block (parser, token, AZO_TERM_BLOCK_PLAIN, 0);
 		} else if (quals == AZO_TERM_FLAG_STATIC) {
 			/* Static block */
-			return parse_block (parser, token, AZO_TERM_BLOCK_STATIC);
+			return parse_block (parser, token, AZO_TERM_BLOCK_STATIC, 0);
 		} else {
 			/* Other qualifiers are not allowed */
 			return AZO_PARSER_ERROR_SYNTAX;
@@ -478,13 +495,14 @@ parse_sentence (AZOParser *parser, AZOToken *token)
  */
 
 static unsigned int
-parse_block (AZOParser *parser, AZOToken *token, unsigned int subtype)
+parse_block (AZOParser *parser, AZOToken *token, unsigned int subtype, unsigned int flags)
 {
 	/* Block */
 	unsigned int start = token->start;
 	unsigned int end = token->end;
 	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	AZONode *blk = azo_node_new (AZO_TERM_BLOCK, subtype, start, end);
+	blk->term.flags = flags;
 	parser_push (parser, blk);
 	int result = parse_sentences (parser, token);
 	blk->term.end = token->end;
@@ -515,7 +533,7 @@ parse_member_block (AZOParser *parser, AZOToken *token, unsigned int left_preced
 {
 	AZONode *head = parser_detach_last (parser);
 	unsigned int start = head->term.start;
-	int result = parse_block (parser, token, AZO_TERM_BLOCK_PLAIN);
+	int result = parse_block (parser, token, AZO_TERM_BLOCK_PLAIN, 0);
 	if (result) {
 		azo_node_free_tree (head);
 		return result;
@@ -1042,9 +1060,6 @@ azo_parser_parse_parenthesized_expression (AZOParser *parser, AZOToken *token, u
 		if (azo_token_is_keyword (token, AZO_KEYWORD_EXACT, parser->src)) {
 			flags |= AZO_TERM_FLAG_EXACT;
 			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-		} else if (azo_token_is_keyword (token, AZO_KEYWORD_ROUNDED, parser->src)) {
-			flags |= AZO_TERM_FLAG_ROUNDED;
-			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 		}
 	}
 	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
@@ -1075,6 +1090,40 @@ azo_parser_parse_parenthesized_expression (AZOParser *parser, AZOToken *token, u
 		/* Cast qualifier without cast operand */
 		return AZO_PARSER_ERROR_SYNTAX;
 	}
+	return azo_parser_continue_expression (parser, token, left_precedence);
+}
+
+/*
+ * Mode_expression:
+ *   finite (Expression)
+ *   wrap (Expression)
+ *   saturate (Expression)
+ *
+ * Mode expressions are prefix-like and yield the operand value; the mode is
+ * carried in term.flags. The operand is a parenthesized expression, so it is
+ * parsed manually (not via the parenthesized-expression helper, which would
+ * consume a following postfix operator before we can wrap the operand).
+ *
+ * Current token is the mode keyword.
+ */
+
+static unsigned int
+parse_mode_expression (AZOParser *parser, AZOToken *token, unsigned int mode_flag, unsigned int left_precedence)
+{
+	unsigned int start = token->start;
+	unsigned int result;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
+	if (result) return result;
+	if (token->type != AZO_TOKEN_RIGHT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
+	unsigned int end = token->end;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	AZONode *op = parser_detach_last (parser);
+	AZONode *expr = azo_node_new_with_children (AZO_TERM_MODE_EXPRESSION, AZO_TERM_GENERIC, start, end, 1, op);
+	expr->term.flags = mode_flag;
+	parser_append (parser, expr);
 	return azo_parser_continue_expression (parser, token, left_precedence);
 }
 
@@ -1132,6 +1181,13 @@ parse_keyword_expression (AZOParser *parser, AZOToken *token, unsigned int keywo
 				return AZO_PARSER_ERROR_SYNTAX;
 			}
 			break;
+		}
+		case AZO_KEYWORD_FINITE:
+		case AZO_KEYWORD_SATURATE:
+		case AZO_KEYWORD_WRAP: {
+			unsigned int mode_flag = (keyword == AZO_KEYWORD_FINITE) ? AZO_TERM_FLAG_FINITE :
+				((keyword == AZO_KEYWORD_SATURATE) ? AZO_TERM_FLAG_SATURATE : AZO_TERM_FLAG_WRAP);
+			return parse_mode_expression (parser, token, mode_flag, left_precedence);
 		}
 		default:
 			if (AZO_KEYWORD_IS_PRIMITIVE_TYPE (keyword)) {

@@ -15,6 +15,16 @@
 
 static uint8_t uint8_one = 1;
 
+static void
+compile_arithmetic_op (AZOCode *code, unsigned int use_typed, unsigned int typed_op, unsigned int generic_op, unsigned int type, const AZONode *expr)
+{
+	if (use_typed) {
+		azo_code_write_ic_u8 (code, typed_op, AZ_TYPE_INDEX (type), expr);
+	} else {
+		azo_code_write_ic (code, generic_op, expr);
+	}
+}
+
 static unsigned int
 compile_arithmetic_boolean (AZOCode *code, unsigned int operation, const AZONode *expr, unsigned int lhs_is_boolean, unsigned int rhs_is_boolean)
 {
@@ -38,21 +48,26 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
 	/* LHS RHS */
+	/* Use a promotion-free TYPED opcode when both operands are already the same
+	 * promoted type (int32..complex double) */
+	unsigned int use_typed = (lhs->type == rhs->type) &&
+		(AZ_TYPE_INDEX (lhs->type) >= AZ_TYPE_IDX_INT32) &&
+		(AZ_TYPE_INDEX (lhs->type) <= AZ_TYPE_IDX_COMPLEX_DOUBLE);
 	switch (expr->term.subtype) {
 	case AZO_TERM_ARITHMETIC_PLUS:
-		azo_code_write_ic (&ctx->frame->code, AZO_TC_ADD, expr);
+		compile_arithmetic_op (&ctx->frame->code, use_typed, AZO_TC_ADD_TYPED, AZO_TC_ADD, lhs->type, expr);
 		return 1;
 	case AZO_TERM_ARITHMETIC_MINUS:
-		azo_code_write_ic (&ctx->frame->code, AZO_TC_SUBTRACT, expr);
+		compile_arithmetic_op (&ctx->frame->code, use_typed, AZO_TC_SUBTRACT_TYPED, AZO_TC_SUBTRACT, lhs->type, expr);
 		return 1;
 	case AZO_TERM_ARITHMETIC_SLASH:
-		azo_code_write_ic (&ctx->frame->code, AZO_TC_DIVIDE, expr);
+		compile_arithmetic_op (&ctx->frame->code, use_typed, AZO_TC_DIVIDE_TYPED, AZO_TC_DIVIDE, lhs->type, expr);
 		return 1;
 	case AZO_TERM_ARITHMETIC_STAR:
-		azo_code_write_ic (&ctx->frame->code, AZO_TC_MULTIPLY, expr);
+		compile_arithmetic_op (&ctx->frame->code, use_typed, AZO_TC_MULTIPLY_TYPED, AZO_TC_MULTIPLY, lhs->type, expr);
 		return 1;
 	case AZO_TERM_ARITHMETIC_PERCENT:
-		azo_code_write_ic (&ctx->frame->code, AZO_TC_MODULO, expr);
+		compile_arithmetic_op (&ctx->frame->code, use_typed, AZO_TC_MODULO_TYPED, AZO_TC_MODULO, lhs->type, expr);
 		return 1;
 	case AZO_TERM_ARITHMETIC_SHIFT_LEFT:
 		azo_code_write_ic (&ctx->frame->code, AZO_TC_SHIFT_LEFT, expr);

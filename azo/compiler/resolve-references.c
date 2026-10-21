@@ -20,6 +20,7 @@
 #include <azo/keyword.h>
 #include <azo/compiler/resolver.h>
 #include <azo/namespace.h>
+#include <azo/errors.h>
 
 #define noVERBOSE
 
@@ -49,7 +50,7 @@ resolve_type_chain(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, AZValu
 	if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE)) {
 		const AZImplementation *impl = azo_context_lookup (comp->globals, node->value.v.string, val, AZ_VALUE_MAX_SIZE);
 		if (!impl) {
-			fprintf(stderr, "resolve_type_chain: Global variable %s is not defined\n", node->value.v.string->str);
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Global variable %s is not defined\n", node->value.v.string->str);
 		}
 		return impl;
 	} else if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
@@ -61,7 +62,7 @@ resolve_type_chain(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, AZValu
 		void *adict_inst;
 		const AZImplementation *adict_impl = az_instance_get_interface(parent_impl, az_value_get_inst(parent_impl, &parent_val), AZ_TYPE_ATTRIBUTE_DICT, &adict_inst);
 		if (!adict_impl) {
-			fprintf(stderr, "resolve_type_chain: parent is not attribute dictionary\n");
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, parent->term.start, parent->term.end, "Parent is not an attribute dictionary\n");
 			az_value_clear(parent_impl, &parent_val);
 			return NULL;
 		}
@@ -69,11 +70,11 @@ resolve_type_chain(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, AZValu
 		const AZImplementation *impl = az_attrib_dict_lookup((const AZAttribDictImplementation *) adict_impl, (AZAttribDict *) adict_inst, member->value.v.string, val, AZ_PACKED_VALUE_MAX_SIZE, &adict_flags);
 		az_value_clear(parent_impl, &parent_val);
 		if (!impl) {
-			fprintf(stderr, "resolve_type_chain: property %s is not defined\n", member->value.v.string->str);
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, member->term.start, member->term.end, "Property %s is not defined\n", member->value.v.string->str);
 		}
 		return impl;
 	}
-	fprintf(stderr, "resolve_type_chain: node type not supported\n");
+	azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Node type not supported\n");
 	return NULL;
 }
 
@@ -84,7 +85,7 @@ azo_compiler_resolve_type_expression(AZOCompiler *comp, AZOResolveCtx *rctx, AZO
 	const AZImplementation *impl = resolve_type_chain(comp, rctx, node, &val);
 	if (!impl) return 1;
 	if (AZ_IMPL_TYPE(impl) != AZ_TYPE_CLASS) {
-		fprintf(stderr, "resolve_type_chain: Expression is not a class type\n");
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Expression is not a class type\n");
 		az_value_clear(impl, &val);
 		return 1;
 	}
@@ -136,9 +137,7 @@ resolve_property (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		AZValue val;
 		const AZImplementation *impl = azo_namespace_lookup((AZONamespace *) parent->value.v.block, member->value.v.string, &val, AZ_VALUE_MAX_SIZE);
 		if (!impl) {
-			fprintf(stderr, "Namespace ");
-			azo_source_print_token(comp->src, parent->term.start, parent->term.end, stderr);
-			fprintf(stderr, " does not have member %s\n", member->value.v.string->str);
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, member->term.start, member->term.end, "Namespace does not have member %s\n", member->value.v.string->str);
 			return 1;
 		}
 		node->term.type = AZO_TERM_CONSTANT;
@@ -252,10 +251,7 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		this_node->next = prop_node;
 		return 0;
 	}
-	fprintf(stderr, "ERROR: resolve_variable: Not resolved: ");
-	azo_source_print_token(comp->src, expr->term.start, expr->term.end, stderr);
-	fprintf(stderr, "\n");
-	azo_source_print_lines_of_token(comp->src, expr->term.start, expr->term.end, stderr);
+	azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, expr->term.start, expr->term.end, "Variable %s is not defined\n", expr->value.v.string->str);
 	return 1;
 }
 

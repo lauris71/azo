@@ -295,6 +295,9 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		fprintf (ofs, "\nEND_PROGRAM\n");
 		break;
 	case AZO_TERM_BLOCK:
+		if (expr->term.flags & AZO_TERM_FLAG_FINITE) fprintf (ofs, "finite ");
+		else if (expr->term.flags & AZO_TERM_FLAG_SATURATE) fprintf (ofs, "saturate ");
+		else if (expr->term.flags & AZO_TERM_FLAG_WRAP) fprintf (ofs, "wrap ");
 		fprintf (ofs, "{\n");
 		azo_node_print_list (expr->children, ofs, "\n");
 		fprintf (ofs, "}\n");
@@ -447,7 +450,6 @@ azo_node_print (AZONode *expr, FILE *ofs)
 			fprintf (ofs, "(");
 			azo_node_print (expr->children, ofs);
 			if (expr->term.flags & AZO_TERM_FLAG_EXACT) fprintf (ofs, " exact");
-			if (expr->term.flags & AZO_TERM_FLAG_ROUNDED) fprintf (ofs, " rounded");
 			fprintf (ofs, ") ");
 			azo_node_print (expr->children->next, ofs);
 		}
@@ -465,6 +467,13 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		azo_node_print (expr->children->next, ofs);
 		fprintf (ofs, ": ");
 		azo_node_print (expr->children->next->next, ofs);
+		break;
+	case AZO_TERM_MODE_EXPRESSION:
+		if (expr->term.flags & AZO_TERM_FLAG_FINITE) fprintf (ofs, "finite (");
+		else if (expr->term.flags & AZO_TERM_FLAG_SATURATE) fprintf (ofs, "saturate (");
+		else if (expr->term.flags & AZO_TERM_FLAG_WRAP) fprintf (ofs, "wrap (");
+		azo_node_print (expr->children, ofs);
+		fprintf (ofs, ") ");
 		break;
 	case AZO_TERM_SUFFIX:
 		azo_node_print (expr->children, ofs);

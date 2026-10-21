@@ -1228,7 +1228,6 @@ test_parser(void)
         const struct { const char *src; uint16_t flags; } cases[] = {
             { "x = (int16) a;", 0 },
             { "x = (int16 exact) a;", AZO_TERM_FLAG_EXACT },
-            { "x = (int16 rounded) a;", AZO_TERM_FLAG_ROUNDED },
             { NULL, 0 }
         };
         for (int i = 0; cases[i].src; i++) {
@@ -1249,12 +1248,57 @@ test_parser(void)
     {
         AZOParser parser;
         AZOSource *src;
-        AZONode *tree = parse_text("a = (int16 rounded);", &parser, &src);
+        AZONode *tree = parse_text("a = (int16 exact);", &parser, &src);
         if (tree) azo_node_free_tree(tree);
         TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
         TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SYNTAX, parser.errors[0].code);
         azo_parser_release(&parser);
         az_object_unref((AZObject *) src);
+    }
+    /* Mode blocks parse to BLOCK with MODE subtype and the mode flag */
+    {
+        const struct { const char *src; uint16_t flags; } cases[] = {
+            { "finite {}", AZO_TERM_FLAG_FINITE },
+            { "saturate {}", AZO_TERM_FLAG_SATURATE },
+            { "wrap {}", AZO_TERM_FLAG_WRAP },
+            { NULL, 0 }
+        };
+        for (int i = 0; cases[i].src; i++) {
+            AZOParser parser;
+            AZOSource *src;
+            AZONode *tree = parse_text(cases[i].src, &parser, &src);
+            TEST_ASSERT_NOT_NULL(tree);
+            AZONode *nodes[8];
+            unsigned int n = azo_node_flatten(tree, nodes, 8);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(2, n, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_BLOCK, nodes[1]->term.type, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_BLOCK_MODE, nodes[1]->term.subtype, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].flags, nodes[1]->term.flags, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(0, parser.n_errors, cases[i].src);
+            free_parse(&parser, src, tree);
+        }
+    }
+    /* Mode expressions parse to MODE_EXPRESSION with the mode flag */
+    {
+        const struct { const char *src; uint16_t flags; } cases[] = {
+            { "x = finite (y);", AZO_TERM_FLAG_FINITE },
+            { "x = saturate (y);", AZO_TERM_FLAG_SATURATE },
+            { "x = wrap (y);", AZO_TERM_FLAG_WRAP },
+            { NULL, 0 }
+        };
+        for (int i = 0; cases[i].src; i++) {
+            AZOParser parser;
+            AZOSource *src;
+            AZONode *tree = parse_text(cases[i].src, &parser, &src);
+            TEST_ASSERT_NOT_NULL(tree);
+            AZONode *nodes[8];
+            unsigned int n = azo_node_flatten(tree, nodes, 8);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(5, n, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_MODE_EXPRESSION, nodes[3]->term.type, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].flags, nodes[3]->term.flags, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(0, parser.n_errors, cases[i].src);
+            free_parse(&parser, src, tree);
+        }
     }
     /* Declaration qualifiers set term flags on the declaration list */
     {
