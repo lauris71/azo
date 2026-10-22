@@ -30,6 +30,7 @@ void
 azo_variable_finalize(AZOVariable *var)
 {
     if (var->name) az_string_unref (var->name);
+    az_packed_value_clear (&var->const_value);
 }
 
 void
@@ -82,16 +83,24 @@ azo_var_list_prepend(AZOVariableList *list, AZString *name, unsigned int pos)
 }
 
 AZOVariableList *
-azo_var_list_set(AZOVariableList *list, AZString *name, unsigned int pos, const AZONode *const_node)
+azo_var_list_set(AZOVariableList *list, AZString *name, unsigned int pos, const AZPackedValue *const_value)
 {
 	assert(name != NULL);
 	AZOVariableList *node = azo_var_list_find(list, name);
 	if (node) {
 		node->var.pos = pos;
-		node->var.const_node = const_node;
+		if (const_value && const_value->impl) {
+			az_packed_value_copy(&node->var.const_value, const_value);
+		} else {
+			az_packed_value_clear(&node->var.const_value);
+		}
 	} else {
 		list = azo_var_list_prepend(list, name, pos);
-		list->var.const_node = const_node;
+		if (const_value && const_value->impl) {
+			az_packed_value_copy(&list->var.const_value, const_value);
+		} else {
+			az_packed_value_clear(&list->var.const_value);
+		}
 	}
 	return list;
 }
@@ -155,7 +164,7 @@ azo_var_list_duplicate(AZOVariableList *list)
 	for (AZOVariableList *v = list; v; v = v->next) {
 		assert(v->var.name != NULL);
 		result = azo_var_list_prepend(result, v->var.name, v->var.pos);
-		result->var.const_node = v->var.const_node;
+		az_packed_value_copy(&result->var.const_value, &v->var.const_value);
 		result->var.flags = v->var.flags;
 	}
 	return result;

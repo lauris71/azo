@@ -580,6 +580,10 @@ resolve_check_assignment_type (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *
 		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, rvalue->term.start, rvalue->term.end, "Cannot assign type %u to type %u\n", rvalue->type, Ta);
 		return 1;
 	}
+	/* Warn when an implicit arithmetic cast may change magnitude (rounding is allowed) */
+	if (Ta && AZ_TYPE_IS_ARITHMETIC (Ta) && AZ_TYPE_IS_ARITHMETIC (rvalue->type) && (rvalue->type != Ta) && !azo_type_is_magnitude_safe (Ta, rvalue->type)) {
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_WARNING, AZO_SUBSYSTEM_RESOLVER, rvalue->term.start, rvalue->term.end, "Assignment may change magnitude; use an explicit cast to clamp or wrap\n");
+	}
 	return 0;
 }
 
@@ -770,9 +774,10 @@ resolve_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	}
 	/* Create new scope */
 	azo_frame_push_scope(lctx.frame);
-	/* Mode block reserves a stack slot for the compiler-emitted saved flags,
-	 * so variable positions inside stay in sync with the runtime stack */
-	if (node->term.subtype == AZO_TERM_BLOCK_MODE) azo_frame_reserve_pos (lctx.frame);
+	/* Both mode and defer block need to reserve a stack position (either to saved state or defer handle) */
+	if (node->term.subtype == AZO_TERM_BLOCK_MODE || node->term.subtype == AZO_TERM_BLOCK_DEFER) {
+		azo_frame_reserve_pos (lctx.frame);
+	}
 	/* Block children are sentences (per-sentence return tracking) */
 	result = resolve_sentences(comp, &lctx, node->children);
 	azo_frame_pop_scope(lctx.frame);

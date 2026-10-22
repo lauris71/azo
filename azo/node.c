@@ -295,9 +295,19 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		fprintf (ofs, "\nEND_PROGRAM\n");
 		break;
 	case AZO_TERM_BLOCK:
-		if (expr->term.flags & AZO_TERM_FLAG_FINITE) fprintf (ofs, "finite ");
-		else if (expr->term.flags & AZO_TERM_FLAG_SATURATE) fprintf (ofs, "saturate ");
-		else if (expr->term.flags & AZO_TERM_FLAG_WRAP) fprintf (ofs, "wrap ");
+		switch (expr->term.subtype) {
+			case AZO_TERM_BLOCK_STATIC:
+				fprintf (ofs, "static ");
+				break;
+			case AZO_TERM_BLOCK_MODE:
+				if (expr->term.flags & AZO_TERM_FLAG_FINITE) fprintf (ofs, "finite ");
+				else if (expr->term.flags & AZO_TERM_FLAG_SATURATE) fprintf (ofs, "saturate ");
+				else if (expr->term.flags & AZO_TERM_FLAG_WRAP) fprintf (ofs, "wrap ");
+				break;
+			case AZO_TERM_BLOCK_DEFER:
+				fprintf (ofs, "defer ");
+				break;
+		}
 		fprintf (ofs, "{\n");
 		azo_node_print_list (expr->children, ofs, "\n");
 		fprintf (ofs, "}\n");

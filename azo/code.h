@@ -105,15 +105,15 @@ azo_code_write_EXCEPTION (AZOCode *code, uint32_t type, const AZONode *node)
 }
 
 static inline void
-azo_code_write_PUSH_FRAME (AZOCode *code, unsigned int pos, const AZONode *expr)
+azo_code_write_POP(AZOCode *code, uint32_t n_values, const AZONode *expr)
 {
-	azo_code_write_ic_u32(code, AZO_TC_PUSH_FRAME, pos, expr);
+	azo_code_write_ic_u32(code, AZO_TC_POP, n_values, expr);
 }
 
 static inline void
-azo_code_write_POP (AZOCode *code, uint32_t n_values, const AZONode *expr)
+azo_code_write_REWIND(AZOCode *code, uint32_t n_values, const AZONode *expr)
 {
-	azo_code_write_ic_u32(code, AZO_TC_POP, n_values, expr);
+	azo_code_write_ic_u32(code, AZO_TC_REWIND, n_values, expr);
 }
 
 static inline void

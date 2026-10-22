@@ -42,17 +42,18 @@ exception_class_init (AZOExceptionClass *klass)
 static const char *excnames[] = {
 	NULL,
 	"System failure",
+	"Change of magnitude",
+	"Change of precision",
+	"Non-finite result",
+	"Integer overflow",
 	"Stack overflow",
 	"Invalid type",
 	"Invalid conversion",
-	"Change of value",
-	"Loss of precision",
 	"NULL dereference",
 	"Out of bounds",
 	"Invalid property",
 	"Invalid value",
 	"Divide by zero",
-	"Integer overflow",
 	"Not writable"
 };
 

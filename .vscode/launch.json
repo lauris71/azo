@@ -28,6 +28,14 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Test language",
+            "program": "${workspaceFolder}/build/tests/azo_test",
+            "args": ["language"],
+            "cwd": "${workspaceFolder}/build/tests/"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Test cycles",
             "program": "${workspaceFolder}/build/tests/azo_test",
             "args": ["cycles"],

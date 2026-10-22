@@ -38,7 +38,7 @@ static AZBufferOutputStream *bostream = NULL;
 static AZOSOutputStream *osostream = NULL;
 
 static int
-test_program(AZOContext *ctx, const char *text, const AZImplementation *this_impl, void *this_inst,
+test_program_with_this(AZOContext *ctx, const char *text, const AZImplementation *this_impl, void *this_inst,
 	unsigned int n_args, const char *arg_names[], const AZImplementation *arg_impls[], const AZValue *arg_vals[],
 	const unsigned int ret_type, const AZImplementation **ret_impl, AZValue *ret_val)
 {
@@ -168,7 +168,7 @@ test_function(void)
         print_tree = 0;
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, simple_src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, simple_src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
         TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
         print_tree = 0;
@@ -176,7 +176,7 @@ test_function(void)
     {
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, simple_src2, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, simple_src2, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
         TEST_ASSERT_EQUAL_INT(425, ret_val.int32_v);
     }
@@ -184,7 +184,7 @@ test_function(void)
     {
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, function_src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, function_src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
         TEST_ASSERT_EQUAL_INT(128, ret_val.int32_v);
     }
@@ -205,7 +205,7 @@ test_function(void)
 		az_buffer_output_stream_reset(bostream);
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
         fprintf(stderr, "Output: %s\n", str);
@@ -230,7 +230,7 @@ test_function(void)
         const AZImplementation *ret_impl;
         AZValue ret_val;
         int32_t this_val = 42;
-        TEST_ASSERT(test_program(globals, src, AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), &this_val, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), &this_val, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
         fprintf(stderr, "Output: %s\n", str);
@@ -255,7 +255,7 @@ test_function(void)
 		az_buffer_output_stream_reset(bostream);
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
         fprintf(stderr, "Output: %s\n", str);
@@ -272,7 +272,7 @@ test_function(void)
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.type);
     }
@@ -286,7 +286,7 @@ test_function(void)
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_VALUE, globals->intr->exc.type);
     }
@@ -305,7 +305,7 @@ test_function(void)
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
         fprintf(stderr, "Output: %s\n", str);
@@ -323,7 +323,7 @@ test_function(void)
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
         fprintf(stderr, "Output: %s\n", str);
@@ -354,7 +354,7 @@ test_function(void)
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
         fprintf(stderr, "Output: %s\n", str);

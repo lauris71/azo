@@ -12,7 +12,7 @@
 #include "test.h"
 
 static unsigned int print_tree = 0;
-static unsigned int print_code = 0;
+static unsigned int print_code = 1;
 
 static const char *binary_arithmetic_i32_src = ""
 "int32 a = 31;\n"
@@ -95,7 +95,7 @@ static AZODataBlock static_data = {0};
 static AZOContext *globals = NULL;
 static AZBufferOutputStream *bostream = NULL;
 
-static int
+int
 test_program(AZOContext *ctx, const char *text,
 	unsigned int n_args, const char *arg_names[], const AZImplementation *arg_impls[], const AZValue *arg_vals[],
 	const unsigned int ret_type, const AZImplementation **ret_impl, AZValue *ret_val)
@@ -113,7 +113,7 @@ test_program(AZOContext *ctx, const char *text,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
 	AZOCompiler comp;
-	azo_compiler_setup(&comp, globals, src);
+	azo_compiler_setup(&comp, ctx, src);
 	comp.debug = 1;
 
 	AZOFrame *frame = azo_compiler_new_frame(&comp, NULL, 0, 1, ret_type);
@@ -465,11 +465,61 @@ test_calculate(void)
         TEST_ASSERT(test_program(globals, "return a & b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_TYPE, globals->intr->exc.type);
     }
-	/* Promotion: int8 = promoted int32 result is rejected */
+	/* Arithmetic assignment is allowed (converted at runtime) */
     {
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        TEST_ASSERT(test_program(globals, "int8 x = 42;x = x + 1;return x;\n", 0, arg_names, arg_impls, arg_vals, AZ_TYPE_INT8, &ret_impl, &ret_val) == 1);
+        TEST_ASSERT(test_program(globals, "int8 x = 42;x = x + 1;return x;\n", 0, arg_names, arg_impls, arg_vals, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(43, ret_val.int32_v);
+        TEST_ASSERT(test_program(globals, "uint32 a = 1; a = a + 1; return a;\n", 0, NULL, NULL, NULL, AZ_TYPE_UINT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(2, ret_val.uint32_v);
+    }
+	/* Magnitude-changing implicit assignment throws at runtime */
+    {
+        arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
+        vals[1].int32_v = 31;
+        arg_vals[1] = &vals[1];
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        /* uint8 x = a (31); x = x + 250 -> 281 does not fit uint8 */
+        TEST_ASSERT(test_program(globals, "uint8 x = a; x = x + 250; return x;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_UINT8, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_CHANGE_OF_MAGNITUDE, globals->intr->exc.type);
+    }
+	/* Explicit cast follows the computation mode */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        /* Default: narrowing cast throws */
+        TEST_ASSERT(test_program(globals, "return (uint8) 300;\n", 0, NULL, NULL, NULL, AZ_TYPE_UINT8, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_CHANGE_OF_MAGNITUDE, globals->intr->exc.type);
+        /* saturate: clamps */
+        TEST_ASSERT(test_program(globals, "return saturate((uint8) 300);\n", 0, NULL, NULL, NULL, AZ_TYPE_UINT8, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(255, ret_val.uint8_v);
+        /* wrap: truncates */
+        TEST_ASSERT(test_program(globals, "return wrap((uint8) 300);\n", 0, NULL, NULL, NULL, AZ_TYPE_UINT8, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(44, ret_val.uint8_v);
+    }
+	/* Exact cast qualifier throws on rounding */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        /* (int32) 1.5f rounds to 1 (masked by default) */
+        TEST_ASSERT(test_program(globals, "return (int32) 1.5f;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(1, ret_val.int32_v);
+        /* (int32 exact) 1.5f throws CHANGE_OF_PRECISION */
+        TEST_ASSERT(test_program(globals, "return (int32 exact) 1.5f;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_CHANGE_OF_PRECISION, globals->intr->exc.type);
+    }
+	/* Constant propagation stores the converted (mode-aware) value */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        /* int32 300 -> int8 clamps to 127 under saturate */
+        TEST_ASSERT(test_program(globals, "saturate { int8 b = 300; return b; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(127, ret_val.int8_v);
+        /* int32 300 -> int8 truncates to 44 under wrap */
+        TEST_ASSERT(test_program(globals, "wrap { int8 b = 300; return b; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(44, ret_val.int8_v);
     }
 	/* Mode block and mode expression fall back to generic processing */
     {

@@ -7,6 +7,7 @@ set(AZO_HEADERS
 	context.h
 	debug.h
 	debugger.h
+	defer.h
 	errors.h
 	exception.h
 	node.h
@@ -31,6 +32,7 @@ set(AZO_SOURCES
 	context.c
 	debug.c
 	debugger.c
+	defer.c
 	errors.c
 	exception.c
 	node.c

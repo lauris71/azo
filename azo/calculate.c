@@ -395,6 +395,56 @@ azo_calculate_negate (unsigned int mode, unsigned int type, const AZValue *val, 
 }
 
 unsigned int
+azo_calculate_convert (unsigned int mode, unsigned int to_type, unsigned int from_type, const AZValue *from_val, AZValue *to_val, unsigned int *flags)
+{
+	unsigned int result;
+	if (!AZ_TYPE_IS_ARITHMETIC (to_type) || !AZ_TYPE_IS_ARITHMETIC (from_type)) {
+		return AZO_CALCULATE_INVALID_TYPE;
+	}
+	result = az_convert_arithmetic_type (to_type, to_val, from_type, from_val);
+	if ((mode == AZO_CALCULATE_MODE_WRAP) && (result == AZ_CONVERSION_CLAMPED) && AZ_TYPE_IS_INTEGRAL (to_type) && AZ_TYPE_IS_INTEGRAL (from_type)) {
+		/* Narrowing integer conversion under wrap: truncate the bit pattern */
+		uint64_t u;
+		switch (from_type) {
+		case AZ_TYPE_INT8: u = (uint64_t) from_val->int8_v; break;
+		case AZ_TYPE_UINT8: u = from_val->uint8_v; break;
+		case AZ_TYPE_INT16: u = (uint64_t) from_val->int16_v; break;
+		case AZ_TYPE_UINT16: u = from_val->uint16_v; break;
+		case AZ_TYPE_INT32: u = (uint64_t) from_val->int32_v; break;
+		case AZ_TYPE_UINT32: u = from_val->uint32_v; break;
+		case AZ_TYPE_INT64: u = (uint64_t) from_val->int64_v; break;
+		case AZ_TYPE_UINT64: u = from_val->uint64_v; break;
+		default: return AZO_CALCULATE_INVALID_TYPE;
+		}
+		switch (to_type) {
+		case AZ_TYPE_INT8: to_val->int8_v = (int8_t) u; break;
+		case AZ_TYPE_UINT8: to_val->uint8_v = (uint8_t) u; break;
+		case AZ_TYPE_INT16: to_val->int16_v = (int16_t) u; break;
+		case AZ_TYPE_UINT16: to_val->uint16_v = (uint16_t) u; break;
+		case AZ_TYPE_INT32: to_val->int32_v = (int32_t) u; break;
+		case AZ_TYPE_UINT32: to_val->uint32_v = (uint32_t) u; break;
+		case AZ_TYPE_INT64: to_val->int64_v = (int64_t) u; break;
+		case AZ_TYPE_UINT64: to_val->uint64_v = u; break;
+		default: return AZO_CALCULATE_INVALID_TYPE;
+		}
+		result = AZ_CONVERSION_CLAMPED;
+	}
+	if (result == AZ_CONVERSION_CLAMPED) {
+		*flags |= AZO_CALCULATE_FLAG_MAGNITUDE;
+	} else if (result == AZ_CONVERSION_ROUNDED) {
+		*flags |= AZO_CALCULATE_FLAG_ROUNDED;
+	} else if (result == AZ_CONVERSION_FAILED) {
+		return AZO_CALCULATE_INVALID_TYPE;
+	}
+	/* Detect non-finite results (e.g. double -> float overflow) */
+	if ((to_type == AZ_TYPE_FLOAT) && !isfinite (to_val->float_v)) *flags |= AZO_CALCULATE_FLAG_NON_FINITE;
+	else if ((to_type == AZ_TYPE_DOUBLE) && !isfinite (to_val->double_v)) *flags |= AZO_CALCULATE_FLAG_NON_FINITE;
+	else if ((to_type == AZ_TYPE_COMPLEX_FLOAT) && (!isfinite (to_val->cfloat_v.r) || !isfinite (to_val->cfloat_v.i))) *flags |= AZO_CALCULATE_FLAG_NON_FINITE;
+	else if ((to_type == AZ_TYPE_COMPLEX_DOUBLE) && (!isfinite (to_val->cdouble_v.r) || !isfinite (to_val->cdouble_v.i))) *flags |= AZO_CALCULATE_FLAG_NON_FINITE;
+	return AZO_CALCULATE_OK;
+}
+
+unsigned int
 azo_calculate_binary (unsigned int mode, unsigned int lhs_type, const AZValue *lhs, unsigned int rhs_type, const AZValue *rhs, unsigned int operation, unsigned int *result_type, AZValue *result, unsigned int *result_flags)
 {
 	AZValue a, b;

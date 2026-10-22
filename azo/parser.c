@@ -401,7 +401,7 @@ parse_sentences (AZOParser *parser, AZOToken *token)
  *   4. if
  *   5. Block
  *   5.1.  { Sentences }
- *   5.2.  static { Sentences }
+ *   5.2.  static/defer/finite/wrap/saturate { Sentences }
  *   5.3.  Expression { Sentences }
  *   6. Line
  *   6.1.  Statement ;
@@ -457,6 +457,12 @@ parse_sentence (AZOParser *parser, AZOToken *token)
 			if (token->type != AZO_TOKEN_LEFT_BRACE) return AZO_PARSER_ERROR_SYNTAX;
 			return parse_block (parser, token, AZO_TERM_BLOCK_MODE, mode_flag);
 		}
+	}
+	/* Defer block */
+	if (azo_token_is_keyword (token, AZO_KEYWORD_DEFER, parser->src)) {
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		if (token->type != AZO_TOKEN_LEFT_BRACE) return AZO_PARSER_ERROR_SYNTAX;
+		return parse_block (parser, token, AZO_TERM_BLOCK_DEFER, 0);
 	}
 	/* First start with qualifiers because these may go to both */
 	int quals = 0;

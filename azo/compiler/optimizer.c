@@ -125,8 +125,28 @@ tag_assigns(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 	return vars;
 }
 
+/* Convert a constant node's value to the target type (mode-aware) and store the
+ * result in dst. The result is the value a variable would hold at runtime. */
+static void
+optimize_const_value (AZOOptimizerCtx *ctx, const AZONode *const_node, unsigned int to_type, AZPackedValue *dst)
+{
+	unsigned int from_type = AZ_IMPL_TYPE (const_node->value.impl);
+	dst->impl = NULL;
+	if (AZ_TYPE_IS_ARITHMETIC (to_type) && AZ_TYPE_IS_ARITHMETIC (from_type) && (to_type != from_type)) {
+		AZValue result;
+		unsigned int flags = 0;
+		unsigned int result_code = azo_calculate_convert (ctx->calc_mode, to_type, from_type, &const_node->value.v, &result, &flags);
+		if (result_code == AZO_CALCULATE_OK) {
+			az_packed_value_set_from_type_value (dst, to_type, &result);
+			return;
+		}
+		return;
+	}
+	az_packed_value_copy (dst, &const_node->value);
+}
+
 static AZOVariableList *
-optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
+optimize_const_assign(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, AZOVariableList *vars)
 {
 	switch(node->term.type) {
 		case AZO_TERM_KEYWORD:
@@ -137,7 +157,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				AZONode *body = step->next;
 
 				/* Process init with parent list */
-				vars = optimize_const_assign(opt, init, vars);
+				vars = optimize_const_assign(opt, ctx, init, vars);
 
 				/* Changed list of cond, step and body */
 				AZOVariableList *trashed = tag_assigns(opt, cond, NULL);
@@ -148,7 +168,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				vars = azo_var_list_remove_all(vars, trashed);
 
 				/* Process body for local const-ness */
-				vars = optimize_const_assign(opt, body, vars);
+				vars = optimize_const_assign(opt, ctx, body, vars);
 				/* fixme: In theory step can contain local const-ness but it is really a corner-case */
 
 				/* Remove again in case they were added */
@@ -166,7 +186,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				vars = azo_var_list_remove_all(vars, trashed);
 
 				/* Process body for local const-ness */
-				vars = optimize_const_assign(opt, body, vars);
+				vars = optimize_const_assign(opt, ctx, body, vars);
 				/* fixme: In theory step can contain local const-ness but it is really a corner-case */
 
 				/* Remove again in case they were added */
@@ -183,7 +203,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				vars = azo_var_list_remove_all(vars, trashed);
 
 				/* Process body for local const-ness */
-				vars = optimize_const_assign(opt, block, vars);
+				vars = optimize_const_assign(opt, ctx, block, vars);
 				/* fixme: In theory step can contain local const-ness but it is really a corner-case */
 
 				/* Remove again in case they were added */
@@ -195,18 +215,18 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				AZONode *if_false = if_true->next;
 				
 				/* Process init with parent list */
-				vars = optimize_const_assign(opt, cond, vars);
+				vars = optimize_const_assign(opt, ctx, cond, vars);
 
 				AZOVariableList *trashed = tag_assigns(opt, if_true, NULL);
 				if (if_false) trashed = tag_assigns(opt, if_false, trashed);
 
 				/* Process both bodies with copies of parent list */
 				AZOVariableList *copy = azo_var_list_duplicate(vars);
-				copy = optimize_const_assign(opt, if_true, copy);
+				copy = optimize_const_assign(opt, ctx, if_true, copy);
 				azo_var_list_free(copy);
 				if (if_false) {
 					copy = azo_var_list_duplicate(vars);
-					copy = optimize_const_assign(opt, if_false, copy);
+					copy = optimize_const_assign(opt, ctx, if_false, copy);
 					azo_var_list_free(copy);
 				}
 
@@ -215,7 +235,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				azo_var_list_free(trashed);
 			} else {
 				for (AZONode *child = node->children; child; child = child->next) {
-					vars = optimize_const_assign(opt, child, vars);
+					vars = optimize_const_assign(opt, ctx, child, vars);
 				}
 			}
 			break;
@@ -228,7 +248,10 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			/* Only stack (local) variables are const-substitutable */
 			if (AZO_NODE_IS(name, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
 				if (init && init->term.type == AZO_TERM_CONSTANT) {
-					vars = azo_var_list_set(vars, name->value.v.string, name->var_idx, init);
+					AZPackedValue const_value;
+					optimize_const_value(ctx, init, name->type, &const_value);
+					vars = azo_var_list_set(vars, name->value.v.string, name->var_idx, &const_value);
+					az_packed_value_clear(&const_value);
 				} else {
 					vars = azo_var_list_remove(vars, name->value.v.string);
 				}
@@ -242,9 +265,9 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			ret = node->children;
 			args = ret->next;
 			body = args->next;
-			vars = optimize_const_assign(opt, args, vars);
+			vars = optimize_const_assign(opt, ctx, args, vars);
 			AZOVariableList *dupl = azo_var_list_duplicate(vars);
-			dupl = optimize_const_assign(opt, body, dupl);
+			dupl = optimize_const_assign(opt, ctx, body, dupl);
 			azo_var_list_free(dupl);
 			break;
 		}
@@ -254,7 +277,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			if (AZO_NODE_IS(node->children, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
 				vars = azo_var_list_remove(vars, node->children->value.v.string);
 			} else {
-				vars = optimize_const_assign(opt, node->children, vars);
+				vars = optimize_const_assign(opt, ctx, node->children, vars);
 			}
 			break;
 		case AZO_TERM_PREFIX:
@@ -264,7 +287,7 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 				if (AZO_NODE_IS(node->children, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
 					vars = azo_var_list_remove(vars, node->children->value.v.string);
 				} else {
-					vars = optimize_const_assign(opt, node->children, vars);
+					vars = optimize_const_assign(opt, ctx, node->children, vars);
 				}
 			}
 			break;
@@ -275,9 +298,9 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			for (AZONode *child = node->children; child; child = child->next) {
 				if (child->next) {
 					if (AZO_NODE_IS(child, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) continue;
-					vars = optimize_const_assign(opt, child, vars);
+					vars = optimize_const_assign(opt, ctx, child, vars);
 				} else {
-					vars = optimize_const_assign(opt, child, vars);
+					vars = optimize_const_assign(opt, ctx, child, vars);
 					value = child;
 				}
 			}
@@ -285,7 +308,10 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			for (AZONode *child = node->children; child->next; child = child->next) {
 				if (value->term.type == AZO_TERM_CONSTANT) {
 					if (!AZO_NODE_IS(child, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) continue;
-					vars = azo_var_list_set(vars, child->value.v.string, child->var_idx, value);
+					AZPackedValue const_value;
+					optimize_const_value(ctx, value, child->type, &const_value);
+					vars = azo_var_list_set(vars, child->value.v.string, child->var_idx, &const_value);
+					az_packed_value_clear(&const_value);
 				} else {
 					if (!AZO_NODE_IS(child, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) continue;
 					vars = azo_var_list_remove(vars, child->value.v.string);
@@ -298,18 +324,46 @@ optimize_const_assign(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 			/* If const, replace */
 			if (AZO_NODE_IS(node, AZO_TERM_VARIABLE, AZO_TERM_VARIABLE_LOCAL)) {
 				AZOVariableList *v = azo_var_list_find(vars, node->value.v.string);
-				if (v) {
+				if (v && v->var.const_value.impl) {
 					DBG_PRINTF(stderr, "optimize_const_assign: %s is constant\n", node->value.v.string->str);
 					node->term.type = AZO_TERM_CONSTANT;
-					node->type = AZ_IMPL_TYPE(v->var.const_node->value.impl);
-					az_packed_value_copy(&node->value, &v->var.const_node->value);
+					node->type = AZ_IMPL_TYPE(v->var.const_value.impl);
+					az_packed_value_copy(&node->value, &v->var.const_value);
 					opt->n_const_subst += 1;
 				}
 			}
 			break;
+		case AZO_TERM_BLOCK:
+			if (node->term.subtype == AZO_TERM_BLOCK_MODE) {
+				/* Set context so const calculations are done properly */
+				AZOOptimizerCtx lctx = *ctx;
+				lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
+				lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
+				for (AZONode *child = node->children; child; child = child->next) {
+					vars = optimize_const_assign(opt, &lctx, child, vars);
+				}
+			} else if (node->term.subtype == AZO_TERM_BLOCK_DEFER) {
+				/* Skip - we cannot predict the order or execution */
+				/* We only know that all non-deferred code does not depend on it */
+				break;
+			} else {
+				for (AZONode *child = node->children; child; child = child->next) {
+					vars = optimize_const_assign(opt, ctx, child, vars);
+				}
+			}
+			break;
+		case AZO_TERM_MODE_EXPRESSION: {
+			AZOOptimizerCtx lctx = *ctx;
+			lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
+			lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
+			for (AZONode *child = node->children; child; child = child->next) {
+				vars = optimize_const_assign(opt, &lctx, child, vars);
+			}
+			break;
+		}
 		default:
 			for (AZONode *child = node->children; child; child = child->next) {
-				vars = optimize_const_assign(opt, child, vars);
+				vars = optimize_const_assign(opt, ctx, child, vars);
 			}
 			break;
 	}
@@ -873,7 +927,7 @@ azo_compiler_optimize_program(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *
 		if (result) return result;
 		// fprintf(stderr, "----------before--------------\n");
 		//azo_node_print_info(root, stderr, opt->comp->src, 0);
-		AZOVariableList *vars = optimize_const_assign(opt, root, NULL);
+		AZOVariableList *vars = optimize_const_assign(opt, ctx, root, NULL);
 		//fprintf(stderr, "----------after---------------\n");
 		//azo_node_print_info(root, stderr, opt->comp->src, 0);
 		azo_var_list_free(vars);

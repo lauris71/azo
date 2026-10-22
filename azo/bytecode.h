@@ -43,24 +43,12 @@ enum {
 #endif
 
 	/* Stack management */
-
-	/* PUSH_FRAME POS(U32) */
-	/* Push [stack_end - pos] as new frame pointer */
-	/**
-	 * @brief Set the frame pointer to specified distance from the top of stack and push the old value
-	 * 
-	 * PUSH_FRAME U32:COUNT
-	 * [val1, val2, ...]
-	 * [val1; val2, ...]
-	 * 
-	 */
-	AZO_TC_PUSH_FRAME,
-	/* Restores previous frame pointer */
-	AZO_TC_POP_FRAME,
-
 	/* POP N(U32) */
 	/* Pop and discard last N values from stack */
 	AZO_TC_POP,
+	/* DISCARD N(U32) */
+	/* Pop and discard N elements downwards, calling defer handles */
+	AZO_TC_REWIND,
 	/* REMOVE FIRST(U32) N(U32) */
 	/* Remove and discard N elements downwards, starting from FIRST from the top of stack */
 	AZO_TC_REMOVE,
@@ -125,13 +113,6 @@ enum {
 	 * [..., val, flags] -> [..., val]
 	 */
 	AZO_TC_STORE_FLAGS,
-	/**
-	 * @brief Modifies the interpreter flags: flags = (flags & AND) | OR
-	 * 
-	 * SET_FLAGS AND(U32) OR(U32)
-	 * Applies a computation-mode delta to the current flags.
-	 */
-	AZO_TC_SET_FLAGS,
 
 	/* Type tests */
 	/* TEST POS(U8) */
@@ -188,6 +169,14 @@ enum {
 	/* CONVERT TYPE(U32) */
 	/* Convert the topmost element in stack to specified type */
 	AZO_TC_CONVERT_TYPE,
+	/* CONVERT TYPE ASSIGN(U32) */
+	/* Convert the topmost element in stack to specified type, throwing
+	 * CHANGE_OF_MAGNITUDE if the conversion clamps (implicit assignment) */
+	AZO_TC_CONVERT_TYPE_ASSIGN,
+	/* CONVERT TYPE EXACT(U32) */
+	/* Convert the topmost element in stack to specified type, throwing
+	 * CHANGE_OF_PRECISION if the conversion rounds (exact cast qualifier) */
+	AZO_TC_CONVERT_TYPE_EXACT,
 
 	/* Comparisons */
 	/* EQUAL TYPE(U8) */
@@ -392,7 +381,6 @@ unsigned int azo_bc_next_instruction(const uint8_t *bc, unsigned int pos, unsign
 
 /* Debug */
 typedef struct _AZOProgram AZOProgram;
-void azo_print_bytecode (AZOProgram *program);
 
 #ifdef __cplusplus
 }

@@ -28,13 +28,14 @@ Sentences:
 
 Sentence:
   Block
-  Line
   Static_block
+  Mode_block
+  Defer_block
+  Line
   For_statement
   While_statement
   If_statement
   Do_statement
-  Mode_block
   
 Block:
   { Sentences }
@@ -63,6 +64,17 @@ Mode_block:
   finite Block
   wrap Block
   saturate Block
+
+# Defer block contents will be executed when the current scope is exited
+#
+# More precisely, they are executed during stack unwinding in LIFO order,
+# All local variable declared after the defer block will be cleared first, the ones
+# declared before the defer block are accessible during the execution.
+# Throwing exceptions is restricted during the execution of defer blocks - exceptions
+# may or may not be recorded but the execution is never interrupted.
+# Flow-modifying statements (return/break/continue) at surrounding level are not allowed inside defer block
+Defer_block:
+  defer Block
 
 Line:
   Statement ;
@@ -174,7 +186,6 @@ Statement_and_expression:
 Cast_expression:
   (Primitive_type) Expression
   (Primitive_type exact) Expression
-  (Primitive_type rounded) Expression
 
 # Cast qualifiers (keywords):
 #   exact - the cast throws unless the result is exact (no rounding, no clamping)

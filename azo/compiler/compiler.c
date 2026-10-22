@@ -29,6 +29,7 @@ static const int debug = 0;
 #include <azo/bytecode.h>
 #include <azo/keyword.h>
 #include <azo/errors.h>
+#include <azo/defer.h>
 
 #include <azo/compiler/arithmetic.h>
 #include <azo/compiler/helpers.h>
@@ -381,14 +382,8 @@ compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, c
 		return 1;
 	}
 	/* [func, this, arg1...] */
-	azo_code_write_PUSH_FRAME (code, n_args, func);
-	/* [func : this, arg1...] */
 	azo_code_write_ic_u8 (code, AZO_TC_INVOKE, n_args, func);
-	/* [func : this, arg1..., result] */
-	azo_code_write_ic (code, AZO_TC_POP_FRAME, func);
-	/* [func, this, arg1..., result] */
-	azo_code_write_REMOVE (code, 1, n_args + 1, func);
-	/* [result] */
+	/* [retval] */
 	return 0;
 }
 
@@ -396,14 +391,10 @@ static void
 compile_call_inst_func_args (AZOCompiler *comp, AZOCompilerContext *ctx, unsigned int n_args, const AZONode *expr)
 {
 	AZOCode *code = &ctx->frame->code;
-	/* [inst, funcobj, arg1...] */
-	azo_code_write_ic_u32(code, AZO_TC_PUSH_FRAME, n_args, expr);
-	/* [inst, funcobj : arg1...] */
+	/* [inst, func, arg1...] */
 	azo_code_write_ic_u8 (code, AZO_TC_INVOKE, n_args, expr);
-	/* [inst, funcobj : arg1..., retval] */
-	azo_code_write_ic (code, AZO_TC_POP_FRAME, expr);
-	/* [inst, funcobj, arg1..., retval] */
-	azo_code_write_REMOVE (code, 1, n_args + 2, expr);
+	/* [inst, retval] */
+	azo_code_write_REMOVE(code, 1, 1, NULL);
 	/* [retval] */
 }
 
@@ -839,7 +830,11 @@ compile_cast (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, A
 		return 0;
 	}
 	if (!azo_compiler_compile_expression (comp, ctx, val, src)) return 0;
-	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_CONVERT_TYPE, type->type, node);
+	if (node->term.flags & AZO_TERM_FLAG_EXACT) {
+		azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_CONVERT_TYPE_EXACT, type->type, node);
+	} else {
+		azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_CONVERT_TYPE, type->type, node);
+	}
 	return 1;
 }
 
@@ -851,8 +846,8 @@ compile_mode_flags_enter (AZOCompiler *comp, AZOCompilerContext *ctx, const AZON
 {
 	AZOCode *code = &ctx->frame->code;
 	unsigned int mode_flags = node->term.flags;
-	unsigned int or_mask = 0;
-	unsigned int and_mask = ~0u;
+	uint32_t or_mask = 0;
+	uint32_t and_mask = ~0u;
 
 	if (mode_flags & AZO_TERM_FLAG_FINITE) {
 		and_mask &= ~AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_NOT_FINITE);
@@ -866,7 +861,12 @@ compile_mode_flags_enter (AZOCompiler *comp, AZOCompilerContext *ctx, const AZON
 	}
 
 	azo_code_write_ic (code, AZO_TC_PUSH_FLAGS, node);
-	azo_code_write_ic_u32_u32 (code, AZO_TC_SET_FLAGS, and_mask, or_mask, node);
+	azo_code_write_DUPLICATE(code, 0, node);
+	azo_code_write_PUSH_IMMEDIATE(code, AZ_TYPE_UINT32, (const AZValue *) &and_mask, node);
+	azo_code_write_ic (code, AZO_TC_BITWISE_AND, node);
+	azo_code_write_PUSH_IMMEDIATE(code, AZ_TYPE_UINT32, (const AZValue *) &or_mask, node);
+	azo_code_write_ic (code, AZO_TC_BITWISE_OR, node);
+	azo_code_write_ic (code, AZO_TC_STORE_FLAGS, node);
 }
 
 /* Emit code to restore the flags saved by compile_mode_flags_enter. */
@@ -1082,6 +1082,11 @@ compile_assign (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *left,
 		if (Ta && (azo_type_assignment_classify_source (right, Ta) == AZO_ASSIGN_CHECK)) {
 			azo_code_write_ic_u32_u32 (&ctx->frame->code, AZO_TC_EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE, 0, Ta, left);
 		}
+		/* Arithmetic assignment converts the value to the target type (a = (TYPE_OF(a)) b);
+		 * implicit conversion throws on magnitude change (rounding is allowed) */
+		if (Ta && AZ_TYPE_IS_ARITHMETIC (Ta) && AZ_TYPE_IS_ARITHMETIC (right->type) && (right->type != Ta)) {
+			azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_CONVERT_TYPE_ASSIGN, Ta, left);
+		}
 	}
 	/* Actual assignment */
 	if (!compile_assign_to_lvalue (comp, ctx, &lval, left)) return 0;
@@ -1229,31 +1234,49 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 {
 	AZOCode *code = &ctx->frame->code;
 	AZONode *child = node->children;
-	unsigned int mode = (node->term.subtype == AZO_TERM_BLOCK_MODE);
-	unsigned int result;
 
-	if (mode) {
+	if (node->term.subtype == AZO_TERM_BLOCK_MODE) {
 		compile_mode_flags_enter (comp, ctx, node);
 		ctx->n_stack += 1;
-	}
-
-	AZOCompilerContext lctx = *ctx;
-	if (mode) {
+		AZOCompilerContext lctx = *ctx;
 		lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
 		lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
-	}
-	result = compile_sentences(comp, &lctx, child, src);
-
-	/* Pop everything the block added to the data stack */
-	if (lctx.n_stack > ctx->n_stack) {
-		azo_code_write_POP (code, lctx.n_stack - ctx->n_stack, node);
-	}
-
-	if (mode) {
+		unsigned int result = compile_sentences(comp, &lctx, child, src);
+		/* Pop everything the block added to the data stack */
+		if (lctx.n_stack > ctx->n_stack) {
+			azo_code_write_REWIND(code, lctx.n_stack - ctx->n_stack, node);
+		}
 		compile_mode_flags_leave (comp, ctx, node);
 		ctx->n_stack -= 1;
+		return result;
+	} else if (node->term.subtype == AZO_TERM_BLOCK_DEFER) {
+		unsigned int to_end = azo_code_write_JMP32(code, JMP_32, 0, NULL);
+		unsigned int blk_start = code->bc_len;
+		AZOCompilerContext lctx = *ctx;
+		unsigned int result = compile_sentences(comp, &lctx, child, src);
+		/* No need to end with return because we interpret until len */
+		/* Pop everything the block added to the data stack */
+		if (lctx.n_stack > ctx->n_stack) {
+			azo_code_write_REWIND(code, lctx.n_stack - ctx->n_stack, node);
+		}
+		unsigned int len = code->bc_len - blk_start;
+		azo_code_update_JMP32 (code, to_end);
+		AZODeferHandle defer = {
+			.ip = blk_start,
+			.len = len
+		};
+		compile_PUSH_VALUE_const(comp, ctx, AZO_TYPE_DEFER_HANDLE, (const AZValue *) &defer, node);
+		ctx->n_stack += 1;
+		return result;
+	} else {
+		AZOCompilerContext lctx = *ctx;
+		unsigned int result = compile_sentences(comp, &lctx, child, src);
+		/* Pop everything the block added to the data stack */
+		if (lctx.n_stack > ctx->n_stack) {
+			azo_code_write_REWIND(code, lctx.n_stack - ctx->n_stack, node);
+		}
+		return result;
 	}
-	return result;
 }
 
 static int

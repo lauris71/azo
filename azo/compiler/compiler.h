@@ -45,6 +45,10 @@ azo_type_assignment_classify (unsigned int Ta, unsigned int Ib)
 	if (!Ta) return AZO_ASSIGN_ACCEPT;
 	/* Ib assignable to Ta (exact, subtype, interface, or null to block/any) */
 	if (az_type_is_assignable_to (Ib, Ta)) return AZO_ASSIGN_ACCEPT;
+	/* Arithmetic types are mutually convertible: the assignment is a conversion
+	 * (a = (TYPE_OF(a)) b), so rounding/clamping conditions are checked (and
+	 * masked per computation mode) at runtime, not rejected here */
+	if (AZ_TYPE_IS_ARITHMETIC (Ta) && AZ_TYPE_IS_ARITHMETIC (Ib)) return AZO_ASSIGN_ACCEPT;
 	/* Leaf type - the actual type is exactly Ib, which is not assignable */
 	if (AZ_TYPE_IS_FINAL (Ib)) return AZO_ASSIGN_REJECT;
 	/* A subtype of Ib may be assignable to Ta */
@@ -68,6 +72,45 @@ azo_type_assignment_classify_source (const AZONode *source, unsigned int Ta)
 		return AZO_ASSIGN_CHECK;
 	}
 	return azo_type_assignment_classify (Ta, Ib);
+}
+
+/* Bit width of an integer type, 0 for non-integers */
+static inline unsigned int
+azo_type_int_width (unsigned int type)
+{
+	switch (type) {
+	case AZ_TYPE_INT8: case AZ_TYPE_UINT8: return 8;
+	case AZ_TYPE_INT16: case AZ_TYPE_UINT16: return 16;
+	case AZ_TYPE_INT32: case AZ_TYPE_UINT32: return 32;
+	case AZ_TYPE_INT64: case AZ_TYPE_UINT64: return 64;
+	default: return 0;
+	}
+}
+
+/* Whether every value of the source type Ib is representable in the target type
+ * Ta without magnitude loss (clamping). Precision loss (rounding) is allowed. */
+static inline unsigned int
+azo_type_is_magnitude_safe (unsigned int Ta, unsigned int Ib)
+{
+	if (!AZ_TYPE_IS_ARITHMETIC (Ta) || !AZ_TYPE_IS_ARITHMETIC (Ib)) return 0;
+	if (Ta == Ib) return 1;
+	if (AZ_TYPE_IS_INTEGRAL (Ta) && AZ_TYPE_IS_INTEGRAL (Ib)) {
+		unsigned int tw = azo_type_int_width (Ta);
+		unsigned int iw = azo_type_int_width (Ib);
+		if (!AZ_TYPE_IS_SIGNED (Ib)) {
+			/* unsigned source: unsigned target at least as wide, or signed target strictly wider */
+			return AZ_TYPE_IS_SIGNED (Ta) ? (tw > iw) : (tw >= iw);
+		}
+		/* signed source: needs a signed target at least as wide */
+		return AZ_TYPE_IS_SIGNED (Ta) && (tw >= iw);
+	}
+	/* Integer source: any floating/complex target preserves magnitude (rounds at most) */
+	if (AZ_TYPE_IS_INTEGRAL (Ib)) return 1;
+	/* Floating-point widening */
+	if ((Ib == AZ_TYPE_FLOAT) && ((Ta == AZ_TYPE_DOUBLE) || (Ta == AZ_TYPE_COMPLEX_FLOAT) || (Ta == AZ_TYPE_COMPLEX_DOUBLE))) return 1;
+	if ((Ib == AZ_TYPE_DOUBLE) && (Ta == AZ_TYPE_COMPLEX_DOUBLE)) return 1;
+	if ((Ib == AZ_TYPE_COMPLEX_FLOAT) && (Ta == AZ_TYPE_COMPLEX_DOUBLE)) return 1;
+	return 0;
 }
 
 enum {

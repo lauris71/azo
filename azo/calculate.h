@@ -115,6 +115,26 @@ unsigned int azo_calculate_typed (unsigned int mode, unsigned int type, const AZ
 unsigned int azo_calculate_negate (unsigned int mode, unsigned int type, const AZValue *val, AZValue *result, unsigned int *flags);
 
 /**
+ * @brief Convert a value to a target arithmetic type following the mode
+ * 
+ * Converts @c from_val (of type @c from_type) to @c to_type. Integer narrowing
+ * clamps under AZO_CALCULATE_MODE_SATURATE and truncates the bit pattern
+ * (wraps) under AZO_CALCULATE_MODE_WRAP. Floating-point conversion always
+ * rounds/clamps per IEEE.
+ * 
+ * @param mode the calculation mode (AZO_CALCULATE_MODE_*)
+ * @param to_type the target type
+ * @param from_type the source type
+ * @param from_val the source value
+ * @param to_val the location to store the converted value
+ * @param flags the location to store result flags (AZO_CALCULATE_FLAG_*);
+ *   only MAGNITUDE, ROUNDED and NON_FINITE are set, existing flags are preserved
+ * 
+ * @return the result code (AZO_CALCULATE_*)
+ */
+unsigned int azo_calculate_convert (unsigned int mode, unsigned int to_type, unsigned int from_type, const AZValue *from_val, AZValue *to_val, unsigned int *flags);
+
+/**
  * @brief Calculate the value of a binary logical operation
  * 
  * The result type is always AZ_TYPE_BOOLEAN.

@@ -44,8 +44,8 @@ struct _AZOVariable {
 	unsigned int type;
 	/* Link to parent for data variables (for resolver) */
 	AZOVariable *parent;
-    /* Link to const node if determined to be constand (for optimizer) */
-	const AZONode *const_node;
+    /* Constant value if determined to be constant (for optimizer); impl == NULL means not const */
+    AZPackedValue const_value;
 };
 
 void azo_variable_init(AZOVariable *var, AZString *name, unsigned int pos);
@@ -95,10 +95,10 @@ AZOVariableList *azo_var_list_prepend(AZOVariableList *list, AZString *name, uns
  * @param list The list to modify
  * @param name The name of the variable
  * @param pos The position of the variable
- * @param const_node The const node if determined to be const
+ * @param const_value The constant value if determined to be constant, or NULL
  * @return Updated list with the element added or updated
  */
-AZOVariableList *azo_var_list_set(AZOVariableList *list, AZString *name, unsigned int pos, const AZONode *const_node);
+AZOVariableList *azo_var_list_set(AZOVariableList *list, AZString *name, unsigned int pos, const AZPackedValue *const_value);
 
 /**
  * @brief Remove one element from a list

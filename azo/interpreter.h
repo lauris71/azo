@@ -34,9 +34,10 @@ extern "C" {
 struct _AZOInterpreter {
 	AZOContext *ctx;
 
-	/* Current stack frame start */
+	/* Separate stack of frame pointers */
 	unsigned int n_frames;
 	unsigned int size_frames;
+	/* Points to the first element of frame (may be end of stack) */
 	unsigned int *frames;
 	AZOStack stack;
 	uint32_t flags;
@@ -73,15 +74,23 @@ void azo_intepreter_push_values (AZOInterpreter *intr, const AZImplementation **
  * @return the previous frame pointer
  */
 unsigned int azo_interpreter_push_frame (AZOInterpreter *intr, unsigned int n_elements);
-void azo_interpreter_pop_frame (AZOInterpreter *intr);
-void azo_interpreter_clear_frame (AZOInterpreter *intr);
-void azo_interpreter_restore_frame (AZOInterpreter *intr, unsigned int frame);
+/**
+ * @brief Pops the current frame and rewinds all it's content
+ * 
+ * Rewinds all stack values, starting from the top, until the current frame start position.
+ * Then decrements the frame counter.
+ * 
+ * @param intr the interpreter
+ * @param ictx the interpreter context
+ * @return the previous (new current) frame pointer
+ */
+unsigned int azo_interpreter_pop_frame (AZOInterpreter *intr, AZOInterpreterCtx *ictx);
 
 void azo_interpreter_exception(AZOInterpreter *intr, const uint8_t *ip, unsigned int type);
 
 const uint8_t *azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ipc);
 
-void azo_interpreter_run(AZOInterpreter *intr, AZOInterpreterCtx *ictx);
+void azo_interpreter_run_frame(AZOInterpreter *intr, AZOInterpreterCtx *ictx);
 
 void azo_intepreter_print_stack (AZOInterpreter *intr, FILE *ofs);
 

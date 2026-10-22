@@ -4,6 +4,7 @@
 
 #include <az/az.h>
 #include <az/classes/value-array.h>
+#include <az/io/buffer-output-stream.h>
 #include <azo/context.h>
 #include <azo/source.h>
 #include <azo/program.h>
@@ -34,6 +35,8 @@ main(int argc, const char *argv[])
             RUN_TEST(test_resolver);
         } else if (!strcmp(argv[i], "compile")) {
             RUN_TEST(test_compile);
+        } else if (!strcmp(argv[i], "language")) {
+            RUN_TEST(test_language);
         } else if (!strcmp(argv[i], "assign")) {
             RUN_TEST(test_assign);
         } else if (!strcmp(argv[i], "comparison")) {
@@ -56,7 +59,7 @@ main(int argc, const char *argv[])
 static AZODataBlock static_data = {0};
 
 static int
-test_program(AZOContext *ctx, const char *text, const unsigned int ret_type, const AZImplementation **ret_impl, AZValue *ret_val)
+test_program_noargs(AZOContext *ctx, const char *text, const unsigned int ret_type, const AZImplementation **ret_impl, AZValue *ret_val)
 {
     az_init();
     AZOContext *globals = azo_context_new();
@@ -141,9 +144,69 @@ test_compile(void)
     azo_context_define_basic_types(ctx);
     const AZImplementation *ret_impl;
     AZValue ret_val;
-    TEST_ASSERT(test_program(ctx, binary_arithmetic_i32_src, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT(test_program_noargs(ctx, binary_arithmetic_i32_src, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
     TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
     TEST_ASSERT_EQUAL_INT(3, ret_val.int32_v);
+    azo_context_delete(ctx);
+}
+
+/* Various language features */
+void
+test_language(void)
+{
+    az_init();
+    AZOContext *ctx = azo_context_new();
+    azo_context_define_basic_types(ctx);
+    AZBufferOutputStream *bostream = (AZBufferOutputStream *) az_instance_new(AZ_TYPE_BUFFER_OUTPUT_STREAM);
+
+    const AZImplementation *arg_impls[16];
+	const AZValue *arg_vals[16];
+    AZValue vals[16];
+    arg_impls[0] = AZ_IMPL_FROM_TYPE(AZ_TYPE_BUFFER_OUTPUT_STREAM);
+    az_value_set_from_inst(AZ_IMPL_FROM_TYPE(AZ_TYPE_BUFFER_OUTPUT_STREAM), &vals[0], bostream);
+    arg_vals[0] = &vals[0];
+	const char *arg_names[] = {"ofs"};
+
+	/* Deferred block is executed at the end of the scope */
+    {
+        const char *src =
+        "ofs.print(\"S1 \");\n"
+        "defer { ofs.print(\"S2 \"); };\n"
+        "ofs.print(\"S3 \");\n"
+        "return 42;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+		char *str = strndup((const char *) bostream->buffer, bostream->pos);
+		fprintf(stderr, "Output: %s\n", str);
+		TEST_ASSERT_EQUAL_STRING("S1 S3 S2 ", str);
+		free(str);
+    }
+	/* Nested deferred blocks */
+    {
+        const char *src =
+        "ofs.print(\"S1 \");\n"
+        "defer {\n"
+        "  ofs.print(\"S2 \");\n"
+        "  defer { ofs.print(\"S3 \"); };\n"
+        "  ofs.print(\"S4 \");\n"
+        "}\n"
+        "ofs.print(\"S5 \");\n"
+        "return 42;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+		char *str = strndup((const char *) bostream->buffer, bostream->pos);
+		fprintf(stderr, "Output: %s\n", str);
+		TEST_ASSERT_EQUAL_STRING("S1 S5 S2 S4 S3 ", str);
+		free(str);
+    }
     azo_context_delete(ctx);
 }
 
@@ -161,7 +224,7 @@ test_assign(void)
     azo_context_define_basic_types(ctx);
     const AZImplementation *ret_impl;
     AZValue ret_val;
-    TEST_ASSERT(test_program(ctx, assign_src, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT(test_program_noargs(ctx, assign_src, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
     TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
     TEST_ASSERT_EQUAL_INT(2, ret_val.int32_v);
     azo_context_delete(ctx);
@@ -176,27 +239,27 @@ test_cycles(void)
     const AZImplementation *ret_impl;
     AZValue ret_val;
     /* Empty for */
-    TEST_ASSERT(test_program(ctx, "int32 i;for (i = 0; i < 10; i++); return i;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT(test_program_noargs(ctx, "int32 i;for (i = 0; i < 10; i++); return i;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
     TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
     TEST_ASSERT_EQUAL_INT(10, ret_val.int32_v);
     /* For with double update */
-    TEST_ASSERT(test_program(ctx, "int32 i, j = 0;for (i = 0; i < 10; i++) {i += 1;j += 1;} return j;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT(test_program_noargs(ctx, "int32 i, j = 0;for (i = 0; i < 10; i++) {i += 1;j += 1;} return j;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
     TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
     TEST_ASSERT_EQUAL_INT(5, ret_val.int32_v);
     /* Empty init and step */
-    TEST_ASSERT(test_program(ctx, "int32 i = 0;for (; i < 10;) i += 1; return i;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT(test_program_noargs(ctx, "int32 i = 0;for (; i < 10;) i += 1; return i;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
     TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
     TEST_ASSERT_EQUAL_INT(10, ret_val.int32_v);
     /* Variable resolution inside */
-    TEST_ASSERT(test_program(ctx, "int32 r; for (int32 i = 0, k = 10; i < k; i += 2, k += 1) r = i; return r;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT(test_program_noargs(ctx, "int32 r; for (int32 i = 0, k = 10; i < k; i += 2, k += 1) r = i; return r;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
     TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
     TEST_ASSERT_EQUAL_INT(18, ret_val.int32_v);
     /* Simple while */
-    TEST_ASSERT(test_program(ctx, "int32 i = 0; while (i < 20) {i += 1;}\nreturn i;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT(test_program_noargs(ctx, "int32 i = 0; while (i < 20) {i += 1;}\nreturn i;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
     TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
     TEST_ASSERT_EQUAL_INT(20, ret_val.int32_v);
     /* Simple do */
-    TEST_ASSERT(test_program(ctx, "int32 i = 1; do {i *= 7;} while (i < 1000000);\nreturn i;\n", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT(test_program_noargs(ctx, "int32 i = 1; do {i *= 7;} while (i < 1000000);\nreturn i;\n", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
     TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
     TEST_ASSERT_EQUAL_INT(5764801, ret_val.int32_v);
     azo_context_delete(ctx);

@@ -335,15 +335,19 @@ clamping/overflow follow the computation mode.
 
 ## Assignment (=)
 
-`a = b` behaves as `a = (TYPE_OF(a)) b` — rounding is allowed, and
-clamping/overflow follow the computation mode.
+`a = b` behaves as `a = (TYPE_OF(a)) b` — rounding (and non-finite results) are
+allowed, but a magnitude change (clamping) always throws, even under `wrap` or
+`saturate`. The computation modes relax the implicit *computation* rules, not the
+implicit *assignment* rules. To clamp or wrap on assignment, use an explicit
+cast: `a = (TYPE_OF(a)) b`.
 
-A compile-time warning is emitted if the type may not be exactly representable.
+A compile-time warning is emitted unless the conversion is provably
+magnitude-preserving.
 
-**NOTE:** narrowing that does not fit throws by default. `uint8 x = 300` is an
-error, not `255` (clamp) or `44` (C/Java truncate). For the bit-pattern result
-use `wrap((uint8) 300)` (or `300 & 0xff`); for saturation use
-`saturate((uint8) 300)`.
+**NOTE:** narrowing that does not fit throws. `uint8 x = 300` is an error, not
+`255` (clamp) or `44` (C/Java truncate). For the bit-pattern result use
+`uint8 x = (uint8) 300` (or `300 & 0xff`); for saturation use
+`uint8 x = saturate((uint8) 300)`.
 
 ## Casting
 

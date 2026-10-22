@@ -219,7 +219,8 @@ enum {
 	AZO_TERM_BLOCK_PLAIN,
 	AZO_TERM_BLOCK_STATIC,
 	/* Computation-mode block; the mode is carried in term.flags (AZO_TERM_FLAG_*) */
-	AZO_TERM_BLOCK_MODE
+	AZO_TERM_BLOCK_MODE,
+	AZO_TERM_BLOCK_DEFER
 };
 
 /**
