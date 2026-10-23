@@ -1068,6 +1068,19 @@ azo_compiler_compile_expression (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	return 1;
 }
 
+void
+compile_assign_check(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *rhs, unsigned int lhs_type)
+{
+	if (lhs_type && (azo_type_assignment_classify_source (rhs, lhs_type) == AZO_ASSIGN_CHECK)) {
+		azo_code_write_ic_u32_u32 (&ctx->frame->code, AZO_TC_EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE, 0, lhs_type, rhs);
+	}
+	/* Arithmetic assignment converts the value to the target type (a = (TYPE_OF(a)) b);
+	 * implicit conversion throws on magnitude change (rounding is allowed) */
+	if (lhs_type && AZ_TYPE_IS_ARITHMETIC (lhs_type) && AZ_TYPE_IS_ARITHMETIC (rhs->type) && (rhs->type != lhs_type)) {
+		azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_CONVERT_TYPE_ASSIGN, lhs_type, rhs);
+	}
+}
+
 static unsigned int
 compile_assign (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *left, const AZONode *right, AZOSource *src)
 {
@@ -1078,15 +1091,7 @@ compile_assign (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *left,
 	if (!azo_compiler_compile_expression (comp, ctx, right, src)) return 0;
 	/* Runtime type check for statically-unprovable variable assignments */
 	if (left->term.type == AZO_TERM_VARIABLE) {
-		unsigned int Ta = left->type;
-		if (Ta && (azo_type_assignment_classify_source (right, Ta) == AZO_ASSIGN_CHECK)) {
-			azo_code_write_ic_u32_u32 (&ctx->frame->code, AZO_TC_EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE, 0, Ta, left);
-		}
-		/* Arithmetic assignment converts the value to the target type (a = (TYPE_OF(a)) b);
-		 * implicit conversion throws on magnitude change (rounding is allowed) */
-		if (Ta && AZ_TYPE_IS_ARITHMETIC (Ta) && AZ_TYPE_IS_ARITHMETIC (right->type) && (right->type != Ta)) {
-			azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_CONVERT_TYPE_ASSIGN, Ta, left);
-		}
+		compile_assign_check(comp, ctx, right, left->type);
 	}
 	/* Actual assignment */
 	if (!compile_assign_to_lvalue (comp, ctx, &lval, left)) return 0;
@@ -1140,6 +1145,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 			unsigned int jmp = azo_code_write_JMP_IF_SET32 (code, AZO_TC_JMP_IF_CAPTURE_SET, pos, node);
 			if (value) {
 				if (!azo_compiler_compile_expression (comp, ctx, value, src)) return 0;
+				compile_assign_check(comp, ctx, value, type);
 			} else {
 				/* fixme: Implement runtime (or at least compile-time) type */
 				azo_code_write_PUSH_EMPTY (code, type, node);
@@ -1154,6 +1160,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 			unsigned int jmp = azo_code_write_JMP_IF_SET32 (code, AZO_TC_JMP_IF_SHARED_SET, pos, node);
 			if (value) {
 				if (!azo_compiler_compile_expression (comp, ctx, value, src)) return 0;
+				compile_assign_check(comp, ctx, value, type);
 			} else {
 				/* fixme: Implement runtime (or at least compile-time) type */
 				azo_code_write_PUSH_EMPTY (code, type, node);
@@ -1167,6 +1174,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 	/* Local (or unknown) - value stays on stack */
 	if (value) {
 		if (!azo_compiler_compile_expression (comp, ctx, value, src)) return 0;
+		compile_assign_check(comp, ctx, value, type);
 	} else {
 		/* fixme: Implement runtime (or at least compile-time) type */
 		azo_code_write_PUSH_EMPTY (code, type, node);

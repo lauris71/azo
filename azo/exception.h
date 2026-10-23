@@ -7,18 +7,12 @@
 * Copyright (C) Lauris Kaplinski 2016-2018
 */
 
-#define AZO_TYPE_EXCEPTION ((azo_exception_type) ? azo_exception_type : azo_exception_get_type ())
-
 typedef struct _AZOException AZOException;
-typedef struct _AZOExceptionClass AZOExceptionClass;
+
+#include <az/context.h>
 
 #ifdef __cplusplus
 extern "C" {
-#endif
-
-#ifndef __AZO_EXCEPTION_C__
-extern unsigned int azo_exception_type;
-extern AZOExceptionClass *azo_exception_class;
 #endif
 
 #define AZO_EXCEPTION_NONE 0
@@ -78,20 +72,21 @@ extern AZOExceptionClass *azo_exception_class;
 	((flags) & AZO_EXCEPTION_MASKABLE & AZO_EXCEPTION_MASK_BIT (type))
 
 struct _AZOException {
-	unsigned int type;
-	unsigned int mask;
+	AZException az_exc;
 	/* IPC at the time of exception */
 	const uint8_t *ipc;
 };
 
-struct _AZOExceptionClass {
-	AZClass klass;
-};
+AZOException *azo_exception_new();
+void azo_exception_free(AZOException *exc);
 
-unsigned int azo_exception_get_type (void);
+void azo_exception_init(AZOException *exc);
+void azo_exception_finalize(AZOException *exc);
 
 void azo_exception_set (AZOException *exc, unsigned int type, unsigned int mask, const uint8_t *ipc);
 void azo_exception_clear (AZOException *exc);
+
+unsigned int azo_exception_to_string (const AZOException *exc, unsigned char *buf, unsigned int len);
 
 #ifdef __cplusplus
 }

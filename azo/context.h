@@ -16,24 +16,24 @@
 
 typedef struct _AZOInterpreter AZOInterpreter;
 
-#define AZO_TYPE_CONTEXT azo_context_get_type ()
-
 typedef struct _AZOContext AZOContext;
-typedef struct _AZOContextClass AZOContextClass;
+typedef struct _AZOContextPriv AZOContextPriv;
 
-#include <az/types.h>
+#include <az/context.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct _AZOContext {
-	AZContext *az_ctx;
+	AZContext az_ctx;
 	AZOInterpreter *intr;
+	AZOContextPriv *priv;
 };
 
 AZOContext *azo_context_new (void);
 void azo_context_delete (AZOContext *ctx);
+
 unsigned int azo_context_define (AZOContext *ctx, AZString *key, const AZImplementation *impl, void *inst);
 unsigned int azo_context_define_by_str (AZOContext *ctx, const unsigned char *key, const AZImplementation *impl, void *inst);
 const AZImplementation *azo_context_lookup (AZOContext *ctx, AZString *key, AZValue *val, unsigned int size);

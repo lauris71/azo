@@ -12,7 +12,7 @@
 #include "test.h"
 
 static unsigned int print_tree = 0;
-static unsigned int print_code = 1;
+static unsigned int print_code = 0;
 
 static const char *binary_arithmetic_i32_src = ""
 "int32 a = 31;\n"
@@ -355,7 +355,7 @@ test_calculate(void)
         const AZImplementation *ret_impl;
         AZValue ret_val;
         TEST_ASSERT(test_program(globals, "return a / b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_DIVIDE_BY_ZERO, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_DIVIDE_BY_ZERO, globals->intr->exc.az_exc.type);
     }
 	/* Modulo by zero throws AZO_EXCEPTION_DIVIDE_BY_ZERO */
     {
@@ -368,7 +368,7 @@ test_calculate(void)
         const AZImplementation *ret_impl;
         AZValue ret_val;
         TEST_ASSERT(test_program(globals, "return a % b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_DIVIDE_BY_ZERO, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_DIVIDE_BY_ZERO, globals->intr->exc.az_exc.type);
     }
 	/* int32 addition overflow throws AZO_EXCEPTION_INTEGER_OVERFLOW */
     {
@@ -381,7 +381,7 @@ test_calculate(void)
         const AZImplementation *ret_impl;
         AZValue ret_val;
         TEST_ASSERT(test_program(globals, "return a + b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INTEGER_OVERFLOW, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INTEGER_OVERFLOW, globals->intr->exc.az_exc.type);
     }
 	/* int64 multiplication overflow throws AZO_EXCEPTION_INTEGER_OVERFLOW */
     {
@@ -394,7 +394,7 @@ test_calculate(void)
         const AZImplementation *ret_impl;
         AZValue ret_val;
         TEST_ASSERT(test_program(globals, "return a * b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INTEGER_OVERFLOW, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INTEGER_OVERFLOW, globals->intr->exc.az_exc.type);
     }
 	/* int64 addition with int32 promotes to int64 without overflow */
     {
@@ -409,7 +409,7 @@ test_calculate(void)
         TEST_ASSERT(test_program(globals, "return a + b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT64), ret_impl);
         TEST_ASSERT_EQUAL_INT64(3000000001LL, ret_val.int64_v);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.az_exc.type);
     }
 	/* Bitwise and shift operations int32 (runtime values) */
     {
@@ -450,7 +450,7 @@ test_calculate(void)
         TEST_ASSERT(test_program(globals, "return a << b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT64), ret_impl);
         TEST_ASSERT_EQUAL_INT64(32, ret_val.int64_v);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.az_exc.type);
     }
 	/* bitwise operations on float throw AZO_EXCEPTION_INVALID_TYPE */
     {
@@ -463,7 +463,7 @@ test_calculate(void)
         const AZImplementation *ret_impl;
         AZValue ret_val;
         TEST_ASSERT(test_program(globals, "return a & b;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_TYPE, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_TYPE, globals->intr->exc.az_exc.type);
     }
 	/* Arithmetic assignment is allowed (converted at runtime) */
     {
@@ -483,7 +483,7 @@ test_calculate(void)
         AZValue ret_val;
         /* uint8 x = a (31); x = x + 250 -> 281 does not fit uint8 */
         TEST_ASSERT(test_program(globals, "uint8 x = a; x = x + 250; return x;\n", 3, arg_names, arg_impls, arg_vals, AZ_TYPE_UINT8, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_CHANGE_OF_MAGNITUDE, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_CHANGE_OF_MAGNITUDE, globals->intr->exc.az_exc.type);
     }
 	/* Explicit cast follows the computation mode */
     {
@@ -491,7 +491,7 @@ test_calculate(void)
         AZValue ret_val;
         /* Default: narrowing cast throws */
         TEST_ASSERT(test_program(globals, "return (uint8) 300;\n", 0, NULL, NULL, NULL, AZ_TYPE_UINT8, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_CHANGE_OF_MAGNITUDE, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_CHANGE_OF_MAGNITUDE, globals->intr->exc.az_exc.type);
         /* saturate: clamps */
         TEST_ASSERT(test_program(globals, "return saturate((uint8) 300);\n", 0, NULL, NULL, NULL, AZ_TYPE_UINT8, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_UINT32(255, ret_val.uint8_v);
@@ -508,17 +508,17 @@ test_calculate(void)
         TEST_ASSERT_EQUAL_INT(1, ret_val.int32_v);
         /* (int32 exact) 1.5f throws CHANGE_OF_PRECISION */
         TEST_ASSERT(test_program(globals, "return (int32 exact) 1.5f;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_CHANGE_OF_PRECISION, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_CHANGE_OF_PRECISION, globals->intr->exc.az_exc.type);
     }
 	/* Constant propagation stores the converted (mode-aware) value */
     {
         const AZImplementation *ret_impl;
         AZValue ret_val;
         /* int32 300 -> int8 clamps to 127 under saturate */
-        TEST_ASSERT(test_program(globals, "saturate { int8 b = 300; return b; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program(globals, "saturate { int8 b = (int8) 300; return b; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_INT(127, ret_val.int8_v);
         /* int32 300 -> int8 truncates to 44 under wrap */
-        TEST_ASSERT(test_program(globals, "wrap { int8 b = 300; return b; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT(test_program(globals, "wrap { int8 b = (int8) 300; return b; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_INT(44, ret_val.int8_v);
     }
 	/* Mode block and mode expression fall back to generic processing */

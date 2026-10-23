@@ -51,7 +51,7 @@ azo_interpreter_new (AZOContext *ctx)
 	intr->ctx = ctx;
 
 	az_instance_init_by_type (&intr->stack, AZO_TYPE_STACK);
-	az_instance_init_by_type (&intr->exc, AZO_TYPE_EXCEPTION);
+	azo_exception_init(&intr->exc);
 
 	intr->flags = AZO_INTR_FLAG_CHECK_ARGS | AZO_INTR_FLAG_MASK_DEFAULT;
 
@@ -62,7 +62,7 @@ void
 interpreter_delete (AZOInterpreter *intr)
 {
 	az_instance_finalize_by_type (&intr->stack, AZO_TYPE_STACK);
-	az_instance_finalize_by_type (&intr->exc, AZO_TYPE_EXCEPTION);
+	azo_exception_finalize(&intr->exc);
 	free (intr->frames);
 	free (intr);
 }
@@ -75,7 +75,7 @@ azo_interpreter_init(AZOInterpreter *intr)
 	//intr->frames[0] = 0;
 	//if (intr->stack.length) azo_stack_pop(&intr->stack, intr->stack.length);
 	intr->flags = AZO_INTR_FLAG_CHECK_ARGS | AZO_INTR_FLAG_MASK_DEFAULT;
-	intr->exc.type = AZO_EXCEPTION_NONE;
+	intr->exc.az_exc.type = AZO_EXCEPTION_NONE;
 	intr->vals[0].impl = NULL;
 	intr->vals[1].impl = NULL;
 }
@@ -114,6 +114,8 @@ azo_interpreter_run_code(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const ui
 static void
 intr_rewind(AZOInterpreter *intr, AZOInterpreterCtx *ictx, unsigned int n_values)
 {
+	uint32_t flags = intr->flags;
+	intr->flags |= AZO_INTR_FLAG_NO_THROW;
 	for (unsigned int i = 0; i < n_values; i++) {
 		if (azo_stack_impl_bw(&intr->stack, 0) == &azo_defer_handle_class->impl) {
 			AZODeferHandle handle = *((AZODeferHandle *) azo_stack_instance_bw(&intr->stack, 0));
@@ -127,6 +129,7 @@ intr_rewind(AZOInterpreter *intr, AZOInterpreterCtx *ictx, unsigned int n_values
 			azo_stack_pop(&intr->stack, 1);
 		}
 	}
+	intr->flags = flags;
 }
 
 unsigned int
@@ -148,8 +151,15 @@ azo_interpreter_pop_frame (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 	return intr->n_frames;
 }
 
-#define EXCEPTION(type) azo_interpreter_exception(intr, ip, type);
-#define EXCEPTION_THROW(type) return azo_interpreter_exception(intr, ip, type), NULL;
+static inline void
+set_exception_if_clear(AZOInterpreter *intr, unsigned int type, const uint8_t *ip) {
+	if (!intr->exc.az_exc.type) {
+		azo_exception_set(&intr->exc, type, 1UL << type, ip);
+	}
+}
+
+#define EXCEPTION(type) set_exception_if_clear(intr, type, ip);
+#define EXCEPTION_THROW(type) { set_exception_if_clear(intr, type, ip); if (!(intr->flags & AZO_INTR_FLAG_NO_THROW)) return NULL; }
 
 /* Convert value to u32, return 1 on success, fill exception data and return 0 on failure */
 
@@ -329,7 +339,7 @@ interpret_EXCEPTION (AZOInterpreter *intr, const unsigned char *ip)
 			return ip + 5;
 		}
 	}
-	azo_exception_set (&intr->exc, type, 1U << type, ip);
+	EXCEPTION_THROW(type);
 	return NULL;
 }
 
@@ -347,7 +357,7 @@ interpret_type_EXCEPTION (AZOInterpreter *intr, const uint8_t *ip)
 	if (az_type_is_a(azo_stack_type_bw(&intr->stack, pos), type)) {
 		return ip + 9;
 	}
-	azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1U << AZO_EXCEPTION_INVALID_TYPE, ip);
+	EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	return NULL;
 }
 
@@ -365,7 +375,7 @@ interpret_exception_if_not_assignable (AZOInterpreter *intr, const uint8_t *ip)
 	if (az_type_is_assignable_to (azo_stack_type_bw (&intr->stack, pos), type)) {
 		return ip + 9;
 	}
-	azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1U << AZO_EXCEPTION_INVALID_TYPE, ip);
+	EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	return NULL;
 }
 
@@ -402,6 +412,8 @@ interpret_REWIND (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned 
 	memcpy (&n_values, ip + 1, 4);
 	CHECK_UNDERFLOW(n_values);
 	intr_rewind(intr, ictx, n_values);
+	/* If exception happened during rewind, and we are NOT part of rewinf chain, throw it here */
+	/* if (intr->exc.type && !(intr->flags & AZO_INTR_FLAG_NO_THROW)) return NULL; */
 	return ip + 5;
 }
 
@@ -687,8 +699,7 @@ interpret_PROMOTE (AZOInterpreter *intr, const uint8_t *ip)
 	unsigned int type = azo_stack_uint32_bw(&intr->stack, 0);
 	/* fixme: Test clamped/rounded */
 	if (!azo_stack_convert_bw (&intr->stack, pos, type)) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_CONVERSION, 1UL << AZO_EXCEPTION_INVALID_CONVERSION, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 	}
 	azo_stack_pop (&intr->stack, 1);
 	return ip + 2;
@@ -708,8 +719,7 @@ interpret_convert (AZOInterpreter *intr, const uint8_t *ip, unsigned int strict,
 		unsigned int mode = (intr->flags & AZO_INTR_FLAG_WRAP) ? AZO_CALCULATE_MODE_WRAP : AZO_CALCULATE_MODE_SATURATE;
 		unsigned int result_code = azo_calculate_convert (mode, to_type, from_type, from_val, &to_val, &flags);
 		if (result_code == AZO_CALCULATE_INVALID_TYPE) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_CONVERSION, 1UL << AZO_EXCEPTION_INVALID_CONVERSION, ip);
-			return NULL;
+			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 		}
 		if (strict) {
 			/* Implicit assignment: magnitude change (clamping) always throws */
@@ -730,8 +740,7 @@ interpret_convert (AZOInterpreter *intr, const uint8_t *ip, unsigned int strict,
 		return ip + 5;
 	}
 	if (!azo_stack_convert_bw(&intr->stack, 0, to_type)) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_CONVERSION, 1UL << AZO_EXCEPTION_INVALID_CONVERSION, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 	}
 	return ip + 5;
 }
@@ -802,8 +811,7 @@ interpret_EQUAL_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 		rhs = azo_stack_value_bw (&intr->stack, 0);
 		result = *((unsigned long long *) lhs) == *((unsigned long long *) rhs);
 	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_BOOLEAN), &result);
@@ -818,7 +826,9 @@ interpret_EQUAL (AZOInterpreter *intr, const uint8_t *ip)
 	CHECK_UNDERFLOW(2);
 	type = azo_stack_type_bw (&intr->stack, 0);
 	if (AZ_TYPE_IS_PRIMITIVE (type)) {
-		if (!test_stack_type_exact(intr, ip, 1, type)) return NULL;
+		if (!test_stack_type_exact(intr, ip, 1, type)) {
+			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+		}
 		lhs = azo_stack_value_bw (&intr->stack, 1);
 		rhs = azo_stack_value_bw (&intr->stack, 0);
 		switch (type) {
@@ -854,13 +864,14 @@ interpret_EQUAL (AZOInterpreter *intr, const uint8_t *ip)
 			break;
 		}
 	} else if (type == AZ_TYPE_BLOCK) {
-		if (!test_stack_type_is_2 (intr, ip, type)) return NULL;
+		if (!test_stack_type_is_2 (intr, ip, type)) {
+			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+		}
 		lhs = azo_stack_value_bw (&intr->stack, 1);
 		rhs = azo_stack_value_bw (&intr->stack, 0);
 		result = *((unsigned long long *) lhs) == *((unsigned long long *) rhs);
 	} else {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_BOOLEAN), &result);
@@ -910,8 +921,7 @@ interpret_COMPARE_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 		result = (lhs->double_v < rhs->double_v) ? -1 : (lhs->double_v > rhs->double_v) ? 1 : 0;
 		break;
 	default:
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_INT32), &result);
@@ -960,8 +970,7 @@ interpret_COMPARE (AZOInterpreter *intr, const uint8_t *ip)
 		result = (lhs->double_v < rhs->double_v) ? -1 : (lhs->double_v > rhs->double_v) ? 1 : 0;
 		break;
 	default:
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_INT32), &result);
@@ -1292,7 +1301,8 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 	/* Pop function and the arguments */
 	azo_stack_pop(&intr->stack, 1);
 	azo_stack_push_value_transfer (&intr->stack, ret_val.impl, &ret_val.v);
-	if(intr->exc.type) {
+	if(intr->exc.az_exc.type) {
+		/* Set ip to current frame */
 		intr->exc.ipc = ip;
 		return NULL;
 	}
@@ -1319,8 +1329,8 @@ interpret_CLOSURE(AZOInterpreter *intr, const unsigned char *ip)
 {
 	uint32_t n_vals;
 	memcpy (&n_vals, ip + 1, 4);
-	if (!test_stack_underflow(intr, ip, n_vals + 1)) return NULL;
-	if (!test_stack_type_exact(intr, ip, n_vals, AZO_TYPE_PROGRAM)) return NULL;
+	CHECK_UNDERFLOW(n_vals + 1);
+	CHECK_TYPE_EXACT(n_vals, AZO_TYPE_PROGRAM);
 
 	AZOProgram *prog = (AZOProgram *) azo_stack_instance_bw(&intr->stack, n_vals);
 	AZOCompiledFunction *cfunc = azo_compiled_function_new(prog);
@@ -1362,22 +1372,18 @@ interpret_LOAD_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 	const AZImplementation *obj_impl = azo_stack_impl_bw (&intr->stack, 1);
 	const AZImplementation *idx_impl = azo_stack_impl_bw (&intr->stack, 0);
 	if (!obj_impl || !idx_impl) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_NULL_DEREFERENCE);
 	}
 	void *list_inst;
 	AZListImplementation *list_impl = (AZListImplementation *) az_instance_get_interface(obj_impl, azo_stack_instance_bw(&intr->stack, 1), AZ_TYPE_LIST, (void **) &list_inst);
 	if (!list_impl) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	if (!convert_to_u32 (intr, &idx, idx_impl, azo_stack_value_bw(&intr->stack, 0), ip)) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_CONVERSION, 1UL << AZO_EXCEPTION_INVALID_CONVERSION, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 	}
 	if (idx >= az_collection_get_size(&list_impl->collection_impl, list_inst)) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_OUT_OF_BOUNDS, 1UL << AZO_EXCEPTION_OUT_OF_BOUNDS, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_OUT_OF_BOUNDS);
 	}
 	val.impl = az_list_get_element(list_impl, list_inst, idx, &val.v.value, 64);
 	azo_stack_pop(&intr->stack, 1);
@@ -1393,16 +1399,14 @@ interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 	AZPackedValue val = { 0 };
 	if (intr->flags & AZO_INTR_FLAG_CHECK_ARGS) {
 		if (!az_type_is_a (azo_stack_type_bw (&intr->stack, 2), AZ_TYPE_VALUE_ARRAY)) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-			return NULL;
+			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 		}
 		varray = *((AZValueArray **) azo_stack_value_bw (&intr->stack, 2));
 		if (!convert_to_u32 (intr, &idx, azo_stack_impl_bw (&intr->stack, 1), azo_stack_value_bw (&intr->stack, 1), ip)) {
-			return NULL;
+			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 		}
 		if (idx >= varray->size) {
-			azo_exception_set (&intr->exc, AZO_EXCEPTION_OUT_OF_BOUNDS, 1UL << AZO_EXCEPTION_OUT_OF_BOUNDS, ip);
-			return NULL;
+			EXCEPTION_THROW(AZO_EXCEPTION_OUT_OF_BOUNDS);
 		}
 		az_packed_value_set_from_impl_value (&val, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0));
 	} else {
@@ -1447,8 +1451,7 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 	/* fixme: Implement automatic unboxing (in stack?) or not? */
 	impl = azo_stack_impl_bw (&intr->stack, 1);
 	if (!impl) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_NULL_DEREFERENCE);
 	}
 	inst = azo_stack_instance_bw (&intr->stack, 1);
 	if (impl == &AZBoxedInterfaceKlass.klass.impl) {
@@ -1457,8 +1460,7 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 	intr->vals[0].impl = NULL;
 	/* fixme: We should support class properties on null objects probably */
 	if (!inst) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_NULL_DEREFERENCE);
 	}
 
 	/* Try simple property */
@@ -1523,8 +1525,7 @@ interpret_GET_FUNCTION (AZOInterpreter *intr, const uint8_t *ip)
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, n_args);
 	const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, n_args + 1);
 	if (!impl) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_NULL_DEREFERENCE);
 	}
 	const AZClass *def_class;
 	const AZImplementation *sub_impl;
@@ -1551,8 +1552,7 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
 	const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, 2);
 	if (!impl) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_NULL_DEREFERENCE, 1UL << AZO_EXCEPTION_NULL_DEREFERENCE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_NULL_DEREFERENCE);
 	}
 	void *inst = azo_stack_instance_bw (&intr->stack, 2);
 	if (impl == &AZBoxedInterfaceKlass.klass.impl) {
@@ -1569,8 +1569,7 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		if (!type && (AZ_TYPE_IS_REFERENCE(prop->type) || AZ_TYPE_IS_INTERFACE(prop->type))) {
 			result = !az_instance_set_property_by_id(def_class, AZ_CLASS_FROM_IMPL(sub_impl), sub_impl, sub_inst, idx, NULL, NULL);
 			if (result) {
-				azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_VALUE, 1UL << AZO_EXCEPTION_INVALID_VALUE, ip);
-				return NULL;
+				EXCEPTION_THROW(AZO_EXCEPTION_INVALID_VALUE);
 			}
 		} else if (!az_type_is_assignable_to (type, prop->type)) {
 			/* fixme: No need for double copy, unless we want to use packed value conversion */
@@ -1585,8 +1584,7 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		} else {
 			result = !az_instance_set_property_by_id (def_class, AZ_CLASS_FROM_IMPL(sub_impl), sub_impl, sub_inst, idx, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0));
 			if (!result) {
-				azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_VALUE, 1UL << AZO_EXCEPTION_INVALID_VALUE, ip);
-				return NULL;
+				EXCEPTION_THROW(AZO_EXCEPTION_INVALID_VALUE);
 			}
 		}
 	} else {
@@ -1677,8 +1675,7 @@ interpret_GET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
 	attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 1), azo_stack_instance_bw (&intr->stack, 1), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
 	if (!attrd_impl) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	intr->vals[0].impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, key, &intr->vals[0].v.value, 64, &flags);
 	azo_stack_pop (&intr->stack, 2);
@@ -1706,14 +1703,12 @@ interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const uint8_t *ip)
 	void *attrd_inst;
 	const AZAttribDictImplementation *attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 2), azo_stack_instance_bw (&intr->stack, 2), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
 	if (!attrd_impl) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
 	}
 	const AZImplementation *val_impl = azo_stack_impl_bw (&intr->stack, 0);
 	void *val_inst = azo_stack_instance_bw (&intr->stack, 0);
 	if (!az_attrib_dict_set (attrd_impl, attrd_inst, key, val_impl, val_inst, 0)) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_VALUE, 1UL << AZO_EXCEPTION_INVALID_VALUE, ip);
-		return NULL;
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_VALUE);
 	}
 	azo_stack_pop (&intr->stack, 3);
 	return ip + 1;
@@ -1721,86 +1716,80 @@ interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const uint8_t *ip)
 
 /* End new stack methods */
 
-void
-azo_interpreter_exception(AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
-{
-	azo_exception_set (&intr->exc, type, 1UL << type, ip);
-}
-
 const uint8_t *
-azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ipc)
+azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
-switch (*ipc) {
+switch (*ip) {
 	case AZO_TC_EXCEPTION:
 		case AZO_TC_EXCEPTION_IF:
 		case AZO_TC_EXCEPTION_IF_NOT:
-			ipc = interpret_EXCEPTION (intr, ipc);
+			ip = interpret_EXCEPTION (intr, ip);
 			break;
 		case AZO_TC_EXCEPTION_IF_TYPE_IS_NOT:
-			ipc = interpret_type_EXCEPTION (intr, ipc);
+			ip = interpret_type_EXCEPTION (intr, ip);
 			break;
 		case AZO_TC_EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE:
-			ipc = interpret_exception_if_not_assignable (intr, ipc);
+			ip = interpret_exception_if_not_assignable (intr, ip);
 			break;
 
 #ifdef AZO_TC_HAS_DEBUG
 		case AZO_TC_DEBUG_STACK:
 		case AZO_TC_DEBUG_STR:
-			ipc = interpret_DEBUG (intr, ictx, ipc);
+			ip = interpret_DEBUG (intr, ictx, ip);
 			break;
 #endif
 
 		/* Stack management */
 		case AZO_TC_POP:
-			ipc = interpret_POP(intr, ipc);
+			ip = interpret_POP(intr, ip);
 			break;
 		case AZO_TC_REWIND:
-			ipc = interpret_REWIND(intr, ictx, ipc);
+			ip = interpret_REWIND(intr, ictx, ip);
 			break;
 		case AZO_TC_REMOVE:
-			ipc = interpret_REMOVE (intr, ipc);
+			ip = interpret_REMOVE (intr, ip);
 			break;
 		case AZO_TC_PUSH_EMPTY:
-			ipc = interpret_PUSH_EMPTY (intr, ipc);
+			ip = interpret_PUSH_EMPTY (intr, ip);
 			break;
 		case AZO_TC_PUSH_IMMEDIATE:
-			ipc = interpret_PUSH_IMMEDIATE (intr, ipc);
+			ip = interpret_PUSH_IMMEDIATE (intr, ip);
 			break;
 		case AZO_TC_PUSH_VALUE:
-			ipc = interpret_PUSH_VALUE (intr, ictx, ipc);
+			ip = interpret_PUSH_VALUE (intr, ictx, ip);
 			break;
 		case AZO_TC_STORE_VALUE:
-			ipc = interpret_STORE_VALUE (intr, ictx,ipc);
+			ip = interpret_STORE_VALUE (intr, ictx,ip);
 			break;
 		case AZO_TC_PUSH_CAPTURE:
-			ipc = interpret_PUSH_CAPTURE (intr, ictx, ipc);
+			ip = interpret_PUSH_CAPTURE (intr, ictx, ip);
 			break;
 		case AZO_TC_STORE_CAPTURE:
-			ipc = interpret_STORE_CAPTURE (intr, ictx, ipc);
+			ip = interpret_STORE_CAPTURE (intr, ictx, ip);
 			break;
 		case AZO_TC_JMP_IF_SHARED_SET:
-			ipc = interpret_JMP_IF_SHARED_SET (intr, ictx, ipc);
+			ip = interpret_JMP_IF_SHARED_SET (intr, ictx, ip);
 			break;
 		case AZO_TC_JMP_IF_CAPTURE_SET:
-			ipc = interpret_JMP_IF_CAPTURE_SET (intr, ictx, ipc);
+			ip = interpret_JMP_IF_CAPTURE_SET (intr, ictx, ip);
 			break;
 		case AZO_TC_DUPLICATE:
-			ipc = interpret_DUPLICATE (intr, ipc);
+			ip = interpret_DUPLICATE (intr, ip);
 			break;
 		case AZO_TC_DUPLICATE_FRAME:
-			ipc = interpret_DUPLICATE_FRAME (intr, ipc);
+			ip = interpret_DUPLICATE_FRAME (intr, ip);
 			break;
 		case AZO_TC_EXCHANGE:
-			ipc = interpret_EXCHANGE (intr, ipc);
+			ip = interpret_EXCHANGE (intr, ip);
 			break;
 		case AZO_TC_EXCHANGE_FRAME:
-			ipc = interpret_EXCHANGE_FRAME (intr, ipc);
+			ip = interpret_EXCHANGE_FRAME (intr, ip);
 			break;
 		case AZO_TC_PUSH_FLAGS:
-			ipc = interpret_PUSH_FLAGS (intr, ipc);
+			ip = interpret_PUSH_FLAGS (intr, ip);
 			break;
 		case AZO_TC_STORE_FLAGS:
-			ipc = interpret_STORE_FLAGS (intr, ipc);
+			ip = interpret_STORE_FLAGS (intr, ip);
 			break;
 
 		/* Type tests */
@@ -1808,186 +1797,186 @@ switch (*ipc) {
 		case AZO_TC_TYPE_IS:
 		case AZO_TC_TYPE_IS_SUPER:
 		case AZO_TC_TYPE_IMPLEMENTS:
-			ipc = interpret_TYPE (intr, ipc);
+			ip = interpret_TYPE (intr, ip);
 			break;
 		case AZO_TC_TYPE_EQUALS_IMMEDIATE:
 		case AZO_TC_TYPE_IS_IMMEDIATE:
 		case AZO_TC_TYPE_IS_SUPER_IMMEDIATE:
 		case AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE:
-			ipc = interpret_TYPE_IMMEDIATE (intr, ipc);
+			ip = interpret_TYPE_IMMEDIATE (intr, ip);
 			break;
 		case AZO_TC_TYPE_OF:
 		case AZO_TC_TYPE_OF_CLASS:
-			ipc = interpret_TYPE_OF (intr, ipc);
+			ip = interpret_TYPE_OF (intr, ip);
 			break;
 
 		/* Jumps */
 		case JMP_32:
-			ipc = interpret_JMP_32 (intr, ipc);
+			ip = interpret_JMP_32 (intr, ip);
 			break;
 		case JMP_32_IF:
 		case JMP_32_IF_NOT:
 		case JMP_32_IF_ZERO:
 		case JMP_32_IF_POSITIVE:
 		case JMP_32_IF_NEGATIVE:
-			ipc = interpret_JMP_32_COND (intr, ipc);
+			ip = interpret_JMP_32_COND (intr, ip);
 			break;
 
 		/* Conversions */
 		case AZO_TC_PROMOTE:
-			ipc = interpret_PROMOTE (intr, ipc);
+			ip = interpret_PROMOTE (intr, ip);
 			break;
 		case AZO_TC_CONVERT_TYPE:
-			ipc = interpret_CONVERT_TYPE (intr, ipc);
+			ip = interpret_CONVERT_TYPE (intr, ip);
 			break;
 		case AZO_TC_CONVERT_TYPE_ASSIGN:
-			ipc = interpret_CONVERT_TYPE_ASSIGN (intr, ipc);
+			ip = interpret_CONVERT_TYPE_ASSIGN (intr, ip);
 			break;
 		case AZO_TC_CONVERT_TYPE_EXACT:
-			ipc = interpret_CONVERT_TYPE_EXACT (intr, ipc);
+			ip = interpret_CONVERT_TYPE_EXACT (intr, ip);
 			break;
 
 		/* Comparisons */
 		case AZO_TC_EQUAL_TYPED:
-			ipc = interpret_EQUAL_TYPED (intr, ipc);
+			ip = interpret_EQUAL_TYPED (intr, ip);
 			break;
 		case EQUAL:
-			ipc = interpret_EQUAL (intr, ipc);
+			ip = interpret_EQUAL (intr, ip);
 			break;
 		case AZO_TC_COMPARE_TYPED:
-			ipc = interpret_COMPARE_TYPED (intr, ipc);
+			ip = interpret_COMPARE_TYPED (intr, ip);
 			break;
 		case COMPARE:
-			ipc = interpret_COMPARE (intr, ipc);
+			ip = interpret_COMPARE (intr, ip);
 			break;
 
 		case AZO_TC_LOGICAL_NOT:
-			ipc = interpret_LOGICAL_NOT (intr, ipc);
+			ip = interpret_LOGICAL_NOT (intr, ip);
 			break;
 		case AZO_TC_NEGATE:
-			ipc = interpret_NEGATE (intr, ipc);
+			ip = interpret_NEGATE (intr, ip);
 			break;
 		case AZO_TC_CONJUGATE:
-			ipc = interpret_CONJUGATE (intr, ipc);
+			ip = interpret_CONJUGATE (intr, ip);
 			break;
 		case AZO_TC_BITWISE_NOT:
-			ipc = interpret_BITWISE_NOT (intr, ipc);
+			ip = interpret_BITWISE_NOT (intr, ip);
 			break;
 
 		case AZO_TC_LOGICAL_AND:
 		case AZO_TC_LOGICAL_OR:
-			ipc = interpret_LOGICAL_BINARY (intr, ipc);
+			ip = interpret_LOGICAL_BINARY (intr, ip);
 			break;
 		case AZO_TC_ADD_TYPED:
-			ipc = interpret_ADD_TYPED (intr, ipc);
+			ip = interpret_ADD_TYPED (intr, ip);
 			break;
 		case AZO_TC_SUBTRACT_TYPED:
-			ipc = interpret_SUBTRACT_TYPED (intr, ipc);
+			ip = interpret_SUBTRACT_TYPED (intr, ip);
 			break;
 		case AZO_TC_MULTIPLY_TYPED:
-			ipc = interpret_MULTIPLY_TYPED (intr, ipc);
+			ip = interpret_MULTIPLY_TYPED (intr, ip);
 			break;
 		case AZO_TC_DIVIDE_TYPED:
-			ipc = interpret_DIVIDE_TYPED (intr, ipc);
+			ip = interpret_DIVIDE_TYPED (intr, ip);
 			break;
 		case AZO_TC_MODULO_TYPED:
-			ipc = interpret_MODULO_TYPED (intr, ipc);
+			ip = interpret_MODULO_TYPED (intr, ip);
 			break;
 		case AZO_TC_ADD:
-			ipc = interpret_ADD (intr, ipc);
+			ip = interpret_ADD (intr, ip);
 			break;
 		case AZO_TC_SUBTRACT:
-			ipc = interpret_SUBTRACT (intr, ipc);
+			ip = interpret_SUBTRACT (intr, ip);
 			break;
 		case AZO_TC_MULTIPLY:
-			ipc = interpret_MULTIPLY (intr, ipc);
+			ip = interpret_MULTIPLY (intr, ip);
 			break;
 		case AZO_TC_DIVIDE:
-			ipc = interpret_DIVIDE (intr, ipc);
+			ip = interpret_DIVIDE (intr, ip);
 			break;
 		case AZO_TC_MODULO:
-			ipc = interpret_MODULO (intr, ipc);
+			ip = interpret_MODULO (intr, ip);
 			break;
 		case AZO_TC_BITWISE_AND:
-			ipc = interpret_BITWISE_AND (intr, ipc);
+			ip = interpret_BITWISE_AND (intr, ip);
 			break;
 		case AZO_TC_BITWISE_OR:
-			ipc = interpret_BITWISE_OR (intr, ipc);
+			ip = interpret_BITWISE_OR (intr, ip);
 			break;
 		case AZO_TC_BITWISE_XOR:
-			ipc = interpret_BITWISE_XOR (intr, ipc);
+			ip = interpret_BITWISE_XOR (intr, ip);
 			break;
 		case AZO_TC_SHIFT_LEFT:
-			ipc = interpret_SHIFT_LEFT (intr, ipc);
+			ip = interpret_SHIFT_LEFT (intr, ip);
 			break;
 		case AZO_TC_SHIFT_RIGHT:
-			ipc = interpret_SHIFT_RIGHT (intr, ipc);
+			ip = interpret_SHIFT_RIGHT (intr, ip);
 			break;
 
 		case AZO_TC_MIN_TYPED:
 		case AZO_TC_MAX_TYPED:
-			ipc = interpret_MIN_MAX_TYPED (intr, ipc);
+			ip = interpret_MIN_MAX_TYPED (intr, ip);
 			break;
 
 		case AZO_TC_GET_INTERFACE_IMMEDIATE:
-			ipc = interpret_GET_INTERFACE_IMMEDIATE (intr, ipc);
+			ip = interpret_GET_INTERFACE_IMMEDIATE (intr, ip);
 			break;
 		case AZO_TC_INVOKE:
-			ipc = interpret_INVOKE (intr, ictx, ipc);
+			ip = interpret_INVOKE (intr, ictx, ip);
 			break;
 		case AZO_TC_RETURN:
-			ipc = interpret_RETURN (intr, ipc);
+			ip = interpret_RETURN (intr, ip);
 			break;
 		case AZO_TC_RETURN_VALUE:
-			ipc = interpret_RETURN_VALUE (intr, ipc);
+			ip = interpret_RETURN_VALUE (intr, ip);
 			break;
 		case AZO_TC_CLOSURE:
-			ipc = interpret_CLOSURE (intr, ipc);
+			ip = interpret_CLOSURE (intr, ip);
 			break;
 
 		case NEW_ARRAY:
-			ipc = interpret_NEW_ARRAY (intr, ipc);
+			ip = interpret_NEW_ARRAY (intr, ip);
 			break;
 		case LOAD_ARRAY_ELEMENT:
-			ipc = interpret_LOAD_ARRAY_ELEMENT (intr, ipc);
+			ip = interpret_LOAD_ARRAY_ELEMENT (intr, ip);
 			break;
 		case WRITE_ARRAY_ELEMENT:
-			ipc = interpret_WRITE_ARRAY_ELEMENT (intr, ipc);
+			ip = interpret_WRITE_ARRAY_ELEMENT (intr, ip);
 			break;
 
 		case AZO_TC_GET_GLOBAL:
-			ipc = interpret_GET_GLOBAL (intr, ipc);
+			ip = interpret_GET_GLOBAL (intr, ip);
 			break;
 		case AZO_TC_GET_PROPERTY:
-			ipc = interpret_GET_PROPERTY (intr, ipc);
+			ip = interpret_GET_PROPERTY (intr, ip);
 			break;
 		case AZO_TC_GET_FUNCTION:
-			ipc = interpret_GET_FUNCTION (intr, ipc);
+			ip = interpret_GET_FUNCTION (intr, ip);
 			break;
 		case AZO_TC_SET_PROPERTY:
-			ipc = interpret_SET_PROPERTY (intr, ipc);
+			ip = interpret_SET_PROPERTY (intr, ip);
 			break;
 		case AZO_TC_GET_STATIC_PROPERTY:
-			ipc = interpret_GET_STATIC_PROPERTY (intr, ipc);
+			ip = interpret_GET_STATIC_PROPERTY (intr, ip);
 			break;
 		case AZO_TC_GET_STATIC_FUNCTION:
-			ipc = interpret_GET_STATIC_FUNCTION (intr, ipc);
+			ip = interpret_GET_STATIC_FUNCTION (intr, ip);
 			break;
 		case AZO_TC_GET_ATTRIBUTE:
-			ipc = interpret_GET_ATTRIBUTE (intr, ipc);
+			ip = interpret_GET_ATTRIBUTE (intr, ip);
 			break;
 		case AZO_TC_SET_ATTRIBUTE:
-			ipc = interpret_SET_ATTRIBUTE (intr, ipc);
+			ip = interpret_SET_ATTRIBUTE (intr, ip);
 			break;
 
 		case NOP:
-			ipc += 1;
+			ip += 1;
 			break;
 
 		default:
-			return NULL;
+			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_OPCODE);
 	}
-	return ipc;
+	return ip;
 }
 
 void
@@ -1995,15 +1984,15 @@ azo_interpreter_run_frame(AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 {
 	const uint8_t *ipc = ictx->tcode;
 	const uint8_t *end = ictx->tcode + ictx->tcode_len;
-	assert(!intr->exc.type);
+	assert(!intr->exc.az_exc.type);
 
 	azo_interpreter_run_code(intr, ictx, ipc, end);
 
-	if (intr->exc.type != AZO_EXCEPTION_NONE) {
+	if (intr->exc.az_exc.type != AZO_EXCEPTION_NONE) {
 		unsigned char b[1024];
 		unsigned int ip = intr->exc.ipc - ictx->tcode;
 		/* Exception */
-		az_instance_to_string (&azo_exception_class->klass.impl, &intr->exc, b, 1024);
+		azo_exception_to_string(&intr->exc, b, 1024);
 		fprintf (stderr, "Fatal exception: %s\n", b);
 		azo_debug_print_term(ictx->debug, ip, stderr);
 		fprintf(stderr, "Position: %d %d\n", ip, ictx->tcode[ip]);

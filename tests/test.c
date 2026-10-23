@@ -207,6 +207,30 @@ test_language(void)
 		TEST_ASSERT_EQUAL_STRING("S1 S5 S2 S4 S3 ", str);
 		free(str);
     }
+	/* No throw in defer block */
+    {
+        const char *src =
+        "ofs.print(\"S1 \");\n"
+        "defer {\n"
+        "  ofs.print(\"S2 \");\n"
+        "  defer { int8 p = 1000; ofs.print(\"S3 \"); };\n"
+        "  ofs.print(\"S4 \");\n"
+        "}\n"
+        "ofs.print(\"S5 \");\n"
+        "return 42;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        /* Although exceptions are blocked, the value is still set */
+        TEST_ASSERT(ctx->intr->exc.az_exc.type == AZO_EXCEPTION_CHANGE_OF_MAGNITUDE);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+		char *str = strndup((const char *) bostream->buffer, bostream->pos);
+		fprintf(stderr, "Output: %s\n", str);
+		TEST_ASSERT_EQUAL_STRING("S1 S5 S2 S4 S3 ", str);
+		free(str);
+    }
     azo_context_delete(ctx);
 }
 

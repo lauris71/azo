@@ -24,9 +24,9 @@ typedef struct _AZOContextFull AZOContextFull;
 #include "context.h"
 #include "namespace.h"
 #include "interpreter.h"
+#include <azo/defer.h>
 
-struct _AZOContextFull {
-	AZOContext azo_ctx;
+struct _AZOContextPriv {
 	ArikkeiDict definitions;
 	unsigned int values_size;
 	unsigned int nvalues;
@@ -34,86 +34,43 @@ struct _AZOContextFull {
 	AZString **keys;
 };
 
-struct _AZOContextClass {
-	AZClass block_class;
-};
-
-static void context_class_init (AZOContextClass *klass);
-static void context_init (AZOContextClass *klass, AZOContextFull *fctx);
-static void context_finalize (AZOContextClass *klass, AZOContextFull *fctx);
-
-/* Method implementations */
-static unsigned int context_call_define (const AZImplementation **arg_impls, const AZValue **arg_vals, const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx);
-
-enum {
-	/* Functions */
-	FUNC_DEFINE,
-	NUM_FUNCTIONS,
-	/* Values */
-	NUM_PROPERTIES = NUM_FUNCTIONS
-};
-
-unsigned int
-azo_context_get_type (void)
-{
-	static unsigned int type = 0;
-	if (!type) {
-		az_register_type (&type, (const unsigned char *) "AZOContext", AZ_TYPE_BLOCK, sizeof (AZOContextClass), sizeof (AZOContextFull), AZ_FLAG_FINAL | AZ_FLAG_ZERO_MEMORY, 0, NUM_PROPERTIES,
-			(void (*) (AZClass *)) context_class_init,
-			(void (*) (const AZImplementation *, void *)) context_init,
-			(void (*) (const AZImplementation *, void *)) context_finalize);
-	}
-	return type;
-}
-
-static void
-context_class_init (AZOContextClass *klass)
-{
-	/* Functions */
-	az_class_define_method_va ((AZClass *) klass, FUNC_DEFINE, (const unsigned char *) "define", context_call_define, AZ_TYPE_NONE, 0);
-}
-
-static void
-context_init (AZOContextClass *klass, AZOContextFull *fctx)
-{
-	arikkei_dict_setup_string (&fctx->definitions, 301);
-	fctx->values_size = 16;
-	fctx->values = (AZPackedValue *) malloc (fctx->values_size * sizeof (AZPackedValue));
-	memset (fctx->values, 0, fctx->values_size * sizeof (AZPackedValue));
-	fctx->keys = (AZString **) malloc (fctx->values_size * sizeof (AZString *));
-	fctx->azo_ctx.intr = azo_interpreter_new (&fctx->azo_ctx);
-}
-
-static void
-context_finalize (AZOContextClass *klass, AZOContextFull *fctx)
-{
-	unsigned int i;
-	for (i = 0; i < fctx->nvalues; i++) {
-		az_packed_value_clear (&fctx->values[i]);
-		az_string_unref (fctx->keys[i]);
-	}
-	free (fctx->values);
-	free (fctx->keys);
-	arikkei_dict_release (&fctx->definitions);
-}
-
-static unsigned int
-context_call_define (const AZImplementation **arg_impls, const AZValue **arg_vals, const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx)
-{
-	return 0;
-}
-
 AZOContext *
 azo_context_new (void)
 {
-	AZOContext *ctx = (AZOContext *) az_instance_new (AZO_TYPE_CONTEXT);
+	/* fixme: This is lazily initialized and eccessed through class */
+	azo_defer_handle_get_type();
+
+	AZOContext *ctx = (AZOContext *) calloc(1, sizeof(AZOContext));
+	ctx->az_ctx.exc = (AZException *) azo_exception_new();
+	ctx->priv = (AZOContextPriv *) calloc(1, sizeof(AZOContextPriv));
+
+	arikkei_dict_setup_string (&ctx->priv->definitions, 301);
+	ctx->priv->values_size = 16;
+	ctx->priv->values = (AZPackedValue *) malloc (ctx->priv->values_size * sizeof (AZPackedValue));
+	memset (ctx->priv->values, 0, ctx->priv->values_size * sizeof (AZPackedValue));
+	ctx->priv->keys = (AZString **) malloc (ctx->priv->values_size * sizeof (AZString *));
+
+	ctx->intr = azo_interpreter_new (ctx);
+
 	return ctx;
 }
 
 void
 azo_context_delete (AZOContext *ctx)
 {
-	az_instance_delete (AZO_TYPE_CONTEXT, ctx);
+	unsigned int i;
+	for (i = 0; i < ctx->priv->nvalues; i++) {
+		az_packed_value_clear (&ctx->priv->values[i]);
+		az_string_unref (ctx->priv->keys[i]);
+	}
+	free (ctx->priv->values);
+	free (ctx->priv->keys);
+	arikkei_dict_release (&ctx->priv->definitions);
+	free(ctx->priv);
+
+	azo_exception_free((AZOException *) ctx->az_ctx.exc);
+
+	free(ctx);
 }
 
 unsigned int
@@ -124,19 +81,19 @@ azo_context_define(AZOContext *ctx, AZString *key, const AZImplementation *impl,
 	arikkei_return_val_if_fail (key != NULL, 0);
 	arikkei_return_val_if_fail (impl != NULL, 0);
 	arikkei_return_val_if_fail (inst != NULL, 0);
-	if (arikkei_dict_exists_pval (&fctx->definitions, key->str)) return 0;
-	if (fctx->nvalues >= fctx->values_size) {
-		unsigned int newsize = fctx->values_size << 1;
-		fctx->values = (AZPackedValue *) realloc (fctx->values, newsize * sizeof (AZPackedValue));
-		memset (&fctx->values[fctx->values_size], 0, (newsize - fctx->values_size) * sizeof (AZPackedValue));
-		fctx->keys = (AZString **) realloc (fctx->keys, newsize * sizeof (AZString *));
-		fctx->values_size = newsize;
+	if (arikkei_dict_exists_pval (&ctx->priv->definitions, key->str)) return 0;
+	if (ctx->priv->nvalues >= ctx->priv->values_size) {
+		unsigned int newsize = ctx->priv->values_size << 1;
+		ctx->priv->values = (AZPackedValue *) realloc (ctx->priv->values, newsize * sizeof (AZPackedValue));
+		memset (&ctx->priv->values[ctx->priv->values_size], 0, (newsize - ctx->priv->values_size) * sizeof (AZPackedValue));
+		ctx->priv->keys = (AZString **) realloc (ctx->priv->keys, newsize * sizeof (AZString *));
+		ctx->priv->values_size = newsize;
 	}
-	void *valptr = ARIKKEI_INT_TO_POINTER(fctx->nvalues);
-	arikkei_dict_insert_pval (&fctx->definitions, key->str, valptr);
-	az_packed_value_set_autobox(&fctx->values[fctx->nvalues], impl, inst);
+	void *valptr = ARIKKEI_INT_TO_POINTER(ctx->priv->nvalues);
+	arikkei_dict_insert_pval (&ctx->priv->definitions, key->str, valptr);
+	az_packed_value_set_autobox(&ctx->priv->values[ctx->priv->nvalues], impl, inst);
 	az_string_ref (key);
-	fctx->keys[fctx->nvalues++] = key;
+	ctx->priv->keys[ctx->priv->nvalues++] = key;
 	return 1;
 }
 
@@ -171,10 +128,10 @@ azo_context_lookup_by_str (AZOContext *ctx, const uint8_t *key, AZValue *val, un
 	arikkei_return_val_if_fail (ctx != NULL, NULL);
 	arikkei_return_val_if_fail (key != NULL, NULL);
 	arikkei_return_val_if_fail (val != NULL, NULL);
-	void **ptr = (void **) arikkei_dict_lookup (&fctx->definitions, &key);
+	void **ptr = (void **) arikkei_dict_lookup (&ctx->priv->definitions, &key);
 	if (!ptr) return NULL;
 	unsigned int idx = ARIKKEI_POINTER_TO_INT(*ptr);
-	return az_value_copy_autobox(fctx->values[idx].impl, val, &fctx->values[idx].v, size);
+	return az_value_copy_autobox(ctx->priv->values[idx].impl, val, &ctx->priv->values[idx].v, size);
 }
 
 void

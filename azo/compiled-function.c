@@ -120,7 +120,7 @@ compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, cons
 	// Exception handling!!!
 	// We probably have to install handler method to interpreter
 	// And new function invocation check the presence/absence of this
-	cfunc->ctx->intr->exc.type = AZO_EXCEPTION_NONE;
+	azo_exception_clear(&cfunc->ctx->intr->exc);
 
 	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, &cfunc->static_data, cfunc->signature->n_args, arg_impls, arg_vals, ret_impl, &ret_val->value, 64);
 

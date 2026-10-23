@@ -14,29 +14,29 @@
 
 #include "exception.h"
 
-static void exception_class_init (AZOExceptionClass *klass);
-/* AZClass implementation */
-static unsigned int exception_to_string (const AZImplementation* impl, void *instance, unsigned char *buf, unsigned int len);
-
-unsigned int azo_exception_type = 0;
-AZOExceptionClass *azo_exception_class = NULL;
-
-unsigned int
-azo_exception_get_type (void)
+AZOException *
+azo_exception_new()
 {
-	if (!azo_exception_type) {
-		az_register_type (&azo_exception_type, (const unsigned char *) "AZOException", AZ_TYPE_STRUCT, sizeof (AZOExceptionClass), sizeof (AZOException), 0, 0, 0,
-			(void (*) (AZClass *)) exception_class_init,
-			NULL, NULL);
-		azo_exception_class = (AZOExceptionClass *) az_type_get_class (azo_exception_type);
-	}
-	return azo_exception_type;
+	AZOException *exc = (AZOException *) calloc(1, sizeof(AZOException));
+	return exc;
 }
 
-static void
-exception_class_init (AZOExceptionClass *klass)
+void
+azo_exception_free(AZOException *exc)
 {
-	klass->klass.to_string = exception_to_string;
+	azo_exception_finalize(exc);
+	free(exc);
+}
+
+void
+azo_exception_init(AZOException *exc)
+{
+}
+
+void
+azo_exception_finalize(AZOException *exc)
+{
+	az_exception_clear(&exc->az_exc);
 }
 
 static const char *excnames[] = {
@@ -58,17 +58,16 @@ static const char *excnames[] = {
 };
 
 unsigned int
-static exception_to_string (const AZImplementation* impl, void *inst, unsigned char *buf, unsigned int len)
+azo_exception_to_string (const AZOException *exc, unsigned char *buf, unsigned int len)
 {
-	AZOException *exc = (AZOException *) inst;
-	return arikkei_strncpy (buf, len, (const unsigned char *) excnames[exc->type]);
+	return arikkei_strncpy (buf, len, (const unsigned char *) excnames[exc->az_exc.type]);
 }
 
 void
 azo_exception_set (AZOException *exc, unsigned int type, unsigned int mask, const uint8_t *ipc)
 {
- 	exc->type = type;
-	exc->mask = mask;
+ 	exc->az_exc.type = type;
+	exc->az_exc.mask = mask;
 	exc->ipc = ipc;
 }
 

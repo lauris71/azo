@@ -26,6 +26,7 @@ extern "C" {
 #define _REGISTER_THIS 0
 
 #define AZO_INTR_FLAG_CHECK_ARGS 1
+#define AZO_INTR_FLAG_NO_THROW 2
 /* Wrap integer overflow/clamping (vs saturate) when masked */
 #define AZO_INTR_FLAG_WRAP 0x8000
 /* Exceptions masked (suppressed) by default */
@@ -85,8 +86,6 @@ unsigned int azo_interpreter_push_frame (AZOInterpreter *intr, unsigned int n_el
  * @return the previous (new current) frame pointer
  */
 unsigned int azo_interpreter_pop_frame (AZOInterpreter *intr, AZOInterpreterCtx *ictx);
-
-void azo_interpreter_exception(AZOInterpreter *intr, const uint8_t *ip, unsigned int type);
 
 const uint8_t *azo_interpreter_interpret_tc (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ipc);
 

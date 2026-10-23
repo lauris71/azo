@@ -274,7 +274,7 @@ test_function(void)
         AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.az_exc.type);
     }
     /* Assigning property with clearly wrong signature fails */
     {
@@ -288,7 +288,7 @@ test_function(void)
         AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_VALUE, globals->intr->exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_VALUE, globals->intr->exc.az_exc.type);
     }
     /* A complex program */
     {
