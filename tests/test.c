@@ -223,7 +223,7 @@ test_language(void)
 		az_buffer_output_stream_reset(bostream);
         TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         /* Although exceptions are blocked, the value is still set */
-        TEST_ASSERT(ctx->intr->exc.az_exc.type == AZO_EXCEPTION_CHANGE_OF_MAGNITUDE);
+        TEST_ASSERT(ctx->az_ctx.exc.type == AZO_EXCEPTION_CHANGE_OF_MAGNITUDE);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
         TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
 		char *str = strndup((const char *) bostream->buffer, bostream->pos);

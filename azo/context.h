@@ -27,12 +27,17 @@ extern "C" {
 
 struct _AZOContext {
 	AZContext az_ctx;
+	/* Exception ip */
+	const uint8_t *exc_ip;
 	AZOInterpreter *intr;
 	AZOContextPriv *priv;
 };
 
-AZOContext *azo_context_new (void);
-void azo_context_delete (AZOContext *ctx);
+AZOContext *azo_context_new(void);
+void azo_context_delete(AZOContext *ctx);
+
+void azo_context_set_exception(AZOContext *ctx, unsigned int type, unsigned int mask, const uint8_t *ipc);
+void azo_context_clear_exception(AZOContext *ctx);
 
 unsigned int azo_context_define (AZOContext *ctx, AZString *key, const AZImplementation *impl, void *inst);
 unsigned int azo_context_define_by_str (AZOContext *ctx, const unsigned char *key, const AZImplementation *impl, void *inst);

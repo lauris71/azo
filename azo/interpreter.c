@@ -51,9 +51,8 @@ azo_interpreter_new (AZOContext *ctx)
 	intr->ctx = ctx;
 
 	az_instance_init_by_type (&intr->stack, AZO_TYPE_STACK);
-	azo_exception_init(&intr->exc);
 
-	intr->flags = AZO_INTR_FLAG_CHECK_ARGS | AZO_INTR_FLAG_MASK_DEFAULT;
+	intr->flags = AZO_INTR_FLAG_CHECK_ARGS | AZO_INTR_DEFAULT_MASK;
 
 	return intr;
 }
@@ -62,7 +61,6 @@ void
 interpreter_delete (AZOInterpreter *intr)
 {
 	az_instance_finalize_by_type (&intr->stack, AZO_TYPE_STACK);
-	azo_exception_finalize(&intr->exc);
 	free (intr->frames);
 	free (intr);
 }
@@ -70,12 +68,7 @@ interpreter_delete (AZOInterpreter *intr)
 void
 azo_interpreter_init(AZOInterpreter *intr)
 {
-	// fixme: Think how to manage interpreter through native calls
-	//intr->n_frames = 0;
-	//intr->frames[0] = 0;
-	//if (intr->stack.length) azo_stack_pop(&intr->stack, intr->stack.length);
-	intr->flags = AZO_INTR_FLAG_CHECK_ARGS | AZO_INTR_FLAG_MASK_DEFAULT;
-	intr->exc.az_exc.type = AZO_EXCEPTION_NONE;
+	intr->flags = AZO_INTR_FLAG_CHECK_ARGS | AZO_INTR_DEFAULT_MASK;
 	intr->vals[0].impl = NULL;
 	intr->vals[1].impl = NULL;
 }
@@ -153,8 +146,8 @@ azo_interpreter_pop_frame (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 
 static inline void
 set_exception_if_clear(AZOInterpreter *intr, unsigned int type, const uint8_t *ip) {
-	if (!intr->exc.az_exc.type) {
-		azo_exception_set(&intr->exc, type, 1UL << type, ip);
+	if (!intr->ctx->az_ctx.exc.type) {
+		azo_context_set_exception(intr->ctx, type, 1UL << type, ip);
 	}
 }
 
@@ -263,42 +256,20 @@ convert_to_u32 (AZOInterpreter *intr, unsigned int *dst, const AZImplementation 
 /* New stack methods */
 
 static unsigned int
-test_stack_type_exact (AZOInterpreter *intr, const unsigned char *ip, unsigned int pos, unsigned int type)
+test_stack_type_exact(AZOInterpreter *intr, const unsigned char *ip, unsigned int pos, unsigned int type)
 {
-	if ((pos + 1) > intr->stack.length) {
-		EXCEPTION(AZO_EXCEPTION_STACK_UNDERFLOW);
-		return 0;
-	}
 	if (azo_stack_type_bw (&intr->stack, pos) != type) {
-		EXCEPTION(AZO_EXCEPTION_INVALID_TYPE);
+		EXCEPTION(AZ_EXCEPTION_INVALID_TYPE);
 		return 0;
 	}
 	return 1;
 }
 
 static unsigned int
-test_stack_type_is_2 (AZOInterpreter *intr, const uint8_t *ip, unsigned int type)
+test_stack_type_is(AZOInterpreter *intr, const unsigned char *ip, unsigned int pos, unsigned int type)
 {
-	if (intr->stack.length < 2) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_STACK_UNDERFLOW, 1UL << AZO_EXCEPTION_STACK_UNDERFLOW, ip);
-		return 0;
-	}
-	if (!az_type_is_a (azo_stack_type_bw (&intr->stack, 0), type)) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-		return 0;
-	}
-	if (!az_type_is_a (azo_stack_type_bw (&intr->stack, 1), type)) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_INVALID_TYPE, 1UL << AZO_EXCEPTION_INVALID_TYPE, ip);
-		return 0;
-	}
-	return 1;
-}
-
-static unsigned int
-test_stack_underflow (AZOInterpreter *intr, const uint8_t *ip, unsigned int n_values)
-{
-	if (intr->stack.length < n_values) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_STACK_UNDERFLOW, 1UL << AZO_EXCEPTION_STACK_UNDERFLOW, ip);
+	if (!az_type_is_a(azo_stack_type_bw(&intr->stack, pos), type)) {
+		EXCEPTION(AZ_EXCEPTION_INVALID_TYPE);
 		return 0;
 	}
 	return 1;
@@ -308,7 +279,7 @@ static unsigned int
 test_stack_overflow (AZOInterpreter *intr, const uint8_t *ip, unsigned int n_values)
 {
 	if ((intr->stack.length + n_values) > 65536) {
-		azo_exception_set (&intr->exc, AZO_EXCEPTION_STACK_OVERFLOW, 1UL << AZO_EXCEPTION_STACK_OVERFLOW, ip);
+		azo_context_set_exception(intr->ctx, AZO_EXCEPTION_STACK_OVERFLOW, 1UL << AZO_EXCEPTION_STACK_OVERFLOW, ip);
 		return 0;
 	}
 	return 1;
@@ -320,6 +291,8 @@ test_stack_overflow (AZOInterpreter *intr, const uint8_t *ip, unsigned int n_val
 #define TEST_OVERFLOW(n_values) TEST((intr->stack.length + n_values) <= 65536, AZO_EXCEPTION_STACK_OVERFLOW);
 
 #define CHECK_TYPE_EXACT(pos,type) if ((intr->flags & AZO_INTR_FLAG_CHECK_ARGS) && !test_stack_type_exact(intr, ip, pos, type)) return NULL;
+#define TEST_TYPE_EXACT(pos,type) if (!test_stack_type_exact(intr, ip, pos, type)) return NULL;
+#define TEST_TYPE_IS(pos,type) if (!test_stack_type_is(intr, ip, pos, type)) return NULL;
 
 static const unsigned char *
 interpret_EXCEPTION (AZOInterpreter *intr, const unsigned char *ip)
@@ -357,7 +330,7 @@ interpret_type_EXCEPTION (AZOInterpreter *intr, const uint8_t *ip)
 	if (az_type_is_a(azo_stack_type_bw(&intr->stack, pos), type)) {
 		return ip + 9;
 	}
-	EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+	EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	return NULL;
 }
 
@@ -375,7 +348,7 @@ interpret_exception_if_not_assignable (AZOInterpreter *intr, const uint8_t *ip)
 	if (az_type_is_assignable_to (azo_stack_type_bw (&intr->stack, pos), type)) {
 		return ip + 9;
 	}
-	EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+	EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	return NULL;
 }
 
@@ -454,7 +427,7 @@ interpret_PUSH_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip)
 	type = ip[1];
 	TEST_OVERFLOW(1);
 	/* Type has to be primitive or NULL */
-	CHECK(!type || AZ_TYPE_IS_PRIMITIVE(type), AZO_EXCEPTION_INVALID_TYPE);
+	CHECK(!type || AZ_TYPE_IS_PRIMITIVE(type), AZ_EXCEPTION_INVALID_TYPE);
 	if (type) {
 		klass = az_type_get_class (type);
 		azo_stack_push_value (&intr->stack, &klass->impl, ip + 2);
@@ -705,6 +678,8 @@ interpret_PROMOTE (AZOInterpreter *intr, const uint8_t *ip)
 	return ip + 2;
 }
 
+#define EXCEPTION_THROW_MASKED(type,mask) if(!(intr->flags & mask)) EXCEPTION_THROW(type);
+
 static const unsigned char *
 interpret_convert (AZOInterpreter *intr, const uint8_t *ip, unsigned int strict, unsigned int exact)
 {
@@ -721,19 +696,25 @@ interpret_convert (AZOInterpreter *intr, const uint8_t *ip, unsigned int strict,
 		if (result_code == AZO_CALCULATE_INVALID_TYPE) {
 			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 		}
-		if (strict) {
-			/* Implicit assignment: magnitude change (clamping) always throws */
-			if (flags & AZO_CALCULATE_FLAG_MAGNITUDE) EXCEPTION_THROW (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE);
-		} else if ((flags & AZO_CALCULATE_FLAG_MAGNITUDE) && !AZO_EXCEPTION_IS_MASKED (intr->flags, AZO_EXCEPTION_CHANGE_OF_MAGNITUDE)) {
-			EXCEPTION_THROW (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE);
+		if (flags & AZO_CALCULATE_FLAG_MAGNITUDE) {
+			if (strict) {
+				/* Implicit assignment: magnitude change (clamping) always throws */
+				EXCEPTION_THROW(AZO_EXCEPTION_CHANGE_OF_MAGNITUDE);
+			} else {
+				EXCEPTION_THROW_MASKED(AZO_EXCEPTION_CHANGE_OF_MAGNITUDE, AZO_INTR_CHANGE_OF_MAGNITUDE_MASK);
+			}
 		}
-		if (exact) {
-			/* Exact cast qualifier: rounding always throws */
-			if (flags & AZO_CALCULATE_FLAG_ROUNDED) EXCEPTION_THROW (AZO_EXCEPTION_CHANGE_OF_PRECISION);
-		} else if ((flags & AZO_CALCULATE_FLAG_ROUNDED) && !AZO_EXCEPTION_IS_MASKED (intr->flags, AZO_EXCEPTION_CHANGE_OF_PRECISION)) {
-			EXCEPTION_THROW (AZO_EXCEPTION_CHANGE_OF_PRECISION);
+		if (flags & AZO_CALCULATE_FLAG_ROUNDED) {
+			if (exact) {
+				/* Exact cast qualifier: rounding always throws */
+				EXCEPTION_THROW(AZO_EXCEPTION_CHANGE_OF_PRECISION);
+			} else {
+				EXCEPTION_THROW_MASKED(AZO_EXCEPTION_CHANGE_OF_PRECISION, AZO_INTR_CHANGE_OF_PRECISION_MASK);
+			}
 		}
-		if ((flags & AZO_CALCULATE_FLAG_NON_FINITE) && !AZO_EXCEPTION_IS_MASKED (intr->flags, AZO_EXCEPTION_NOT_FINITE)) EXCEPTION_THROW (AZO_EXCEPTION_NOT_FINITE);
+		if (flags & AZO_CALCULATE_FLAG_NON_FINITE) {
+			EXCEPTION_THROW_MASKED(AZO_EXCEPTION_NOT_FINITE, AZO_INTR_NOT_FINITE_MASK);
+		}
 		/* Write the converted value back and update the element type */
 		*from_val = to_val;
 		*azo_stack_impls_bw (&intr->stack, 0) = AZ_IMPL_FROM_TYPE (to_type);
@@ -811,7 +792,7 @@ interpret_EQUAL_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 		rhs = azo_stack_value_bw (&intr->stack, 0);
 		result = *((unsigned long long *) lhs) == *((unsigned long long *) rhs);
 	} else {
-		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_BOOLEAN), &result);
@@ -826,9 +807,7 @@ interpret_EQUAL (AZOInterpreter *intr, const uint8_t *ip)
 	CHECK_UNDERFLOW(2);
 	type = azo_stack_type_bw (&intr->stack, 0);
 	if (AZ_TYPE_IS_PRIMITIVE (type)) {
-		if (!test_stack_type_exact(intr, ip, 1, type)) {
-			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
-		}
+		TEST_TYPE_EXACT(1, type);
 		lhs = azo_stack_value_bw (&intr->stack, 1);
 		rhs = azo_stack_value_bw (&intr->stack, 0);
 		switch (type) {
@@ -864,14 +843,13 @@ interpret_EQUAL (AZOInterpreter *intr, const uint8_t *ip)
 			break;
 		}
 	} else if (type == AZ_TYPE_BLOCK) {
-		if (!test_stack_type_is_2 (intr, ip, type)) {
-			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
-		}
+		TEST_TYPE_IS(0, type);
+		TEST_TYPE_IS(1, type);
 		lhs = azo_stack_value_bw (&intr->stack, 1);
 		rhs = azo_stack_value_bw (&intr->stack, 0);
 		result = *((unsigned long long *) lhs) == *((unsigned long long *) rhs);
 	} else {
-		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_BOOLEAN), &result);
@@ -921,7 +899,7 @@ interpret_COMPARE_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 		result = (lhs->double_v < rhs->double_v) ? -1 : (lhs->double_v > rhs->double_v) ? 1 : 0;
 		break;
 	default:
-		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_INT32), &result);
@@ -970,7 +948,7 @@ interpret_COMPARE (AZOInterpreter *intr, const uint8_t *ip)
 		result = (lhs->double_v < rhs->double_v) ? -1 : (lhs->double_v > rhs->double_v) ? 1 : 0;
 		break;
 	default:
-		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_INT32), &result);
@@ -996,8 +974,10 @@ interpret_NEGATE (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int flags = 0;
 	unsigned int mode = (intr->flags & AZO_INTR_FLAG_WRAP) ? AZO_CALCULATE_MODE_WRAP : AZO_CALCULATE_MODE_SATURATE;
 	unsigned int result_code = azo_calculate_negate (mode, type, val, val, &flags);
-	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZO_EXCEPTION_INVALID_TYPE);
-	if ((flags & AZO_CALCULATE_FLAG_OVERFLOW) && !AZO_EXCEPTION_IS_MASKED (intr->flags, AZO_EXCEPTION_INTEGER_OVERFLOW)) EXCEPTION_THROW (AZO_EXCEPTION_INTEGER_OVERFLOW);
+	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZ_EXCEPTION_INVALID_TYPE);
+	if (flags & AZO_CALCULATE_FLAG_OVERFLOW) {
+		EXCEPTION_THROW_MASKED(AZO_EXCEPTION_INTEGER_OVERFLOW, AZO_INTR_INTEGER_OVERFLOW_MASK);
+	}
 	return ip + 1;
 }
 
@@ -1025,7 +1005,7 @@ interpret_CONJUGATE (AZOInterpreter *intr, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
 	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
-	CHECK((type == AZ_TYPE_COMPLEX_FLOAT) || (type == AZ_TYPE_COMPLEX_DOUBLE), AZO_EXCEPTION_INVALID_TYPE);
+	CHECK((type == AZ_TYPE_COMPLEX_FLOAT) || (type == AZ_TYPE_COMPLEX_DOUBLE), AZ_EXCEPTION_INVALID_TYPE);
 	AZValue *val = azo_stack_value_bw (&intr->stack, 0);
 	switch (type) {
 	case AZ_TYPE_COMPLEX_FLOAT:
@@ -1043,7 +1023,7 @@ interpret_BITWISE_NOT (AZOInterpreter *intr, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
 	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
-	CHECK(AZ_TYPE_IS_INTEGRAL(type), AZO_EXCEPTION_INVALID_TYPE);
+	CHECK(AZ_TYPE_IS_INTEGRAL(type), AZ_EXCEPTION_INVALID_TYPE);
 	AZValue *val = azo_stack_value_bw (&intr->stack, 0);
 	val->uint64_v = ~val->int64_v;
 	return ip + 1;
@@ -1079,11 +1059,17 @@ interpret_binary_typed_calculate (AZOInterpreter *intr, const unsigned char *ip,
 	unsigned int flags = 0;
 	unsigned int mode = (intr->flags & AZO_INTR_FLAG_WRAP) ? AZO_CALCULATE_MODE_WRAP : AZO_CALCULATE_MODE_SATURATE;
 	unsigned int result_code = azo_calculate_typed (mode, type, lhs, rhs, operation, &result, &flags);
-	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZO_EXCEPTION_INVALID_TYPE);
+	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZ_EXCEPTION_INVALID_TYPE);
 	if (result_code == AZO_CALCULATE_DIVIDE_BY_ZERO) EXCEPTION_THROW (AZO_EXCEPTION_DIVIDE_BY_ZERO);
-	if ((flags & AZO_CALCULATE_FLAG_MAGNITUDE) && !AZO_EXCEPTION_IS_MASKED (intr->flags, AZO_EXCEPTION_CHANGE_OF_MAGNITUDE)) EXCEPTION_THROW (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE);
-	if ((flags & AZO_CALCULATE_FLAG_OVERFLOW) && !AZO_EXCEPTION_IS_MASKED (intr->flags, AZO_EXCEPTION_INTEGER_OVERFLOW)) EXCEPTION_THROW (AZO_EXCEPTION_INTEGER_OVERFLOW);
-	if ((flags & AZO_CALCULATE_FLAG_NON_FINITE) && !AZO_EXCEPTION_IS_MASKED (intr->flags, AZO_EXCEPTION_NOT_FINITE)) EXCEPTION_THROW (AZO_EXCEPTION_NOT_FINITE);
+	if (flags & AZO_CALCULATE_FLAG_MAGNITUDE) {
+		EXCEPTION_THROW_MASKED(AZO_EXCEPTION_CHANGE_OF_MAGNITUDE, AZO_INTR_CHANGE_OF_MAGNITUDE_MASK);
+	}
+	if (flags & AZO_CALCULATE_FLAG_OVERFLOW) {
+		EXCEPTION_THROW_MASKED(AZO_EXCEPTION_INTEGER_OVERFLOW, AZO_INTR_INTEGER_OVERFLOW_MASK);
+	}
+	if (flags & AZO_CALCULATE_FLAG_NON_FINITE) {
+		EXCEPTION_THROW_MASKED(AZO_EXCEPTION_NOT_FINITE, AZO_INTR_NOT_FINITE_MASK);
+	}
 	/* Replace both operands with the result */
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE (type), &result);
@@ -1100,20 +1086,26 @@ static const unsigned char *
 interpret_binary_calculate (AZOInterpreter *intr, const unsigned char *ip, unsigned int operation)
 {
 	CHECK_UNDERFLOW(2);
-	unsigned int lhs_type = azo_stack_type_bw (&intr->stack, 1);
-	unsigned int rhs_type = azo_stack_type_bw (&intr->stack, 0);
 	const AZValue *lhs = azo_stack_value_bw (&intr->stack, 1);
+	unsigned int lhs_type = azo_stack_type_bw (&intr->stack, 1);
 	const AZValue *rhs = azo_stack_value_bw (&intr->stack, 0);
+	unsigned int rhs_type = azo_stack_type_bw (&intr->stack, 0);
 	AZValue result;
 	unsigned int result_type;
 	unsigned int flags;
 	unsigned int mode = (intr->flags & AZO_INTR_FLAG_WRAP) ? AZO_CALCULATE_MODE_WRAP : AZO_CALCULATE_MODE_SATURATE;
 	unsigned int result_code = azo_calculate_binary (mode, lhs_type, lhs, rhs_type, rhs, operation, &result_type, &result, &flags);
-	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZO_EXCEPTION_INVALID_TYPE);
+	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZ_EXCEPTION_INVALID_TYPE);
 	if (result_code == AZO_CALCULATE_DIVIDE_BY_ZERO) EXCEPTION_THROW (AZO_EXCEPTION_DIVIDE_BY_ZERO);
-	if ((flags & AZO_CALCULATE_FLAG_MAGNITUDE) && !AZO_EXCEPTION_IS_MASKED (intr->flags, AZO_EXCEPTION_CHANGE_OF_MAGNITUDE)) EXCEPTION_THROW (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE);
-	if ((flags & AZO_CALCULATE_FLAG_OVERFLOW) && !AZO_EXCEPTION_IS_MASKED (intr->flags, AZO_EXCEPTION_INTEGER_OVERFLOW)) EXCEPTION_THROW (AZO_EXCEPTION_INTEGER_OVERFLOW);
-	if ((flags & AZO_CALCULATE_FLAG_NON_FINITE) && !AZO_EXCEPTION_IS_MASKED (intr->flags, AZO_EXCEPTION_NOT_FINITE)) EXCEPTION_THROW (AZO_EXCEPTION_NOT_FINITE);
+	if (flags & AZO_CALCULATE_FLAG_MAGNITUDE) {
+		EXCEPTION_THROW_MASKED(AZO_EXCEPTION_CHANGE_OF_MAGNITUDE, AZO_INTR_CHANGE_OF_MAGNITUDE_MASK);
+	}
+	if (flags & AZO_CALCULATE_FLAG_OVERFLOW) {
+		EXCEPTION_THROW_MASKED(AZO_EXCEPTION_INTEGER_OVERFLOW, AZO_INTR_INTEGER_OVERFLOW_MASK);
+	}
+	if (flags & AZO_CALCULATE_FLAG_NON_FINITE) {
+		EXCEPTION_THROW_MASKED(AZO_EXCEPTION_NOT_FINITE, AZO_INTR_NOT_FINITE_MASK);
+	}
 	/* Replace both operands with the result */
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE (result_type), &result);
@@ -1185,7 +1177,7 @@ interpret_binary_shift (AZOInterpreter *intr, const unsigned char *ip, unsigned 
 	AZValue result;
 	unsigned int result_type;
 	unsigned int result_code = azo_calculate_shift (lhs_type, lhs, rhs_type, rhs, operation, &result_type, &result);
-	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZO_EXCEPTION_INVALID_TYPE);
+	if (result_code == AZO_CALCULATE_INVALID_TYPE) EXCEPTION_THROW (AZ_EXCEPTION_INVALID_TYPE);
 	/* Replace both operands with the result */
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE (result_type), &result);
@@ -1252,7 +1244,7 @@ interpret_MIN_MAX_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 	} else if (type == AZ_TYPE_DOUBLE) {
 		remove = lhs->double_v > rhs->double_v;
 	} else {
-		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
 	if (ip[0] == AZO_TC_MAX_TYPED) remove = !remove;
 	azo_stack_remove (&intr->stack, intr->stack.length - 1 - remove, 1);
@@ -1265,8 +1257,8 @@ interpret_GET_INTERFACE_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip
 	CHECK_UNDERFLOW(1);
 	uint32_t type;
 	memcpy (&type, ip + 1, 4);
-	CHECK(AZ_IMPL_IS_BLOCK(azo_stack_impl_bw(&intr->stack, 0)), AZO_EXCEPTION_INVALID_TYPE);
-	CHECK(AZ_TYPE_IS_INTERFACE(type), AZO_EXCEPTION_INVALID_TYPE);
+	CHECK(AZ_IMPL_IS_BLOCK(azo_stack_impl_bw(&intr->stack, 0)), AZ_EXCEPTION_INVALID_TYPE);
+	CHECK(AZ_TYPE_IS_INTERFACE(type), AZ_EXCEPTION_INVALID_TYPE);
 	void *inst;
 	const AZImplementation *impl = az_instance_get_interface(azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), type, &inst);
 	azo_stack_push_value (&intr->stack, impl, &inst);
@@ -1286,24 +1278,27 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 	CHECK_UNDERFLOW(pos);
 	AZFunctionInstance *func_inst;
 	const AZFunctionImplementation *func_impl = (const AZFunctionImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, pos), azo_stack_instance_bw (&intr->stack, pos), AZ_TYPE_FUNCTION, (void **) &func_inst);
-	if (!func_impl) EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+	if (!func_impl) EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	const AZFunctionSignature *sig = az_function_get_signature (func_impl, func_inst);
 	for (unsigned int i = 0; i < sig->n_args; i++) {
 		if (!azo_stack_convert_bw (&intr->stack, sig->n_args - 1 - i, sig->arg_types[i])) {
-			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+			EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 		}
 	}
 	unsigned int prev = azo_interpreter_push_frame(intr, pos);
 	AZPackedValue64 ret_val = {0};
-	az_function_invoke (func_impl, func_inst, azo_stack_impls_bw (&intr->stack, sig->n_args - 1), (const AZValue **) azo_stack_values_bw (&intr->stack, sig->n_args - 1), &ret_val.impl, &ret_val.v, NULL);
+	az_function_invoke (func_impl, func_inst,
+		azo_stack_impls_bw(&intr->stack, sig->n_args - 1),
+		(const AZValue **)azo_stack_values_bw (&intr->stack, sig->n_args - 1),
+		&ret_val.impl, &ret_val.v, &intr->ctx->az_ctx);
 	unsigned int new_prev = azo_interpreter_pop_frame(intr, ictx);
 	assert(new_prev == prev);
 	/* Pop function and the arguments */
 	azo_stack_pop(&intr->stack, 1);
 	azo_stack_push_value_transfer (&intr->stack, ret_val.impl, &ret_val.v);
-	if(intr->exc.az_exc.type) {
+	if(intr->ctx->az_ctx.exc.type) {
 		/* Set ip to current frame */
-		intr->exc.ipc = ip;
+		intr->ctx->exc_ip = ip;
 		return NULL;
 	}
 	return ip + 2;
@@ -1353,7 +1348,7 @@ interpret_NEW_ARRAY (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int size;
 	AZValueArray *varray;
 	AZClass *varray_class;
-	CHECK(azo_stack_type_bw(&intr->stack, 0) == AZ_TYPE_UINT32, AZO_EXCEPTION_INVALID_TYPE);
+	CHECK(azo_stack_type_bw(&intr->stack, 0) == AZ_TYPE_UINT32, AZ_EXCEPTION_INVALID_TYPE);
 	size = *((unsigned int *) azo_stack_value_bw (&intr->stack, 0));
 	azo_stack_pop (&intr->stack, 1);
 	varray = az_value_array_new (size);
@@ -1372,18 +1367,18 @@ interpret_LOAD_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 	const AZImplementation *obj_impl = azo_stack_impl_bw (&intr->stack, 1);
 	const AZImplementation *idx_impl = azo_stack_impl_bw (&intr->stack, 0);
 	if (!obj_impl || !idx_impl) {
-		EXCEPTION_THROW(AZO_EXCEPTION_NULL_DEREFERENCE);
+		EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
 	}
 	void *list_inst;
 	AZListImplementation *list_impl = (AZListImplementation *) az_instance_get_interface(obj_impl, azo_stack_instance_bw(&intr->stack, 1), AZ_TYPE_LIST, (void **) &list_inst);
 	if (!list_impl) {
-		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
 	if (!convert_to_u32 (intr, &idx, idx_impl, azo_stack_value_bw(&intr->stack, 0), ip)) {
 		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 	}
 	if (idx >= az_collection_get_size(&list_impl->collection_impl, list_inst)) {
-		EXCEPTION_THROW(AZO_EXCEPTION_OUT_OF_BOUNDS);
+		EXCEPTION_THROW(AZ_EXCEPTION_OUT_OF_BOUNDS);
 	}
 	val.impl = az_list_get_element(list_impl, list_inst, idx, &val.v.value, 64);
 	azo_stack_pop(&intr->stack, 1);
@@ -1399,14 +1394,14 @@ interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 	AZPackedValue val = { 0 };
 	if (intr->flags & AZO_INTR_FLAG_CHECK_ARGS) {
 		if (!az_type_is_a (azo_stack_type_bw (&intr->stack, 2), AZ_TYPE_VALUE_ARRAY)) {
-			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+			EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 		}
 		varray = *((AZValueArray **) azo_stack_value_bw (&intr->stack, 2));
 		if (!convert_to_u32 (intr, &idx, azo_stack_impl_bw (&intr->stack, 1), azo_stack_value_bw (&intr->stack, 1), ip)) {
 			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 		}
 		if (idx >= varray->size) {
-			EXCEPTION_THROW(AZO_EXCEPTION_OUT_OF_BOUNDS);
+			EXCEPTION_THROW(AZ_EXCEPTION_OUT_OF_BOUNDS);
 		}
 		az_packed_value_set_from_impl_value (&val, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0));
 	} else {
@@ -1451,7 +1446,7 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 	/* fixme: Implement automatic unboxing (in stack?) or not? */
 	impl = azo_stack_impl_bw (&intr->stack, 1);
 	if (!impl) {
-		EXCEPTION_THROW(AZO_EXCEPTION_NULL_DEREFERENCE);
+		EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
 	}
 	inst = azo_stack_instance_bw (&intr->stack, 1);
 	if (impl == &AZBoxedInterfaceKlass.klass.impl) {
@@ -1460,7 +1455,7 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 	intr->vals[0].impl = NULL;
 	/* fixme: We should support class properties on null objects probably */
 	if (!inst) {
-		EXCEPTION_THROW(AZO_EXCEPTION_NULL_DEREFERENCE);
+		EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
 	}
 
 	/* Try simple property */
@@ -1525,7 +1520,7 @@ interpret_GET_FUNCTION (AZOInterpreter *intr, const uint8_t *ip)
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, n_args);
 	const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, n_args + 1);
 	if (!impl) {
-		EXCEPTION_THROW(AZO_EXCEPTION_NULL_DEREFERENCE);
+		EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
 	}
 	const AZClass *def_class;
 	const AZImplementation *sub_impl;
@@ -1552,7 +1547,7 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
 	const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, 2);
 	if (!impl) {
-		EXCEPTION_THROW(AZO_EXCEPTION_NULL_DEREFERENCE);
+		EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
 	}
 	void *inst = azo_stack_instance_bw (&intr->stack, 2);
 	if (impl == &AZBoxedInterfaceKlass.klass.impl) {
@@ -1569,7 +1564,7 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		if (!type && (AZ_TYPE_IS_REFERENCE(prop->type) || AZ_TYPE_IS_INTERFACE(prop->type))) {
 			result = !az_instance_set_property_by_id(def_class, AZ_CLASS_FROM_IMPL(sub_impl), sub_impl, sub_inst, idx, NULL, NULL);
 			if (result) {
-				EXCEPTION_THROW(AZO_EXCEPTION_INVALID_VALUE);
+				EXCEPTION_THROW(AZ_EXCEPTION_INVALID_VALUE);
 			}
 		} else if (!az_type_is_assignable_to (type, prop->type)) {
 			/* fixme: No need for double copy, unless we want to use packed value conversion */
@@ -1584,7 +1579,7 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 		} else {
 			result = !az_instance_set_property_by_id (def_class, AZ_CLASS_FROM_IMPL(sub_impl), sub_impl, sub_inst, idx, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0));
 			if (!result) {
-				EXCEPTION_THROW(AZO_EXCEPTION_INVALID_VALUE);
+				EXCEPTION_THROW(AZ_EXCEPTION_INVALID_VALUE);
 			}
 		}
 	} else {
@@ -1671,11 +1666,11 @@ interpret_GET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
 	unsigned int flags;
 	CHECK_TYPE_EXACT(0, AZ_TYPE_STRING);
 	CHECK_UNDERFLOW(2);
-	CHECK(az_type_implements(azo_stack_type_bw(&intr->stack, 1), AZ_TYPE_ATTRIBUTE_DICT), AZO_EXCEPTION_INVALID_TYPE);
+	CHECK(az_type_implements(azo_stack_type_bw(&intr->stack, 1), AZ_TYPE_ATTRIBUTE_DICT), AZ_EXCEPTION_INVALID_TYPE);
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
 	attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 1), azo_stack_instance_bw (&intr->stack, 1), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
 	if (!attrd_impl) {
-		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
 	intr->vals[0].impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, key, &intr->vals[0].v.value, 64, &flags);
 	azo_stack_pop (&intr->stack, 2);
@@ -1698,17 +1693,17 @@ interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const uint8_t *ip)
 {
 	CHECK_TYPE_EXACT(1, AZ_TYPE_STRING);
 	CHECK_UNDERFLOW(3);
-	CHECK(az_type_implements(azo_stack_type_bw(&intr->stack, 2), AZ_TYPE_ATTRIBUTE_DICT), AZO_EXCEPTION_INVALID_TYPE);
+	CHECK(az_type_implements(azo_stack_type_bw(&intr->stack, 2), AZ_TYPE_ATTRIBUTE_DICT), AZ_EXCEPTION_INVALID_TYPE);
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
 	void *attrd_inst;
 	const AZAttribDictImplementation *attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 2), azo_stack_instance_bw (&intr->stack, 2), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
 	if (!attrd_impl) {
-		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_TYPE);
+		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
 	const AZImplementation *val_impl = azo_stack_impl_bw (&intr->stack, 0);
 	void *val_inst = azo_stack_instance_bw (&intr->stack, 0);
 	if (!az_attrib_dict_set (attrd_impl, attrd_inst, key, val_impl, val_inst, 0)) {
-		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_VALUE);
+		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_VALUE);
 	}
 	azo_stack_pop (&intr->stack, 3);
 	return ip + 1;
@@ -1984,16 +1979,15 @@ azo_interpreter_run_frame(AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 {
 	const uint8_t *ipc = ictx->tcode;
 	const uint8_t *end = ictx->tcode + ictx->tcode_len;
-	assert(!intr->exc.az_exc.type);
+	assert(!intr->ctx->az_ctx.exc.type);
 
 	azo_interpreter_run_code(intr, ictx, ipc, end);
 
-	if (intr->exc.az_exc.type != AZO_EXCEPTION_NONE) {
+	if (intr->ctx->az_ctx.exc.type != AZ_EXCEPTION_NONE) {
 		unsigned char b[1024];
-		unsigned int ip = intr->exc.ipc - ictx->tcode;
+		unsigned int ip = intr->ctx->exc_ip - ictx->tcode;
 		/* Exception */
-		azo_exception_to_string(&intr->exc, b, 1024);
-		fprintf (stderr, "Fatal exception: %s\n", b);
+		fprintf (stderr, "Fatal exception: %s\n",intr->ctx->az_ctx.exc.msg->str);
 		azo_debug_print_term(ictx->debug, ip, stderr);
 		fprintf(stderr, "Position: %d %d\n", ip, ictx->tcode[ip]);
 		azo_bc_print_instruction(b, 256, ictx->tcode, ip, ictx->tcode_len);

@@ -122,8 +122,7 @@ enum {
 
 /* Default computation-mode exception mask: rounding and non-finite results are
  * masked (suppressed); magnitude change and integer overflow throw by default */
-#define AZO_COMPILER_DEFAULT_EXCEPTION_MASK \
-	(AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_PRECISION) | AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_NOT_FINITE))
+#define AZO_COMPILER_DEFAULT_EXCEPTION_MASK (AZO_INTR_CHANGE_OF_PRECISION_MASK | AZO_INTR_NOT_FINITE_MASK)
 
 /* Adjust an exception mask for a computation mode (AZO_TERM_FLAG_* mode bits) */
 static inline unsigned int
@@ -131,11 +130,11 @@ azo_compiler_mode_mask (unsigned int mask, unsigned int mode_flags)
 {
 	if (mode_flags & AZO_TERM_FLAG_FINITE) {
 		/* finite: non-finite results throw */
-		mask &= ~AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_NOT_FINITE);
+		mask &= ~AZO_INTR_NOT_FINITE_MASK;
 	}
 	if (mode_flags & (AZO_TERM_FLAG_SATURATE | AZO_TERM_FLAG_WRAP)) {
 		/* saturate/wrap: magnitude change and integer overflow are suppressed */
-		mask |= AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE) | AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_INTEGER_OVERFLOW);
+		mask |= (AZO_INTR_CHANGE_OF_MAGNITUDE_MASK | AZO_INTR_INTEGER_OVERFLOW_MASK);
 	}
 	return mask;
 }

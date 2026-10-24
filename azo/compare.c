@@ -244,7 +244,7 @@ azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, AZOCompilerContex
 	azo_code_update_JMP32 (code, lhs_type_gt_cdouble);
 	azo_code_update_JMP32 (code, rhs_type_lt_i8);
 	azo_code_update_JMP32 (code, rhs_type_gt_cdouble);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
+	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
 
 	/* finished */
 	azo_code_update_JMP32 (code, finished_1);
@@ -281,7 +281,7 @@ compile_comparison_any_const_eq (AZOCompiler *comp, AZOCompilerContext *ctx, con
 		finished = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 		azo_code_update_JMP32 (code, lhs_type_lt_i8);
 		azo_code_update_JMP32 (code, lhs_type_gt_cdouble);
-		azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
+		azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
 		azo_code_update_JMP32 (code, finished);
 		return 1;
 	} else {
@@ -290,7 +290,7 @@ compile_comparison_any_const_eq (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	}
 	finished = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	azo_code_update_JMP32 (code, invalid_type);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
+	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
 	azo_code_update_JMP32 (code, finished);
 	return 1;
 }
@@ -418,7 +418,7 @@ azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContex
 	azo_code_update_JMP32 (code, lhs_type_gt_double);
 	azo_code_update_JMP32 (code, rhs_type_lt_i8);
 	azo_code_update_JMP32 (code, rhs_type_gt_double);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
+	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
 
 
 	/* finished */
@@ -499,7 +499,7 @@ compile_comparison_any_const_lg (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	/* Invalid_type */
 	azo_code_update_JMP32 (code, lhs_type_lt_i8);
 	azo_code_update_JMP32 (code, lhs_type_gt_double);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
+	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
 
 
 	/* finished */

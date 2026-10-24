@@ -112,6 +112,7 @@ test_program_with_this(AZOContext *ctx, const char *text, const AZImplementation
     if (print_bytecode) azo_program_print_bytecode(prog);
 
     azo_interpreter_init(ctx->intr);
+    azo_context_clear_exception(ctx);
     azo_program_interpret(prog, ctx->intr, &static_data, n_args, arg_impls, arg_vals, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
     azo_program_unref(prog);
     az_object_unref((AZObject *) src);
@@ -274,7 +275,7 @@ test_function(void)
         AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NONE, globals->intr->exc.az_exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
     }
     /* Assigning property with clearly wrong signature fails */
     {
@@ -288,7 +289,7 @@ test_function(void)
         AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
-        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_VALUE, globals->intr->exc.az_exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_INVALID_VALUE, globals->az_ctx.exc.type);
     }
     /* A complex program */
     {

@@ -358,7 +358,7 @@ compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, c
 	if (test_implementation) {
 		azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, func);
 		is_function = azo_code_write_JMP32 (code, JMP_32_IF, 0, func);
-		azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, func);
+		azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, func);
 		azo_code_update_JMP32 (code, is_function);
 	}
 	n_args = 0;
@@ -471,7 +471,7 @@ compile_call_property (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_PROPERTY, func);
 	finished_3 = azo_code_write_JMP32 (code, JMP_32, 0, func);
 	azo_code_update_JMP32 (code, invalid_type);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, func);
+	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, func);
 	azo_code_update_JMP32 (code, finished);
 	azo_code_update_JMP32 (code, finished_2);
 	azo_code_update_JMP32 (code, finished_3);
@@ -519,7 +519,7 @@ compile_call_attribute (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 	azo_code_update_JMP32 (code, not_active_obj);
 	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_PROPERTY, func);
 	azo_code_update_JMP32 (code, invalid_type);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, func);
+	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, func);
 	azo_code_update_JMP32 (code, finished);
 	return 1;
 }
@@ -566,7 +566,7 @@ compile_new (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *klass, c
 	finished = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
 	/* Invalid type */
 	azo_code_update_JMP32 (code, invalid_type_2);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, NULL);
+	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, NULL);
 	/* Finished */
 	azo_code_update_JMP32 (code, finished);
 
@@ -850,14 +850,14 @@ compile_mode_flags_enter (AZOCompiler *comp, AZOCompilerContext *ctx, const AZON
 	uint32_t and_mask = ~0u;
 
 	if (mode_flags & AZO_TERM_FLAG_FINITE) {
-		and_mask &= ~AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_NOT_FINITE);
+		and_mask &= ~AZO_INTR_NOT_FINITE_MASK;
 	}
 	if (mode_flags & AZO_TERM_FLAG_SATURATE) {
-		or_mask |= AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE) | AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_INTEGER_OVERFLOW);
+		or_mask |= AZO_INTR_CHANGE_OF_MAGNITUDE_MASK | AZO_INTR_INTEGER_OVERFLOW_MASK;
 		and_mask &= ~AZO_INTR_FLAG_WRAP;
 	}
 	if (mode_flags & AZO_TERM_FLAG_WRAP) {
-		or_mask |= AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE) | AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_INTEGER_OVERFLOW) | AZO_INTR_FLAG_WRAP;
+		or_mask |= AZO_INTR_CHANGE_OF_MAGNITUDE_MASK | AZO_INTR_INTEGER_OVERFLOW_MASK | AZO_INTR_FLAG_WRAP;
 	}
 
 	azo_code_write_ic (code, AZO_TC_PUSH_FLAGS, node);

@@ -186,7 +186,7 @@ calculate_arithmetic (AZOOptimizer *opt, AZOCompilerContext *ctx, AZONode *expr,
 	}
 	if (flags & AZO_CALCULATE_FLAG_NON_FINITE) {
 		const char *msg = fp_result_is_nan (type, &c) ? "result is NaN" : "result is infinite (overflow)";
-		if (ctx->exception_mask & AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_NOT_FINITE)) {
+		if (ctx->exception_mask & AZO_INTR_NOT_FINITE_MASK) {
 			calculate_report ("WARNING", expr, lhs_type, lhs, rhs_type, rhs, msg, src);
 		} else {
 			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, msg, src);
@@ -194,7 +194,7 @@ calculate_arithmetic (AZOOptimizer *opt, AZOCompilerContext *ctx, AZONode *expr,
 		}
 	}
 	if (flags & AZO_CALCULATE_FLAG_MAGNITUDE) {
-		if (ctx->exception_mask & AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_MAGNITUDE)) {
+		if (ctx->exception_mask & AZO_INTR_CHANGE_OF_MAGNITUDE_MASK) {
 			calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_CLAMPED, src);
 		} else {
 			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "value clamping", src);
@@ -202,7 +202,7 @@ calculate_arithmetic (AZOOptimizer *opt, AZOCompilerContext *ctx, AZONode *expr,
 		}
 	}
 	if (flags & AZO_CALCULATE_FLAG_OVERFLOW) {
-		if (ctx->exception_mask & AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_INTEGER_OVERFLOW)) {
+		if (ctx->exception_mask & AZO_INTR_INTEGER_OVERFLOW_MASK) {
 			calculate_report ("WARNING", expr, lhs_type, lhs, rhs_type, rhs, "integer overflow", src);
 		} else {
 			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "integer overflow", src);
@@ -210,7 +210,7 @@ calculate_arithmetic (AZOOptimizer *opt, AZOCompilerContext *ctx, AZONode *expr,
 		}
 	}
 	if (flags & AZO_CALCULATE_FLAG_ROUNDED) {
-		if (ctx->exception_mask & AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_CHANGE_OF_PRECISION)) {
+		if (ctx->exception_mask & AZO_INTR_CHANGE_OF_PRECISION_MASK) {
 			calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_ROUNDED, src);
 		} else {
 			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "conversion changes precision", src);
@@ -278,7 +278,7 @@ azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZ
 			return 1;
 		}
 		if (flags & AZO_CALCULATE_FLAG_OVERFLOW) {
-			if (ctx->exception_mask & AZO_EXCEPTION_MASK_BIT (AZO_EXCEPTION_INTEGER_OVERFLOW)) {
+			if (ctx->exception_mask & AZO_INTR_INTEGER_OVERFLOW_MASK) {
 				fprintf (stderr, "WARNING: unary minus overflows (value clamped/wrapped)\n");
 			} else {
 				fprintf (stderr, "ERROR: unary minus overflows\n");

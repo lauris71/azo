@@ -110,7 +110,7 @@ azo_compiler_compile_tilde (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 	finished_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	azo_code_update_JMP32 (code, lt_i8);
 	azo_code_update_JMP32 (code, gt_cd);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
+	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
 	azo_code_update_JMP32 (code, finished_1);
 	azo_code_update_JMP32 (code, finished_2);
 	return 1;
@@ -146,7 +146,7 @@ azo_compiler_compile_increment (AZOCompiler *comp, AZOCompilerContext *ctx, cons
 	/* Invalid_type */
 	azo_code_update_JMP32 (code, lhs_type_lt_min);
 	azo_code_update_JMP32 (code, lhs_type_gt_max);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
+	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
 
 	/* finished */
 	azo_code_update_JMP32 (code, finished);
@@ -184,7 +184,7 @@ azo_compiler_compile_decrement (AZOCompiler *comp, AZOCompilerContext *ctx, cons
 	/* Invalid_type */
 	azo_code_update_JMP32 (code, lhs_type_lt_min);
 	azo_code_update_JMP32 (code, lhs_type_gt_max);
-	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_TYPE, expr);
+	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
 
 	/* finished */
 	azo_code_update_JMP32 (code, finished);

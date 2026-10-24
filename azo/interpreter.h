@@ -29,8 +29,13 @@ extern "C" {
 #define AZO_INTR_FLAG_NO_THROW 2
 /* Wrap integer overflow/clamping (vs saturate) when masked */
 #define AZO_INTR_FLAG_WRAP 0x8000
+/* Masked exceptions are not emitted */
+#define AZO_INTR_CHANGE_OF_MAGNITUDE_MASK 0b00000100
+#define AZO_INTR_CHANGE_OF_PRECISION_MASK 0b00001000
+#define AZO_INTR_NOT_FINITE_MASK          0b00010000
+#define AZO_INTR_INTEGER_OVERFLOW_MASK    0b00100000
 /* Exceptions masked (suppressed) by default */
-#define AZO_INTR_FLAG_MASK_DEFAULT AZO_EXCEPTION_MASK_DEFAULT
+#define AZO_INTR_DEFAULT_MASK (AZO_INTR_CHANGE_OF_PRECISION_MASK | AZO_INTR_NOT_FINITE_MASK)
 
 struct _AZOInterpreter {
 	AZOContext *ctx;
@@ -42,7 +47,6 @@ struct _AZOInterpreter {
 	unsigned int *frames;
 	AZOStack stack;
 	uint32_t flags;
-	AZOException exc;
 	/* Scratch area */
 	/* vals[0] is used to store return value */
 	AZPackedValue64 vals[2];

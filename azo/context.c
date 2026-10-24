@@ -41,7 +41,6 @@ azo_context_new (void)
 	azo_defer_handle_get_type();
 
 	AZOContext *ctx = (AZOContext *) calloc(1, sizeof(AZOContext));
-	ctx->az_ctx.exc = (AZException *) azo_exception_new();
 	ctx->priv = (AZOContextPriv *) calloc(1, sizeof(AZOContextPriv));
 
 	arikkei_dict_setup_string (&ctx->priv->definitions, 301);
@@ -68,9 +67,43 @@ azo_context_delete (AZOContext *ctx)
 	arikkei_dict_release (&ctx->priv->definitions);
 	free(ctx->priv);
 
-	azo_exception_free((AZOException *) ctx->az_ctx.exc);
-
 	free(ctx);
+}
+
+static const char *excnames[] = {
+	NULL,
+	/* az */
+	"System failure",
+	"Out of memory",
+	"Null dereference",
+	"Invalid type",
+	"Invalid value",
+	"Out of bounds",
+	/* azo */
+	"Change of magnitude",
+	"Change of precision",
+	"Non-finite result",
+	"Integer overflow",
+	"Stack overflow",
+	"Invalid conversion",
+	"Invalid property",
+	"Divide by zero",
+	"Not writable"
+};
+
+void
+azo_context_set_exception(AZOContext *ctx, unsigned int type, unsigned int mask, const uint8_t *ipc)
+{
+	az_exception_set(&ctx->az_ctx.exc, type, mask, (const uint8_t *) excnames[type]);
+	ctx->az_ctx.exc.level = AZO_EXCEPTION_LEVEL;
+	ctx->exc_ip = ipc;
+}
+
+void
+azo_context_clear_exception(AZOContext *ctx)
+{
+	az_exception_clear(&ctx->az_ctx.exc);
+	ctx->exc_ip = NULL;
 }
 
 unsigned int
