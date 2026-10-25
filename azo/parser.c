@@ -442,45 +442,21 @@ parse_sentence (AZOParser *parser, AZOToken *token)
 #endif
 	}
 	/* Block, Step_statement */
-	/* Computation mode block: finite/wrap/saturate { Sentences } */
-	{
-		unsigned int mode_flag = 0;
-		if (azo_token_is_keyword (token, AZO_KEYWORD_FINITE, parser->src)) {
-			mode_flag = AZO_TERM_FLAG_FINITE;
-		} else if (azo_token_is_keyword (token, AZO_KEYWORD_SATURATE, parser->src)) {
-			mode_flag = AZO_TERM_FLAG_SATURATE;
-		} else if (azo_token_is_keyword (token, AZO_KEYWORD_WRAP, parser->src)) {
-			mode_flag = AZO_TERM_FLAG_WRAP;
-		}
-		if (mode_flag) {
-			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
-			if (token->type != AZO_TOKEN_LEFT_BRACE) return AZO_PARSER_ERROR_SYNTAX;
-			return parse_block (parser, token, AZO_TERM_BLOCK_MODE, mode_flag);
-		}
-	}
-	/* Defer block */
+	/* Defer block (takes no qualifiers) */
 	if (azo_token_is_keyword (token, AZO_KEYWORD_DEFER, parser->src)) {
 		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 		if (token->type != AZO_TOKEN_LEFT_BRACE) return AZO_PARSER_ERROR_SYNTAX;
 		return parse_block (parser, token, AZO_TERM_BLOCK_DEFER, 0);
 	}
-	/* First start with qualifiers because these may go to both */
+	/* First start with qualifiers because these may go to both block and line */
 	int quals = 0;
 	unsigned int result = parse_qualifiers(parser, token, &quals);
 	if (result) return result;
 	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	if (token->type == AZO_TOKEN_LEFT_BRACE) {
-		/* Plain or static block */
-		if (!quals) {
-			/* Plain block */
-			return parse_block (parser, token, AZO_TERM_BLOCK_PLAIN, 0);
-		} else if (quals == AZO_TERM_FLAG_STATIC) {
-			/* Static block */
-			return parse_block (parser, token, AZO_TERM_BLOCK_STATIC, 0);
-		} else {
-			/* Other qualifiers are not allowed */
-			return AZO_PARSER_ERROR_SYNTAX;
-		}
+		/* Qualified block: only static and computation modes are allowed */
+		if (quals & ~(AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_MODE_MASK)) return AZO_PARSER_ERROR_SYNTAX;
+		return parse_block (parser, token, AZO_TERM_BLOCK_PLAIN, quals);
 	}
 	/* Member_block is a postfix expression operator ({ in continue_expression) */
 	/* All keywords are processed so fetch an expression */
@@ -496,8 +472,8 @@ parse_sentence (AZOParser *parser, AZOToken *token)
  * Block:
  *   { Sentences }
  *
- * Subtype is AZO_TERM_BLOCK_PLAIN or AZO_TERM_BLOCK_STATIC
- * Token is at opening brace.
+ * Subtype is AZO_TERM_BLOCK_PLAIN or AZO_TERM_BLOCK_DEFER; block qualifiers
+ * (static, computation modes) are in term.flags. Token is at opening brace.
  */
 
 static unsigned int
@@ -817,6 +793,8 @@ static unsigned int
 azo_parser_parse_declaration (AZOParser *parser, AZOToken *token, int quals)
 {
 	unsigned int result = AZO_ERROR_NONE;
+	/* Computation modes are block qualifiers, not declaration qualifiers */
+	if (quals & AZO_TERM_FLAG_MODE_MASK) return AZO_PARSER_ERROR_SYNTAX;
 	/* Create topmost declaration list */
 	AZONode *type = parser_detach_last (parser);
 	if (!node_is_name_path (type)) {
@@ -2171,6 +2149,17 @@ parse_qualifiers(AZOParser *parser, AZOToken *token, int *quals)
 	if (parse_keyword(parser, token, AZO_KEYWORD_FINAL)) *quals |= AZO_TERM_FLAG_FINAL;
 	if (parse_keyword(parser, token, AZO_KEYWORD_WEAK)) *quals |= AZO_TERM_FLAG_WEAK;
 	if (parse_keyword(parser, token, AZO_KEYWORD_CONST)) *quals |= AZO_TERM_FLAG_CONST;
+	/* Computation modes (valid as block qualifiers; non-block use sites reject them) */
+	if (parse_keyword(parser, token, AZO_KEYWORD_FINITE)) *quals |= AZO_TERM_FLAG_FINITE;
+	if (parse_keyword(parser, token, AZO_KEYWORD_SATURATE)) {
+		/* saturate and wrap set the same integer-mode knob - combining them is always a typo */
+		if (*quals & AZO_TERM_FLAG_WRAP) return AZO_PARSER_ERROR_SYNTAX;
+		*quals |= AZO_TERM_FLAG_SATURATE;
+	}
+	if (parse_keyword(parser, token, AZO_KEYWORD_WRAP)) {
+		if (*quals & AZO_TERM_FLAG_SATURATE) return AZO_PARSER_ERROR_SYNTAX;
+		*quals |= AZO_TERM_FLAG_WRAP;
+	}
 	if ((*quals & AZO_TERM_FLAG_WEAK) && !(*quals & (AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_SHARED))) return AZO_PARSER_ERROR_WEAK_NOT_STATIC;
 	return 0;
 }

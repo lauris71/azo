@@ -1243,7 +1243,7 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 	AZOCode *code = &ctx->frame->code;
 	AZONode *child = node->children;
 
-	if (node->term.subtype == AZO_TERM_BLOCK_MODE) {
+	if (node->term.flags & AZO_TERM_FLAG_MODE_MASK) {
 		compile_mode_flags_enter (comp, ctx, node);
 		ctx->n_stack += 1;
 		AZOCompilerContext lctx = *ctx;

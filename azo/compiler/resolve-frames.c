@@ -766,16 +766,16 @@ resolve_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	int result;
 	AZOResolveCtx lctx = *rctx;
 	/* Static block evaluates in static context (this == NONE) */
-	if (node->term.subtype == AZO_TERM_BLOCK_STATIC) lctx.this_variant = AZO_COMPILER_NO_THIS;
-	/* Mode block starts a new computation mode */
-	if (node->term.subtype == AZO_TERM_BLOCK_MODE) {
+	if (node->term.flags & AZO_TERM_FLAG_STATIC) lctx.this_variant = AZO_COMPILER_NO_THIS;
+	/* Mode-qualified block starts a new computation mode */
+	if (node->term.flags & AZO_TERM_FLAG_MODE_MASK) {
 		lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
 		lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
 	}
 	/* Create new scope */
 	azo_frame_push_scope(lctx.frame);
 	/* Both mode and defer block need to reserve a stack position (either to saved state or defer handle) */
-	if (node->term.subtype == AZO_TERM_BLOCK_MODE || node->term.subtype == AZO_TERM_BLOCK_DEFER) {
+	if ((node->term.flags & AZO_TERM_FLAG_MODE_MASK) || node->term.subtype == AZO_TERM_BLOCK_DEFER) {
 		azo_frame_reserve_pos (lctx.frame);
 	}
 	/* Block children are sentences (per-sentence return tracking) */

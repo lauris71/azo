@@ -32,6 +32,8 @@ enum AZOExceptionTypes {
 	AZO_EXCEPTION_NOT_FINITE,
 	/* Integer overflow */
 	AZO_EXCEPTION_INTEGER_OVERFLOW,
+	/* Division by zero */
+	AZO_EXCEPTION_DIVIDE_BY_ZERO,
 
 	/* Non-maskable exceptions */
 	AZO_EXCEPTION_STACK_OVERFLOW,
@@ -39,8 +41,6 @@ enum AZOExceptionTypes {
 	AZO_EXCEPTION_INVALID_CONVERSION,
 	/* No property with this key */
 	AZO_EXCEPTION_INVALID_PROPERTY,
-	/* Division by zero */
-	AZO_EXCEPTION_DIVIDE_BY_ZERO,
 	/* Value is final and cannot be written */
 	AZO_EXCEPTION_NOT_WRITABLE,
 };

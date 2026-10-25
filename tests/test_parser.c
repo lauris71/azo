@@ -1255,7 +1255,7 @@ test_parser(void)
         azo_parser_release(&parser);
         az_object_unref((AZObject *) src);
     }
-    /* Mode blocks parse to BLOCK with MODE subtype and the mode flag */
+    /* Mode blocks parse to BLOCK/PLAIN with the mode flag */
     {
         const struct { const char *src; uint16_t flags; } cases[] = {
             { "finite {}", AZO_TERM_FLAG_FINITE },
@@ -1272,7 +1272,7 @@ test_parser(void)
             unsigned int n = azo_node_flatten(tree, nodes, 8);
             TEST_ASSERT_EQUAL_UINT_MESSAGE(2, n, cases[i].src);
             TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_BLOCK, nodes[1]->term.type, cases[i].src);
-            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_BLOCK_MODE, nodes[1]->term.subtype, cases[i].src);
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(AZO_TERM_BLOCK_PLAIN, nodes[1]->term.subtype, cases[i].src);
             TEST_ASSERT_EQUAL_UINT_MESSAGE(cases[i].flags, nodes[1]->term.flags, cases[i].src);
             TEST_ASSERT_EQUAL_UINT_MESSAGE(0, parser.n_errors, cases[i].src);
             free_parse(&parser, src, tree);
@@ -1363,7 +1363,7 @@ test_parser(void)
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
     }
-    /* Static block: BLOCK/BLOCK_STATIC with sentences as direct children */
+    /* Static block: BLOCK/PLAIN with STATIC flag, sentences as direct children */
     {
         AZOParser parser;
         AZOSource *src;
@@ -1374,10 +1374,84 @@ test_parser(void)
         TEST_ASSERT_EQUAL_UINT(5, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_PROGRAM, nodes[0]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[1]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK_STATIC, nodes[1]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK_PLAIN, nodes[1]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FLAG_STATIC, nodes[1]->term.flags & AZO_TERM_FLAG_STATIC);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_ASSIGN, nodes[2]->term.type);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
+    }
+    /* Qualified block: mode */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("finite { a = 1; }", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *nodes[16];
+        unsigned int n = azo_node_flatten(tree, nodes, 16);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, nodes[1]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK_PLAIN, nodes[1]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FLAG_FINITE, nodes[1]->term.flags & AZO_TERM_FLAG_MODE_MASK);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Qualified block: static + mode combine */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("static finite { a = 1; }", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *nodes[16];
+        azo_node_flatten(tree, nodes, 16);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK_PLAIN, nodes[1]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_FINITE, nodes[1]->term.flags & (AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_MODE_MASK));
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Qualified block: finite + saturate combine */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("finite saturate { a = 1; }", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *nodes[16];
+        azo_node_flatten(tree, nodes, 16);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK_PLAIN, nodes[1]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FLAG_FINITE | AZO_TERM_FLAG_SATURATE, nodes[1]->term.flags & AZO_TERM_FLAG_MODE_MASK);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* saturate and wrap may not be combined */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("saturate wrap { a = 1; }", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
+        TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SYNTAX, parser.errors[0].code);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
+    /* Computation modes are not declaration qualifiers */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("finite int32 a = 1;", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
+        TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SYNTAX, parser.errors[0].code);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
+    /* Non-block qualifiers are not allowed on blocks */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("final { a = 1; }", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_EQUAL_UINT(1, parser.n_errors);
+        TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SYNTAX, parser.errors[0].code);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
     }
     /* Member block statement: MEMBER_BLOCK [head, BLOCK] (expression statement - needs ;) */
     {

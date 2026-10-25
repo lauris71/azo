@@ -334,7 +334,7 @@ optimize_const_assign(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, AZ
 			}
 			break;
 		case AZO_TERM_BLOCK:
-			if (node->term.subtype == AZO_TERM_BLOCK_MODE) {
+			if (node->term.flags & AZO_TERM_FLAG_MODE_MASK) {
 				/* Set context so const calculations are done properly */
 				AZOOptimizerCtx lctx = *ctx;
 				lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
@@ -465,7 +465,7 @@ static int
 optimize_block(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned int flags)
 {
 	AZOOptimizerCtx lctx = *ctx;
-	if (node->term.subtype == AZO_TERM_BLOCK_MODE) {
+	if (node->term.flags & AZO_TERM_FLAG_MODE_MASK) {
 		lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
 		lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
 	}

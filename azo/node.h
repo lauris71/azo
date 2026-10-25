@@ -65,8 +65,9 @@ enum {
 	 * @brief Block
 	 *
 	 * Groups sentences, creates a new scope
-	 * Subtypes: BLOCK_PLAIN, BLOCK_STATIC (the latter evaluates in static
-	 * context - this == NONE)
+	 * Subtypes: BLOCK_PLAIN, BLOCK_DEFER. Block qualifiers (static context,
+	 * computation mode) are carried in term.flags (AZO_TERM_FLAG_STATIC,
+	 * AZO_TERM_FLAG_MODE_MASK) - flags are THE designator of block type.
 	 *
 	 * BLOCK
 	 *   [SENTENCE ...]
@@ -214,12 +215,9 @@ enum {
 /* Unspecified subtype */
 #define AZO_TERM_GENERIC 0
 
-/* Block subtypes */
+/* Block subtypes (static context and computation modes are flags, not subtypes) */
 enum {
 	AZO_TERM_BLOCK_PLAIN,
-	AZO_TERM_BLOCK_STATIC,
-	/* Computation-mode block; the mode is carried in term.flags (AZO_TERM_FLAG_*) */
-	AZO_TERM_BLOCK_MODE,
 	AZO_TERM_BLOCK_DEFER
 };
 

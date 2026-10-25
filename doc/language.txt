@@ -28,42 +28,44 @@ Sentences:
 
 Sentence:
   Block
-  Static_block
-  Mode_block
+  Qualified_block
   Defer_block
   Line
   For_statement
   While_statement
   If_statement
   Do_statement
+  Try_statement
   
 Block:
   { Sentences }
 
-# Static block: the body is evaluated in static context (this == NONE)
-# Note: ; terminates a Line; block-statements (Block, Static_block, Mode_block,
-# if/while/for/do) are not Lines and take no ;. A member block is an expression,
-# so as a statement it is a Line and takes ; (like any expression whose value is
-# discarded): enemy { ... };
-Static_block:
-  static Block
-
-# Computation-mode blocks: finite { ... }, wrap { ... }, saturate { ... }.
-#
-# finite/wrap/saturate are reserved keywords - mode(expr) and mode{...} would
-# otherwise be ambiguous with a function call and a member block. They may not
-# be used as local variable/function names, but remain usable as property/
-# attribute names, which are always qualified (e.g. x.wrap(...)).
-#
-# The block evaluates its statements in the given mode (see arithmetic.md):
+# Qualified block: a block with optional static context and/or computation mode
+# qualifiers (fixed order: static, finite, saturate|wrap).
+#   static   - the body is evaluated in static context (this == NONE)
 #   finite   - throws NON_FINITE on the first non-finite result
 #   saturate - clamps integer overflow and narrowing
 #   wrap     - wraps integer overflow / truncates narrowing
-# A mode block is a statement (creates a scope, yields no value), takes no ;.
-Mode_block:
-  finite Block
-  wrap Block
-  saturate Block
+# static (context) and the modes (computation) are orthogonal and combine freely:
+#   static finite { ... }
+# finite (float strictness) also combines with saturate/wrap (integer mode):
+#   finite saturate { ... }  - clamp overflow, throw on non-finite
+# saturate and wrap set the same integer-mode knob and may not be combined.
+#
+# static/finite/wrap/saturate are reserved keywords - mode(expr) and mode{...}
+# would otherwise be ambiguous with a function call and a member block. They may
+# not be used as local variable/function names, but remain usable as property/
+# attribute names, which are always qualified (e.g. x.wrap(...)).
+#
+# Note: ; terminates a Line; block-statements (Block, Qualified_block, Defer_block,
+# if/while/for/do/try) are not Lines and take no ;. A member block is an expression,
+# so as a statement it is a Line and takes ; (like any expression whose value is
+# discarded): enemy { ... };
+Qualified_block:
+  static [finite] [saturate] Block
+  static [finite] [wrap] Block
+  [finite] [saturate] Block
+  [finite] [wrap] Block
 
 # Defer block contents will be executed when the current scope is exited
 #
@@ -83,6 +85,7 @@ Line:
 Statement:
   Step_statement
   Return_statement
+  Throw_statement
   break
   continue
 
@@ -92,6 +95,7 @@ Step_statement:
 
 Nonempty_step_statement:
   Declaration
+  Exception_declaration
   Nonempty_silent_statement
 
 Silent_statement:
@@ -137,6 +141,63 @@ If_statement:
 
 Do_statement:
   do Sentence while (Expression) ;
+
+# Exceptions
+#
+# try/catch/throw/exception are reserved keywords (like the mode keywords - they may
+# not be used as local variable/function names, but remain usable as property/
+# attribute names, which are always qualified).
+#
+# Exception declaration is a compile-time directive: it registers the name(s) in the
+# context's exception registry and emits no code. Valid at program scope only
+# (compile-time error elsewhere). Names are the sharing mechanism between code units
+# in the same context - a repeated declaration with identical shape returns the
+# existing registration; a name re-registered with a different shape (category vs
+# type, or a different category set) is a compile-time error. A name is either a
+# category (a mask bit) or a type (a code), never both.
+#   exception MyCategory;                          - declares a category
+#   exception MyException : IOException, Network;  - declares a type in categories
+# Built-in interpreter exceptions are pre-registered types; built-in category names
+# (e.g. Arithmetic) are pre-registered categories.
+# Exception names are single NAMEs for now; dotted library names (mylib.Timeout) are
+# a planned extension - the registry stores opaque strings, so only the name rules in
+# Exception_declaration/Catch_clause and the throw-constructor lookup need to change.
+Exception_declaration:
+  exception NAME
+  exception NAME : NAME [, NAME ...]
+
+# try/catch: first matching clause wins. A category name matches any type registered
+# in that category (mask test), a type name matches exactly (code test). The clause
+# always binds the caught exception value to NAME (an exception value carries the
+# type code, category mask, message and payload). An unfiltered clause is a
+# catch-all and must be the last clause. There is no finally keyword - a defer
+# block placed first in the try block provides finally semantics.
+#
+# The try and catch bodies may be plain or qualified blocks:
+#   try finite { ... } catch (e : NonFinite) { ... }
+# A qualified body is exactly equivalent to nesting the qualified block inside a
+# plain block - "try finite B catch ..." means "try { finite B } catch ..." - so
+# the qualifiers apply inside their own scope only and catch clauses always run in
+# the ambient context and computation mode. Defer_block is not allowed as a body:
+# the try region would cover only the defer registration, while the deferred code
+# runs at scope exit, outside the region (and defer-time throws are restricted).
+Try_statement:
+  try Protected_block Catch_clause [Catch_clause ...]
+
+Protected_block:
+  Block
+  Qualified_block
+
+Catch_clause:
+  catch (NAME : NAME [, NAME ...]) Protected_block
+  catch (NAME) Protected_block
+
+# throw takes an exception value. Calling a registered exception name as a function
+# constructs one - MyException("message" [, payload]) - the name supplies the type
+# code and category mask, the arguments fill the message and the optional payload
+# value. Re-throwing (throw e;) preserves the original throw site and traceback.
+Throw_statement:
+  throw Expression
 
 # Declarations
 
