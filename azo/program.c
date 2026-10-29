@@ -171,6 +171,7 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 	unsigned int prev_frame = azo_interpreter_push_frame (intr, 0);
 
 	AZOInterpreterCtx ictx = {
+		.prog = prog,
 		.tcode = prog->tcode,
 		.tcode_len = prog->tcode_length,
 		.static_data = static_data,

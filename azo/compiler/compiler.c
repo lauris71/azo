@@ -128,6 +128,7 @@ compile_PUSH_VALUE_const_object(AZOCompiler *comp, AZOCompilerContext *ctx, AZOb
 
 static unsigned int compile_sentences (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src);
 static unsigned int compile_sentence (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src);
+static unsigned int compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src);
 static int compile_member_block_ex (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src, unsigned int discard);
 
 /* Expressions */
@@ -1215,6 +1216,120 @@ compile_step_statement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 #define noDEBUG_STATEMENT
 
 static unsigned int
+compile_throw_arg (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
+{
+	if (node->term.type == AZO_TERM_EMPTY) {
+		azo_code_write_PUSH_IMMEDIATE (&ctx->frame->code, AZ_TYPE_NONE, NULL, node);
+		return 1;
+	}
+	return azo_compiler_compile_expression(comp, ctx, node, src);
+}
+
+static unsigned int
+compile_throw (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
+{
+	AZOCode *code = &ctx->frame->code;
+	const AZONode *typecode = node->children;
+	if ((typecode->term.type == AZO_TERM_CONSTANT) && typecode->next) {
+		/* Constructor form: [typecode, message, payload] (the category mask
+		 * is looked up from the registry at throw time) */
+		if (!compile_throw_arg (comp, ctx, typecode->next, src)) return 0;
+		if (!compile_throw_arg (comp, ctx, typecode->next->next, src)) return 0;
+		azo_code_write_ic_u32 (code, AZO_TC_THROW, typecode->value.v.uint32_v, node);
+		return 1;
+	}
+	/* General form (throw e): evaluate the value, check it is an exception
+	 * and invoke throw() on it - the interpreter unwinds on the pending
+	 * exception after the invoke */
+	if (!azo_compiler_compile_expression(comp, ctx, typecode, src)) return 0;
+	azo_code_write_ic_u32_u32(code, AZO_TC_EXCEPTION_IF_TYPE_IS_NOT, 0, azo_exception_get_type(), node);
+	compile_PUSH_VALUE_const(comp, ctx, az_function_value_get_type(), (const AZValue *) azo_exception_get_throw_function(), node);
+	azo_code_write_ic_u32(code, AZO_TC_EXCHANGE, 1, node);
+	azo_code_write_ic_u8(code, AZO_TC_INVOKE, 1, node);
+	azo_code_write_ic_u32(code, AZO_TC_POP, 1, node);
+	return 1;
+}
+
+/*
+ * try: push flags, then the catch handles in reverse order (the unwind scan is
+ * top-down = declaration order); handle catch addresses are patched once the
+ * clause bodies are compiled
+ */
+static unsigned int
+compile_try (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
+{
+	AZOCode *code = &ctx->frame->code;
+	AZONode *body = node->children;
+	unsigned int base = ctx->n_stack;
+	unsigned int n_clauses = 0, n_handles = 0;
+	for (AZONode *clause = body->next; clause; clause = clause->next) {
+		AZONode *filters = clause->children->next;
+		unsigned int n = 0;
+		for (AZONode *f = filters->children; f; f = f->next) n++;
+		n_handles += (n) ? n : 1;
+		n_clauses++;
+	}
+	AZOCatchHandle *handles = (AZOCatchHandle *) malloc (n_handles * sizeof (AZOCatchHandle));
+	unsigned int *hclause = (unsigned int *) malloc (n_handles * sizeof (unsigned int));
+	unsigned int *hdidx = (unsigned int *) malloc (n_handles * sizeof (unsigned int));
+	unsigned int ci = 0, hi = 0;
+	for (AZONode *clause = body->next; clause; clause = clause->next, ci++) {
+		AZONode *filters = clause->children->next;
+		if (!filters->children) {
+			hclause[hi] = ci;
+			handles[hi] = (AZOCatchHandle) { 0, 0, ~0ULL };
+			hi++;
+		} else {
+			for (AZONode *f = filters->children; f; f = f->next, hi++) {
+				hclause[hi] = ci;
+				handles[hi] = (f->type == AZ_TYPE_UINT64)
+					? (AZOCatchHandle) { 0, 0, f->value.v.uint64_v }
+					: (AZOCatchHandle) { 0, f->value.v.uint32_v, 0 };
+			}
+		}
+	}
+	/* Push flags, then the handles in reverse declaration order */
+	azo_code_write_ic (code, AZO_TC_PUSH_FLAGS, node);
+	ctx->n_stack += 1;
+	for (unsigned int i = n_handles; i-- > 0; ) {
+		hdidx[i] = azo_code_write_instance (code, AZ_IMPL_FROM_TYPE (azo_catch_handle_get_type ()), &handles[i]);
+		azo_code_write_PUSH_VALUE (code, ctx->frame->n_shared + hdidx[i], body);
+		ctx->n_stack += 1;
+	}
+	/* Try body (its block manages its own locals) */
+	unsigned int *to_end = (unsigned int *) malloc ((n_clauses + 1) * sizeof (unsigned int));
+	unsigned int n_jumps = 0;
+	unsigned int result = compile_block (comp, ctx, body, src);
+	if (!result) goto cleanup;
+	/* Normal exit: discard the flags word and handles (nested blocks have
+	 * restored their own flags) */
+	azo_code_write_POP (code, n_handles + 1, body);
+	ctx->n_stack = base;
+	to_end[n_jumps++] = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
+	/* Catch bodies in declaration order; the exception value occupies the binding slot */
+	ci = 0;
+	for (AZONode *clause = body->next; clause; clause = clause->next, ci++) {
+		unsigned int catch_ip = code->bc_len;
+		for (unsigned int i = 0; i < n_handles; i++) {
+			if (hclause[i] == ci) ((AZOCatchHandle *) &code->data[hdidx[i]].v)->ip = catch_ip;
+		}
+		ctx->n_stack = base + 1;
+		result = compile_block (comp, ctx, clause->children->next->next, src);
+		if (!result) goto cleanup;
+		azo_code_write_POP (code, 1, clause);
+		ctx->n_stack = base;
+		to_end[n_jumps++] = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
+	}
+	for (unsigned int i = 0; i < n_jumps; i++) azo_code_update_JMP32 (code, to_end[i]);
+cleanup:
+	free (handles);
+	free (hclause);
+	free (hdidx);
+	free (to_end);
+	return result;
+}
+
+static unsigned int
 compile_statement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
 	AZOCode *code = &ctx->frame->code;
@@ -1228,6 +1343,10 @@ compile_statement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *no
 			azo_code_write_ic (code, AZO_TC_RETURN, node);
 		}
 		return 1;
+	} else if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_THROW)) {
+		return compile_throw (comp, ctx, node, src);
+	} else if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_TRY)) {
+		return compile_try (comp, ctx, node, src);
 	} else if (AZO_NODE_IS(node, AZO_TERM_KEYWORD, AZO_KEYWORD_DEBUG)) {
 		comp->debug = 1;
 		return 1;

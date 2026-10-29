@@ -55,7 +55,11 @@ const char *azo_keywords[] = {
 	"finite",
 	"saturate",
 	"wrap",
-	"defer"
+	"defer",
+	"try",
+	"catch",
+	"throw",
+	"exception"
 };
 
 unsigned int

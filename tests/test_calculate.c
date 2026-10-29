@@ -5,11 +5,41 @@
 
 #include <azo/context.h>
 #include <azo/datablock.h>
+#include <azo/keyword.h>
 #include <azo/compiler/compiler.h>
 #include <azo/compiler/optimizer.h>
 
 #include "unity/unity.h"
 #include "test.h"
+
+/* Parse, resolve and optimize a program text without compiling it.
+ * Returns the optimized tree for inspection (or NULL on failure);
+ * parser/src/tree ownership passes to the caller (free_parse). */
+static AZONode *
+optimize_text(AZOContext *ctx, const char *text, AZOParser *parser, AZOSource **src)
+{
+    *src = azo_source_new_static((const uint8_t *) "test-source", (const uint8_t *) text, strlen(text));
+	azo_parser_setup (parser, *src);
+	AZONode *tree = azo_parser_parse(parser);
+	if (!tree) return NULL;
+	AZOCompiler comp;
+	azo_compiler_setup(&comp, ctx, *src);
+	AZOCompilerContext comp_ctx = {
+		.ret_type = AZ_TYPE_NONE,
+		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
+		.calc_mode = AZO_CALCULATE_MODE_SATURATE
+	};
+	comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+	int result = azo_compiler_resolve_program(&comp, &comp_ctx, tree);
+	if (!result) {
+		AZOOptimizer opt;
+		azo_optimizer_setup(&opt, &comp);
+		result = azo_compiler_optimize_program(&opt, &comp_ctx, tree, AZO_OPTIMIZER_FLAG_ALL);
+		azo_optimizer_release(&opt);
+	}
+	azo_compiler_release(&comp);
+	return (result) ? NULL : tree;
+}
 
 static unsigned int print_tree = 0;
 static unsigned int print_code = 0;
@@ -539,16 +569,25 @@ test_calculate(void)
     {
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        /* Default: constant integer overflow is an error */
-        TEST_ASSERT(test_program(globals, "int32 x = 2147483647 + 1; return x;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 1);
+        /* Default: constant integer overflow compiles (warning) and throws at runtime */
+        TEST_ASSERT(test_program(globals, "int32 x = 2147483647 + 1; return x;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INTEGER_OVERFLOW, globals->az_ctx.exc.type);
         /* saturate: clamps with a warning */
         TEST_ASSERT(test_program(globals, "saturate { int32 x = 2147483647 + 1; return x; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_INT(INT32_MAX, ret_val.int32_v);
         /* wrap: wraps with a warning */
         TEST_ASSERT(test_program(globals, "wrap { int32 x = 2147483647 + 1; return x; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_INT(INT32_MIN, ret_val.int32_v);
-	/* finite: constant non-finite result is an error */
-        TEST_ASSERT(test_program(globals, "finite { double d = 1.0 / 0.0; return d; }\n", 0, NULL, NULL, NULL, AZ_TYPE_DOUBLE, &ret_impl, &ret_val) == 1);
+	/* finite: constant non-finite result compiles (warning) and throws at runtime */
+        TEST_ASSERT(test_program(globals, "finite { double d = 1.0 / 0.0; return d; }\n", 0, NULL, NULL, NULL, AZ_TYPE_DOUBLE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NOT_FINITE, globals->az_ctx.exc.type);
+    }
+	/* Constant division by zero is legitimate code that throws at runtime */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals, "int32 a = 1 / 0; return a;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_DIVIDE_BY_ZERO, globals->az_ctx.exc.type);
     }
 	/* Unary minus is constant-folded with overflow detection */
     {
@@ -560,21 +599,26 @@ test_calculate(void)
         /* Negating INT8_MIN under wrap folds to -128 (wrapped), not an error */
         TEST_ASSERT(test_program(globals, "wrap { int8 v = -(int8) -128; return v; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_INT(-128, ret_val.int8_v);
+        /* Negating a constant INT32_MIN compiles (warning) and throws at runtime */
+        TEST_ASSERT(test_program(globals, "int32 v = -(-2147483647 - 1); return v;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INTEGER_OVERFLOW, globals->az_ctx.exc.type);
     }
 	/* Runtime computation mode (non-constant operands) */
     {
         const AZImplementation *ret_impl;
         AZValue ret_val;
-        /* Default: runtime integer overflow throws */
-        TEST_ASSERT(test_program(globals, "int32 x = 2147483647; x = x + 1; return x;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 1);
+        /* Default: integer overflow throws at runtime */
+        TEST_ASSERT(test_program(globals, "int32 x = 2147483647; x = x + 1; return x;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INTEGER_OVERFLOW, globals->az_ctx.exc.type);
         /* wrap: wraps at runtime */
         TEST_ASSERT(test_program(globals, "wrap { int32 x = 2147483647; x = x + 1; return x; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_INT(INT32_MIN, ret_val.int32_v);
         /* saturate: clamps at runtime */
         TEST_ASSERT(test_program(globals, "saturate { int32 x = 2147483647; x = x + 1; return x; }\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_INT(INT32_MAX, ret_val.int32_v);
-        /* finite: runtime non-finite result throws */
-        TEST_ASSERT(test_program(globals, "finite { double d = 1.0; double e = 0.0; d = d / e; return d; }\n", 0, NULL, NULL, NULL, AZ_TYPE_DOUBLE, &ret_impl, &ret_val) == 1);
+        /* finite: non-finite result throws at runtime */
+        TEST_ASSERT(test_program(globals, "finite { double d = 1.0; double e = 0.0; d = d / e; return d; }\n", 0, NULL, NULL, NULL, AZ_TYPE_DOUBLE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_NOT_FINITE, globals->az_ctx.exc.type);
     }
 	/* Nested modes and mode expressions with surrounding variables */
     {
@@ -586,6 +630,105 @@ test_calculate(void)
         /* Mode expression with surrounding variables */
         TEST_ASSERT(test_program(globals, "int32 x = 2147483647; int32 y = 1; int32 z = wrap (x + y); return z;\n", 0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_INT(INT32_MIN, ret_val.int32_v);
+    }
+	/* Const tracking: try body assignments are trashed after the try */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = optimize_text(globals, "int32 a = 1; try { a = 2; } catch (e : IOException) { } return a;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        /* PROGRAM -> DECL_LIST, TRY, RETURN; the returned a must not be substituted */
+        AZONode *ret = tree->children->next->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_RETURN, ret->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, ret->children->term.type);
+        free_parse(&parser, src, tree);
+    }
+	/* Const tracking: catch assignments are trashed after the try */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = optimize_text(globals, "int32 a = 1; try { } catch (e : IOException) { a = 3; } return a;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *ret = tree->children->next->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, ret->children->term.type);
+        free_parse(&parser, src, tree);
+    }
+	/* Const tracking: substitution works inside the try body */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = optimize_text(globals, "int32 a = 1; int32 b = 0; try { b = a; } catch (e : IOException) { } return b;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        /* PROGRAM: DECL_LIST(a), DECL_LIST(b), TRY, RETURN */
+        AZONode *try_node = tree->children->next->next;
+        AZONode *body = try_node->children;
+        /* The body's b = a assigns the substituted constant 1 */
+        AZONode *value = body->children->children->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, value->term.type);
+        TEST_ASSERT_EQUAL_INT32(1, value->value.v.int32_v);
+        /* But b's assignment in the body is trashed for the continuation */
+        AZONode *ret = try_node->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, ret->children->term.type);
+        free_parse(&parser, src, tree);
+    }
+	/* Const tracking: body assignments are not visible in catches */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = optimize_text(globals, "int32 a = 0; try { a = 1; } catch (e : IOException) { int32 b = a; }", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *cbody = tree->children->next->children->next->children->next->next;
+        AZONode *init = cbody->children->children->next->children->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, init->term.type);
+        free_parse(&parser, src, tree);
+    }
+	/* Const tracking: the catch binding shadows an outer constant of the same name */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = optimize_text(globals, "int32 e = 42; try { } catch (e : IOException) { int32 f = e; }", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *cbody = tree->children->next->children->next->children->next->next;
+        AZONode *init = cbody->children->children->next->children->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, init->term.type);
+        free_parse(&parser, src, tree);
+    }
+	/* Const tracking: defer assignments flow past the block */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = optimize_text(globals, "int32 a = 1; int32 b = 0; { defer { a = 2; } } b = a;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        /* PROGRAM: DECL_LIST(a), DECL_LIST(b), BLOCK, ASSIGN(b = a) */
+        AZONode *value = tree->children->next->next->next->children->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, value->term.type);
+        TEST_ASSERT_EQUAL_INT32(2, value->value.v.int32_v);
+        free_parse(&parser, src, tree);
+    }
+	/* Const tracking: defers are processed in LIFO order (reverse of appearance) */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = optimize_text(globals, "int32 a = 1; int32 b = 0; defer { b = a; } defer { a = 2; }", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        /* PROGRAM: DECL_LIST(a), DECL_LIST(b), DEFER(b = a), DEFER(a = 2)
+         * The a = 2 defer runs FIRST at exit, so b = a reads 2 */
+        AZONode *defer1 = tree->children->next->next;
+        AZONode *value = defer1->children->children->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, value->term.type);
+        TEST_ASSERT_EQUAL_INT32(2, value->value.v.int32_v);
+        free_parse(&parser, src, tree);
+    }
+	/* Const tracking: return reads the pre-defer value */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = optimize_text(globals, "int32 a = 1; defer { a = 2; } return a;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *ret = tree->children->next->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, ret->children->term.type);
+        TEST_ASSERT_EQUAL_INT32(1, ret->children->value.v.int32_v);
+        free_parse(&parser, src, tree);
     }
 	azo_context_delete(globals);
 }

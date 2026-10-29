@@ -19,6 +19,7 @@
 #include <azo/compiler/compiler.h>
 #include <azo/node.h>
 #include <azo/keyword.h>
+#include <azo/exception.h>
 #include <azo/compiler/resolver.h>
 #include <azo/calculate.h>
 #include <azo/errors.h>
@@ -699,6 +700,246 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 	return result;
 }
 
+/*
+ * Exception_declaration (compile-time directive):
+ *   exception NAME                        - category declaration
+ *   exception NAME : NAME [, NAME ...]    - type declaration in categories
+ *
+ * Registers the name(s) in the context's exception registry. Re-declaration with
+ * identical shape is idempotent; conflicting shape is an error. The node emits no
+ * code and is rewritten to EMPTY.
+ */
+
+static unsigned int
+resolve_exception_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
+{
+	/* Program scope only - registrations are context-global, scoping would imply a locality that does not exist */
+	if (rctx->frame->parent || rctx->frame->scope->parent) {
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Exception declarations are only valid at program scope\n");
+		return 1;
+	}
+	AZONode *name = node->children;
+	AZString *nm = name->value.v.string;
+	if (!name->next) {
+		/* Category declaration */
+		const AZOExceptionDef *def = azo_context_lookup_exception (comp->globals, nm);
+		if (def) {
+			if (def->type != AZ_EXCEPTION_NONE) {
+				azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Cannot register category %s: the name is already an exception type\n", nm->str);
+				return 1;
+			}
+			/* Idempotent re-declaration */
+		} else if (!azo_context_register_exception_category (comp->globals, nm)) {
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Cannot register exception category %s\n", nm->str);
+			return 1;
+		}
+	} else {
+		/* Type declaration: look up or register every category, then the type */
+		uint64_t mask = 0;
+		for (AZONode *cat = name->next; cat; cat = cat->next) {
+			const AZOExceptionDef *cdef = azo_context_lookup_exception (comp->globals, cat->value.v.string);
+			if (cdef && cdef->type != AZ_EXCEPTION_NONE) {
+				azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, cat->term.start, cat->term.end, "Invalid category %s: the name is already an exception type\n", cat->value.v.string->str);
+				return 1;
+			}
+			uint64_t bit = (cdef) ? cdef->category : azo_context_register_exception_category (comp->globals, cat->value.v.string);
+			if (!bit) {
+				azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, cat->term.start, cat->term.end, "Cannot register exception category %s\n", cat->value.v.string->str);
+				return 1;
+			}
+			mask |= bit;
+		}
+		const AZOExceptionDef *def = azo_context_lookup_exception (comp->globals, nm);
+		if (def) {
+			if (def->type == AZ_EXCEPTION_NONE) {
+				azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Cannot register exception %s: the name is already a category\n", nm->str);
+				return 1;
+			}
+			if (def->category != mask) {
+				azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Exception %s is already registered with different categories\n", nm->str);
+				return 1;
+			}
+			/* Idempotent re-declaration */
+		} else if (azo_context_register_exception (comp->globals, nm, mask) == AZ_EXCEPTION_NONE) {
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Cannot register exception %s\n", nm->str);
+			return 1;
+		}
+	}
+	/* Compile-time directive - emits no code */
+	azo_node_clear_children (node);
+	node->term.type = AZO_TERM_EMPTY;
+	node->term.subtype = AZO_TERM_GENERIC;
+	return 0;
+}
+
+/*
+ * Try_statement:
+ *   KEYWORD(TRY): BLOCK, CATCH, [CATCH ...]
+ *
+ * Sibling scopes: the try scope reserves sentinel + one catch-handle position per
+ * filter alternative (catch-all counts as one); each catch scope reserves 1 position
+ * (the binding), which lands exactly on the sentinel position. The sentinel position
+ * is stored in the try node's var_idx. Filter references are baked into constants:
+ * category -> UINT64 mask bit, exception type -> UINT32 code.
+ */
+
+static unsigned int
+resolve_try (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
+{
+	unsigned int result = 0;
+	AZONode *body = node->children;
+	/* The try scope holds the flags word and catch-handle positions */
+	azo_frame_push_scope (rctx->frame);
+	unsigned int flags_pos = rctx->frame->scope->next_var_pos;
+	unsigned int n_positions = 1;
+	for (AZONode *clause = body->next; clause; clause = clause->next) {
+		AZONode *filters = clause->children->next;
+		unsigned int n = 0;
+		for (AZONode *f = filters->children; f; f = f->next) n++;
+		n_positions += (n) ? n : 1;
+	}
+	for (unsigned int i = 0; i < n_positions; i++) azo_frame_reserve_pos (rctx->frame);
+	node->var_idx = flags_pos;
+	/* Protected body (own block scope; locals follow the sentinel + handles on
+	 * the stack; catch bindings are not visible here) */
+	if (azo_compiler_resolve_node (comp, rctx, body)) result = 1;
+	/* The reservations' numeric values are all we need - pop the try scope so
+	 * catch scopes become siblings starting from the enclosing position */
+	azo_frame_pop_scope (rctx->frame);
+	/* Catch clauses */
+	for (AZONode *clause = body->next; clause; clause = clause->next) {
+		AZONode *binding = clause->children;
+		AZONode *filters = binding->next;
+		AZONode *cbody = filters->next;
+		if (!filters->children && clause->next) {
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, clause->term.start, clause->term.end, "Catch-all clause must be the last catch clause\n");
+			result = 1;
+		}
+		/* Bake filters into constants */
+		for (AZONode *f = filters->children; f; f = f->next) {
+			const AZOExceptionDef *def = azo_context_lookup_exception (comp->globals, f->value.v.string);
+			if (!def) {
+				azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, f->term.start, f->term.end, "Unknown exception or category %s\n", f->value.v.string->str);
+				result = 1;
+				continue;
+			}
+			AZValue v;
+			if (def->type == AZ_EXCEPTION_NONE) {
+				v.uint64_v = def->category;
+				az_packed_value_clear (&f->value);
+				az_packed_value_set_from_type_value (&f->value, AZ_TYPE_UINT64, &v);
+				f->type = AZ_TYPE_UINT64;
+			} else {
+				v.uint64_v = def->type;
+				az_packed_value_clear (&f->value);
+				az_packed_value_set_from_type_value (&f->value, AZ_TYPE_UINT32, &v);
+				f->type = AZ_TYPE_UINT32;
+			}
+			f->term.type = AZO_TERM_CONSTANT;
+			f->term.subtype = AZO_TERM_GENERIC;
+		}
+		/* Each catch is a sibling scope reserving 1 position: the binding lands
+		 * on the sentinel position (the try scope's reservations were forgotten
+		 * when it was popped) and locals follow right after it - during unwind
+		 * the handles are drained, so the catch body starts with only the
+		 * exception value on the stack. */
+		azo_frame_push_scope (rctx->frame);
+		/* The binding is implicitly final: it is the exception being handled, not
+		 * a variable to reuse (the runtime places the object internally) */
+		AZOVariable *var = azo_frame_declare_variable (rctx->frame, binding->value.v.string, AZO_TYPE_EXCEPTION, AZO_VARIABLE_FLAG_FINAL);
+		if (!var) {
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, binding->term.start, binding->term.end, "Variable %s already declared in scope\n", binding->value.v.string->str);
+			result = 1;
+		} else {
+			assert (var->pos == flags_pos);
+			binding->term.type = AZO_TERM_VARIABLE;
+			binding->term.subtype = AZO_TERM_VARIABLE_LOCAL;
+			binding->term.flags = var->flags;
+			binding->type = AZO_TYPE_EXCEPTION;
+			binding->var_idx = var->pos;
+		}
+		if (azo_compiler_resolve_node (comp, rctx, cbody)) result = 1;
+		azo_frame_pop_scope (rctx->frame);
+	}
+	return result;
+}
+
+/* Create a baked unsigned constant node (for exception codes and category masks) */
+
+static AZONode *
+new_uint_constant (unsigned int type, uint64_t val, unsigned int start, unsigned int end)
+{
+	AZONode *c = azo_node_new (AZO_TERM_CONSTANT, AZO_TERM_GENERIC, start, end);
+	AZValue v;
+	v.uint64_v = val;
+	az_packed_value_set_from_type_value (&c->value, type, &v);
+	c->type = type;
+	return c;
+}
+
+/*
+ * Throw_statement:
+ *   KEYWORD(THROW): EXPRESSION
+ *
+ * Constructor form (throw MyException([message [, payload]])) is validated and
+ * rewritten into the fixed structure THROW: CODE(U32), MASK(U64), MESSAGE|EMPTY,
+ * PAYLOAD|EMPTY. Any other expression is a general throw (rethrow); the value must
+ * be exception-typed if its type is statically known.
+ */
+
+static unsigned int
+resolve_throw (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
+{
+	AZONode *child = node->children;
+	if ((child->term.type == AZO_TERM_FUNCTION_CALL) &&
+	    (child->children->term.type == AZO_TERM_REFERENCE) &&
+	    (child->children->term.subtype == AZO_TERM_REFERENCE_VARIABLE)) {
+		/* Constructor form */
+		AZONode *name = child->children;
+		const AZOExceptionDef *def = azo_context_lookup_exception (comp->globals, name->value.v.string);
+		if (!def || (def->type == AZ_EXCEPTION_NONE)) {
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "%s is not an exception type\n", name->value.v.string->str);
+			return 1;
+		}
+		AZONode *args = child->children->next;
+		unsigned int n_args = 0;
+		for (AZONode *a = args->children; a; a = a->next) n_args++;
+		if (n_args > 2) {
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, args->term.start, args->term.end, "Exception constructor takes at most message and payload arguments\n");
+			return 1;
+		}
+		/* Message and payload expressions resolve normally */
+		if (azo_compiler_resolve_node (comp, rctx, args)) return 1;
+		AZONode *msg = args->children;
+		AZONode *payload = (msg) ? msg->next : NULL;
+		/* Detach message/payload before discarding the call node */
+		args->children = NULL;
+		if (msg) msg->next = NULL;
+		if (!msg) msg = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, child->term.start, child->term.start);
+		if (!payload) payload = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, child->term.start, child->term.start);
+		AZONode *code = new_uint_constant (AZ_TYPE_UINT32, def->type, name->term.start, name->term.end);
+		azo_node_free_tree (child);
+		/* Relink into the fixed structure: [typecode, message, payload]
+		 * (the category mask is looked up from the registry at throw time) */
+		node->children = code;
+		code->parent = node;
+		code->next = msg;
+		msg->parent = node;
+		msg->next = payload;
+		payload->parent = node;
+		payload->next = NULL;
+		return 0;
+	}
+	/* General throw (rethrow): warn if the value is provably not an exception
+	 * (it compiles and throws InvalidType at runtime - see doc/errors.md) */
+	unsigned int result = azo_compiler_resolve_node (comp, rctx, child);
+	if (result) return result;
+	if ((child->type != AZ_TYPE_NONE) && (child->type != AZ_TYPE_ANY) && !az_type_is_a (child->type, AZO_TYPE_EXCEPTION)) {
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_WARNING, AZO_SUBSYSTEM_RESOLVER, child->term.start, child->term.end, "Throwing a non-exception value will throw InvalidType at runtime\n");
+	}
+	return 0;
+}
+
 unsigned int
 azo_compiler_resolve_cast (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 {
@@ -866,6 +1107,12 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 				return resolve_new(comp, rctx, node);
 			} else if (node->term.subtype == AZO_KEYWORD_RETURN) {
 				return resolve_return (comp, rctx, node);
+			} else if (node->term.subtype == AZO_KEYWORD_TRY) {
+				return resolve_try (comp, rctx, node);
+			} else if (node->term.subtype == AZO_KEYWORD_THROW) {
+				return resolve_throw (comp, rctx, node);
+			} else if (node->term.subtype == AZO_KEYWORD_EXCEPTION) {
+				return resolve_exception_declaration (comp, rctx, node);
 			} else {
 				return resolve_children(comp, rctx, node);
 			}
@@ -874,6 +1121,9 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 			return resolve_declaration_list (comp, rctx, node);
 		case AZO_TERM_DECLARATION:
 			/* Should not be called directly */
+			assert(0);
+		case AZO_TERM_CATCH:
+			/* Resolved as part of the try statement */
 			assert(0);
 		case AZO_TERM_ARGUMENT_DECLARATION:
 			return resolve_argument_declaration(comp, rctx, node);

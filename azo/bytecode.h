@@ -22,6 +22,12 @@ enum {
 
 	/* EXCEPTION U32:TYPE */
 	AZO_TC_EXCEPTION,
+	/*
+	 * THROW U32:TYPE
+	 * Pop payload and message from the stack (message may be none),
+	 * set the context exception state and unwind
+	 */
+	AZO_TC_THROW,
 	AZO_TC_EXCEPTION_IF,
 	AZO_TC_EXCEPTION_IF_NOT,
 	/*

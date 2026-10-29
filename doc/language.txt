@@ -192,6 +192,51 @@ Catch_clause:
   catch (NAME : NAME [, NAME ...]) Protected_block
   catch (NAME) Protected_block
 
+# Runtime model: at try entry the interpreter pushes the current computation
+# flags as a plain u32 value, then one catch handle per filter name (a catch-all
+# clause pushes a single match-all handle), then the try body locals. A handle
+# carries {code, mask, catch_ip} - {code,0} for a type name, {0,bit} for a
+# category name, {0,~0} for a catch-all - and matches when
+# (code && exc.code == code) || (exc.mask & mask). No sentinel value or special
+# type is needed: the flags word is identified by position, directly below the
+# contiguous handle run (try always has at least one catch clause, so a flags
+# word never appears without handles; handles are pushed consecutively at
+# entry, so the run is never broken by body values).
+# - Normal exit: stack rewind pops values until it encounters a handle, pops
+#   the contiguous run, then pops the flags word back into the flags register.
+# - Exception: rewind discards values until a handle is found, then tests the
+#   run in declaration order (first match wins). On a match it pops the run,
+#   restores the flags word, places the exception value at the flags slot (the
+#   catch binding position) and jumps to the clause. On no match it pops the
+#   run, restores the flags word and keeps unwinding.
+# Flags are thus restored on every path - normal exit, caught and uncaught
+# exception alike - without any explicit try-exit opcode.
+#
+# An exception in flight is always context state (type code, category mask,
+# message, payload, throw-site ip and the trace accumulator), never an
+# exception value. There are four throw paths, all landing in the same state:
+# - a runtime failure writes the context fields directly (message defaults to
+#   the registered exception name)
+# - throwing by typecode (native code) is the same path with a custom message
+# - "throw X(msg, payload)" compiles to a THROW opcode with the typecode as an
+#   immediate argument and msg/payload on the stack - the context fields are
+#   written directly, no exception value is ever constructed
+# - "throw e" compiles to an e.throw() method call that deconstructs the value
+#   into the context state (the interpreter unwinds on the pending exception
+#   after the native call, like any failing native function)
+# In every case the category mask is looked up from the context exception
+# registry by typecode, never supplied by the throwing site. The rethrow path
+# seeds the trace accumulator from the value's stored trace - so a rethrown
+# value keeps its original throw site and traceback while frames crossed
+# during the new unwind are appended. Unwinding, handle matching and trace
+# accumulation are thus identical for all paths. At a matching catch clause
+# the context state is
+# materialized into a fresh exception value (and cleared), which is stored at
+# the flags position; if no clause matches, the context state remains as the
+# final exception record and no value is ever constructed. Exception values
+# are effectively immutable - unwinding never mutates a value that another
+# reference may still hold.
+
 # throw takes an exception value. Calling a registered exception name as a function
 # constructs one - MyException("message" [, payload]) - the name supplies the type
 # code and category mask, the arguments fill the message and the optional payload

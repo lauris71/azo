@@ -145,6 +145,37 @@ optimize_const_value (AZOOptimizerCtx *ctx, const AZONode *const_node, unsigned 
 	az_packed_value_copy (dst, &const_node->value);
 }
 
+static AZOVariableList *optimize_const_assign(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, AZOVariableList *vars);
+
+/* Process the internal defer blocks of a block in execution order: LIFO, i.e.
+ * reverse order of appearance (the last declared defer runs first at scope exit) */
+static AZOVariableList *
+optimize_const_assign_defers (AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *child, AZOVariableList *vars)
+{
+	if (!child) return vars;
+	/* Later siblings first */
+	vars = optimize_const_assign_defers (opt, ctx, child->next, vars);
+	if (AZO_NODE_IS (child, AZO_TERM_BLOCK, AZO_TERM_BLOCK_DEFER)) {
+		vars = optimize_const_assign (opt, ctx, child, vars);
+	}
+	return vars;
+}
+
+/* Process a block's children as if its internal defer blocks were sub-blocks
+ * gathered at the end in LIFO order: first everything except the defers, then
+ * the defers in reverse order of appearance */
+static AZOVariableList *
+optimize_const_assign_block (AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, AZOVariableList *vars)
+{
+	/* First pass: everything except internal defer blocks */
+	for (AZONode *child = node->children; child; child = child->next) {
+		if (AZO_NODE_IS (child, AZO_TERM_BLOCK, AZO_TERM_BLOCK_DEFER)) continue;
+		vars = optimize_const_assign (opt, ctx, child, vars);
+	}
+	/* Second pass: internal defers in execution order */
+	return optimize_const_assign_defers (opt, ctx, node->children, vars);
+}
+
 static AZOVariableList *
 optimize_const_assign(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, AZOVariableList *vars)
 {
@@ -209,6 +240,36 @@ optimize_const_assign(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, AZ
 				/* Remove again in case they were added */
 				vars = azo_var_list_remove_all(vars, trashed);
 				azo_var_list_free(trashed);
+			} else if (node->term.subtype == AZO_KEYWORD_TRY) {
+				AZONode *body = node->children;
+				/* Variables assigned in the try body are unreliable in every catch
+				 * clause (the body may be interrupted at any point) and after the
+				 * whole try; variables assigned in a catch are unreliable only
+				 * after the try. */
+				AZOVariableList *trashed_body = tag_assigns(opt, body, NULL);
+				AZOVariableList *trashed_catches = NULL;
+				for (AZONode *clause = body->next; clause; clause = clause->next) {
+					trashed_catches = tag_assigns(opt, clause->children->next->next, trashed_catches);
+				}
+				/* Process the body with a copy (sequential tracking is valid inside) */
+				AZOVariableList *copy = azo_var_list_duplicate(vars);
+				copy = optimize_const_assign(opt, ctx, body, copy);
+				azo_var_list_free(copy);
+				/* Each catch starts from the pre-try state minus body assignments;
+				 * the binding shadows any outer constant of the same name */
+				for (AZONode *clause = body->next; clause; clause = clause->next) {
+					AZONode *binding = clause->children;
+					AZONode *cbody = clause->children->next->next;
+					AZOVariableList *cvars = azo_var_list_remove_all(azo_var_list_duplicate(vars), trashed_body);
+					cvars = azo_var_list_remove(cvars, binding->value.v.string);
+					cvars = optimize_const_assign(opt, ctx, cbody, cvars);
+					azo_var_list_free(cvars);
+				}
+				/* Continuation: trash everything assigned in the body or any catch */
+				vars = azo_var_list_remove_all(vars, trashed_body);
+				vars = azo_var_list_remove_all(vars, trashed_catches);
+				azo_var_list_free(trashed_body);
+				azo_var_list_free(trashed_catches);
 			} else if (node->term.subtype == AZO_KEYWORD_IF) {
 				AZONode *cond = node->children;
 				AZONode *if_true = cond->next;
@@ -333,23 +394,24 @@ optimize_const_assign(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, AZ
 				}
 			}
 			break;
+		case AZO_TERM_PROGRAM:
+			/* Program sentences get the same two-pass defer treatment as blocks */
+			vars = optimize_const_assign_block (opt, ctx, node, vars);
+			break;
 		case AZO_TERM_BLOCK:
-			if (node->term.flags & AZO_TERM_FLAG_MODE_MASK) {
+			if (node->term.subtype == AZO_TERM_BLOCK_DEFER) {
+				/* Defer bodies are only reached via the enclosing block's second pass */
+				for (AZONode *child = node->children; child; child = child->next) {
+					vars = optimize_const_assign(opt, ctx, child, vars);
+				}
+			} else if (node->term.flags & AZO_TERM_FLAG_MODE_MASK) {
 				/* Set context so const calculations are done properly */
 				AZOOptimizerCtx lctx = *ctx;
 				lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
 				lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
-				for (AZONode *child = node->children; child; child = child->next) {
-					vars = optimize_const_assign(opt, &lctx, child, vars);
-				}
-			} else if (node->term.subtype == AZO_TERM_BLOCK_DEFER) {
-				/* Skip - we cannot predict the order or execution */
-				/* We only know that all non-deferred code does not depend on it */
-				break;
+				vars = optimize_const_assign_block (opt, &lctx, node, vars);
 			} else {
-				for (AZONode *child = node->children; child; child = child->next) {
-					vars = optimize_const_assign(opt, ctx, child, vars);
-				}
+				vars = optimize_const_assign_block (opt, ctx, node, vars);
 			}
 			break;
 		case AZO_TERM_MODE_EXPRESSION: {
@@ -488,7 +550,8 @@ optimize_keyword(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigne
 		/* 'new' has to be resolved to static call */
 		assert(0);
 	}
-	return 0;
+	/* Everything else (if/for/while/do/try/throw/...) optimizes children */
+	return optimize_children(opt, ctx, node, flags);
 }
 
 static int
@@ -869,6 +932,8 @@ optimize_node(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *node, unsigned i
 			return optimize_declaration(opt, ctx, node, flags);
 		case AZO_TERM_ARGUMENT_DECLARATION:
 			return optimize_argument_declaration(opt, ctx, node, flags);
+		case AZO_TERM_CATCH:
+			return optimize_children(opt, ctx, node, flags);
 		case AZO_TERM_FUNCTION:
 			return optimize_function(opt, ctx, node, flags);
 		case AZO_TERM_FUNCTION_CALL:

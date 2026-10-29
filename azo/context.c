@@ -37,7 +37,6 @@ typedef struct _AZOCtxExcEntry AZOCtxExcEntry;
  */
 struct _AZOCtxDef {
 	ArikkeiDictEntry entry;
-	uint32_t filler;
 	AZString *name;
 	AZPackedValue value;
 };
@@ -82,7 +81,6 @@ def_free_value (void *value)
 
 struct _AZOCtxExcEntry {
 	ArikkeiDictEntry entry;
-	uint32_t filler;
 	AZString *name;
 	AZOExceptionDef def;
 };
@@ -98,6 +96,9 @@ struct _AZOContextPriv {
 	ArikkeiDict exc_defs;
 	unsigned int next_exc_type;
 	unsigned int next_category_bit;
+	/* Type -> registration lookup (types are allocated sequentially, no holes) */
+	AZOExceptionInfo *exc_types;
+	unsigned int n_exc_types;
 };
 
 AZOContext *
@@ -142,39 +143,70 @@ azo_context_new (void)
 void
 azo_context_delete (AZOContext *ctx)
 {
+	azo_context_clear_exception(ctx);
+	for (unsigned int i = 0; i < ctx->priv->n_exc_types; i++) {
+		if (ctx->priv->exc_types[i].name) az_string_unref(ctx->priv->exc_types[i].name);
+	}
+	free(ctx->priv->exc_types);
+	arikkei_dict_release (&ctx->priv->exc_defs);
 	arikkei_dict_release (&ctx->priv->definitions);
 	free(ctx->priv);
 
 	free(ctx);
 }
 
-static const char *excnames[] = {
-	NULL,
-	/* az */
-	"System failure",
-	"Out of memory",
-	"Null dereference",
-	"Invalid type",
-	"Invalid value",
-	"Out of bounds",
-	/* azo */
-	"Change of magnitude",
-	"Change of precision",
-	"Non-finite result",
-	"Integer overflow",
-	"Stack overflow",
-	"Invalid conversion",
-	"Invalid property",
-	"Divide by zero",
-	"Not writable"
-};
+static uint64_t
+exc_get_mask (AZOContext *ctx, unsigned int type)
+{
+	const AZOExceptionInfo *info = azo_context_get_exception_info(ctx, type);
+	uint64_t mask = (info) ? info->category : az_get_exception_category(type);
+	if (!mask) mask = AZ_EXCEPTION_CATEGORY_SYSTEM;
+	return mask;
+}
 
 void
-azo_context_set_exception(AZOContext *ctx, unsigned int type, unsigned int mask, const uint8_t *ipc)
+azo_context_set_exception(AZOContext *ctx, unsigned int type, const uint8_t *msg, const uint8_t *ipc)
 {
-	az_exception_set(&ctx->az_ctx.exc, type, mask, (const uint8_t *) excnames[type]);
+	if (!msg) {
+		AZString *name = azo_context_get_exception_name(ctx, type);
+		msg = (name) ? (const uint8_t *) name->str : (const uint8_t *) "Unknown exception";
+	}
+	az_exception_set(&ctx->az_ctx.exc, type, exc_get_mask(ctx, type), msg);
 	ctx->az_ctx.exc.level = AZO_EXCEPTION_LEVEL;
 	ctx->exc_ip = ipc;
+}
+
+void
+azo_context_set_exception_value(AZOContext *ctx, unsigned int type, AZString *msg, const AZPackedValue *payload, const uint8_t *ipc)
+{
+	assert(!ctx->az_ctx.exc.type);
+	ctx->az_ctx.exc.level = AZO_EXCEPTION_LEVEL;
+	ctx->az_ctx.exc.type = type;
+	ctx->az_ctx.exc.mask = exc_get_mask(ctx, type);
+	if (msg) {
+		az_string_ref(msg);
+		ctx->az_ctx.exc.msg = msg;
+	} else {
+		AZString *name = azo_context_get_exception_name(ctx, type);
+		ctx->az_ctx.exc.msg = az_string_new((name) ? (const uint8_t *) name->str : (const uint8_t *) "Unknown exception");
+	}
+	if (payload) az_packed_value_copy(&ctx->exc_payload, payload);
+	ctx->exc_ip = ipc;
+}
+
+const AZOExceptionInfo *
+azo_context_get_exception_info(AZOContext *ctx, unsigned int type)
+{
+	if (type >= ctx->priv->n_exc_types) return NULL;
+	if (!ctx->priv->exc_types[type].name) return NULL;
+	return &ctx->priv->exc_types[type];
+}
+
+AZString *
+azo_context_get_exception_name(AZOContext *ctx, unsigned int type)
+{
+	const AZOExceptionInfo *info = azo_context_get_exception_info(ctx, type);
+	return (info) ? info->name : NULL;
 }
 
 void
@@ -182,6 +214,12 @@ azo_context_clear_exception(AZOContext *ctx)
 {
 	az_exception_clear(&ctx->az_ctx.exc);
 	ctx->exc_ip = NULL;
+	az_packed_value_clear(&ctx->exc_payload);
+	for (unsigned int i = 0; i < ctx->n_traces; i++) {
+		azo_stack_trace_element_clear(&ctx->traces[i]);
+	}
+	ctx->n_traces = 0;
+	ctx->n_truncated = 0;
 }
 
 unsigned int
@@ -270,6 +308,17 @@ azo_context_register_exception(AZOContext *ctx, AZString *name, uint64_t categor
 	new_def.type = ctx->priv->next_exc_type++;
 	new_def.category = category;
 	arikkei_dict_insert(&ctx->priv->exc_defs, &name, &new_def);
+	/* Types are allocated sequentially so the info array has no holes */
+	if (new_def.type >= ctx->priv->n_exc_types) {
+		unsigned int n_types = (ctx->priv->n_exc_types) ? ctx->priv->n_exc_types : 16;
+		while (new_def.type >= n_types) n_types *= 2;
+		ctx->priv->exc_types = (AZOExceptionInfo *) realloc(ctx->priv->exc_types, n_types * sizeof(AZOExceptionInfo));
+		memset(ctx->priv->exc_types + ctx->priv->n_exc_types, 0, (n_types - ctx->priv->n_exc_types) * sizeof(AZOExceptionInfo));
+		ctx->priv->n_exc_types = n_types;
+	}
+	az_string_ref(name);
+	ctx->priv->exc_types[new_def.type].name = name;
+	ctx->priv->exc_types[new_def.type].category = category;
 	return new_def.type;
 }
 
@@ -352,6 +401,7 @@ azo_context_define_basic_types (AZOContext *ctx)
 	azo_namespace_define_class_by_str(ns, (const unsigned char *) "array", AZ_TYPE_LIST);
 	azo_namespace_define_class_by_str(ns, (const unsigned char *) "map", AZ_TYPE_MAP);
 	azo_namespace_define_class_by_str(ns, (const unsigned char *) "ActiveObject", AZ_TYPE_ACTIVE_OBJECT);
+	azo_namespace_define_class_by_str(ns, (const unsigned char *) "Exception", AZO_TYPE_EXCEPTION);
 
 	/* Exceptions */
 	/* Categories */

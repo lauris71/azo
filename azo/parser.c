@@ -322,6 +322,10 @@ static unsigned int parse_for (AZOParser *parser, AZOToken *token);
 static unsigned int parse_while (AZOParser *parser, AZOToken *token);
 static unsigned int parse_do (AZOParser *parser, AZOToken *token);
 static unsigned int parse_if (AZOParser *parser, AZOToken *token);
+static unsigned int parse_try (AZOParser *parser, AZOToken *token);
+static unsigned int parse_catch_clause (AZOParser *parser, AZOToken *token);
+static unsigned int parse_throw (AZOParser *parser, AZOToken *token);
+static unsigned int parse_exception_declaration (AZOParser *parser, AZOToken *token);
 static unsigned int parse_function_call (AZOParser *parser, AZOToken *token);
 static unsigned int parse_new (AZOParser *parser, AZOToken *token);
 static unsigned int parse_array_literal (AZOParser *parser, AZOToken *token);
@@ -425,8 +429,10 @@ parse_sentence (AZOParser *parser, AZOToken *token)
 		return parse_do (parser, token);
 	} else if (azo_token_is_keyword (token, AZO_KEYWORD_IF, parser->src)) {
 		return parse_if (parser, token);
+	} else if (azo_token_is_keyword (token, AZO_KEYWORD_TRY, parser->src)) {
+		return parse_try (parser, token);
 	}
-	/* EMPTY, return, break, continue */
+	/* EMPTY, return, break, continue, throw, exception */
 	/* These go through parse_line to capture ';' */
 	if (token->type == AZO_TOKEN_SEMICOLON) {
 		return parse_line(parser, token, 0, NULL);
@@ -435,6 +441,10 @@ parse_sentence (AZOParser *parser, AZOToken *token)
 	} else if (azo_token_is_keyword(token, AZO_KEYWORD_BREAK, parser->src)) {
 		return parse_line(parser, token, 0, NULL);
 	} else if (azo_token_is_keyword(token, AZO_KEYWORD_CONTINUE, parser->src)) {
+		return parse_line(parser, token, 0, NULL);
+	} else if (azo_token_is_keyword(token, AZO_KEYWORD_THROW, parser->src)) {
+		return parse_line(parser, token, 0, NULL);
+	} else if (azo_token_is_keyword(token, AZO_KEYWORD_EXCEPTION, parser->src)) {
 		return parse_line(parser, token, 0, NULL);
 #ifdef HAS_DEBUG_KEYWORD
 	} else if (azo_token_is_keyword(token, AZO_KEYWORD_DEBUG, parser->src)) {
@@ -691,6 +701,16 @@ parse_statement (AZOParser *parser, AZOToken *token, int quals, AZONode *expr)
 		azo_tokenizer_get_next_token (&parser->tokenizer, token);
 		return AZO_ERROR_NONE;
 	}
+	/* Throw */
+	if (azo_token_is_keyword(token, AZO_KEYWORD_THROW, parser->src)) {
+		if ((quals > 0) || expr) return AZO_PARSER_ERROR_SYNTAX;
+		return parse_throw (parser, token);
+	}
+	/* Exception declaration (compile-time directive; ';' captured by parse_line) */
+	if (azo_token_is_keyword(token, AZO_KEYWORD_EXCEPTION, parser->src)) {
+		if ((quals > 0) || expr) return AZO_PARSER_ERROR_SYNTAX;
+		return parse_exception_declaration (parser, token);
+	}
 #ifdef HAS_DEBUG_KEYWORD
 	else if (azo_token_is_keyword (token, AZO_KEYWORD_DEBUG, parser->src)) {
 		if ((quals > 0) || expr) return AZO_PARSER_ERROR_SYNTAX;
@@ -841,7 +861,7 @@ static unsigned int
 azo_parser_parse_single_declaration (AZOParser *parser, AZOToken *token)
 {
 	/* Keywords cannot be variable names */
-	if ((token->type != AZO_TOKEN_WORD) || (azo_token_get_keyword (token, parser->src) != AZO_KEYWORD_NONE)) return AZO_PARSER_ERROR_SYNTAX;
+	if (!azo_token_is_bareword(token, parser->src)) return AZO_PARSER_ERROR_SYNTAX;
 	AZONode *left = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
 	AZONode *right = NULL;
 	unsigned int end = left->term.end;
@@ -2082,6 +2102,220 @@ parse_if (AZOParser *parser, AZOToken *token)
 		end = if_false->term.end;
 	}
 	AZONode *expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_IF, start, end, 3, cond, if_true, if_false);
+	parser_append (parser, expr);
+	return AZO_ERROR_NONE;
+}
+
+/*
+ * Try_statement:
+ *   try Protected_block Catch_clause [Catch_clause ...]
+ *
+ * Protected_block:
+ *   Qualified_block
+ *   Block
+ *
+ * Token is at 'try'.
+ * KEYWORD(TRY): BLOCK, CATCH, [CATCH ...]
+ */
+
+static unsigned int
+parse_try (AZOParser *parser, AZOToken *token)
+{
+	unsigned int start = token->start;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* Protected block (qualified block - same qualifiers as a sentence-level block) */
+	int quals = 0;
+	unsigned int result = parse_qualifiers (parser, token, &quals);
+	if (result) return result;
+	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	if (token->type != AZO_TOKEN_LEFT_BRACE) return AZO_PARSER_ERROR_SYNTAX;
+	if (quals & ~(AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_MODE_MASK)) return AZO_PARSER_ERROR_SYNTAX;
+	result = parse_block (parser, token, AZO_TERM_BLOCK_PLAIN, quals);
+	if (result) return result;
+	AZONode *body = parser_detach_last (parser);
+	AZONode *expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_TRY, start, body->term.end, 1, body);
+	parser_push (parser, expr);
+	/* Catch clauses (at least one is required) */
+	while (azo_token_is_keyword (token, AZO_KEYWORD_CATCH, parser->src)) {
+		result = parse_catch_clause (parser, token);
+		if (result) break;
+	}
+	if (!result && expr->children->next) expr->term.end = parser_peek_last (parser)->term.end;
+	parser_pop (parser);
+	if (!result && !expr->children->next) result = AZO_PARSER_ERROR_SYNTAX;
+	return result;
+}
+
+/*
+ * Catch_clause:
+ *   catch (NAME [: NAME [, NAME ...]]) Protected_block
+ *
+ * Token is at 'catch'.
+ * CATCH: REFERENCE_VARIABLE (binding), LIST [REFERENCE ...] (filters, empty = catch-all), BLOCK
+ */
+
+static unsigned int
+parse_catch_clause (AZOParser *parser, AZOToken *token)
+{
+	unsigned int start = token->start;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* ( */
+	if (token->type != AZO_TOKEN_LEFT_PARENTHESIS) return AZO_PARSER_ERROR_SYNTAX;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* Binding name */
+	if (!azo_token_is_bareword(token, parser->src)) return AZO_PARSER_ERROR_SYNTAX;
+	AZONode *binding = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+		azo_node_free_tree (binding);
+		return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	}
+	/* Optional filter list : NAME [, NAME ...] */
+	AZONode *filters = azo_node_new (AZO_TERM_LIST, AZO_TERM_GENERIC, token->start, token->start);
+	AZONode *tail = NULL;
+	unsigned int result = AZO_ERROR_NONE;
+	if (AZO_TOKEN_IS_OPERATOR (token) && (AZO_TOKEN_OPERATOR_CODE (token) == AZO_OPERATOR_COLON)) {
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+			azo_node_free_tree (filters);
+			azo_node_free_tree (binding);
+			return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		}
+		filters->term.start = token->start;
+		while (1) {
+			if (!azo_token_is_bareword(token, parser->src)) {
+				result = AZO_PARSER_ERROR_SYNTAX;
+				break;
+			}
+			AZONode *filter = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
+			filter->parent = filters;
+			if (tail) {
+				tail->next = filter;
+			} else {
+				filters->children = filter;
+			}
+			tail = filter;
+			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+				result = AZO_PARSER_ERROR_UNEXPECTED_EOF;
+				break;
+			}
+			if (!AZO_TOKEN_IS_OPERATOR (token) || (AZO_TOKEN_OPERATOR_CODE (token) != AZO_OPERATOR_COMMA)) break;
+			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+				result = AZO_PARSER_ERROR_UNEXPECTED_EOF;
+				break;
+			}
+		}
+		filters->term.end = tail->term.end;
+	}
+	/* ) */
+	if (!result && (token->type == AZO_TOKEN_EOF)) {
+		result = AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	}
+	if (!result && (token->type != AZO_TOKEN_RIGHT_PARENTHESIS)) {
+		result = AZO_PARSER_ERROR_CLOSING_PARENTHESIS_MISSING;
+	}
+	if (!result && !azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+		result = AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	}
+	/* Protected block */
+	int quals = 0;
+	if (!result) {
+		result = parse_qualifiers (parser, token, &quals);
+		if (token->type == AZO_TOKEN_EOF) {
+			result = AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		}
+		if (quals & ~(AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_MODE_MASK)) {
+			result = AZO_PARSER_ERROR_SYNTAX;
+		}
+	}
+	if (!result && (token->type != AZO_TOKEN_LEFT_BRACE)) {
+		return AZO_PARSER_ERROR_SYNTAX;
+	}
+	if (result) {
+		azo_node_free_tree (filters);
+		azo_node_free_tree (binding);
+		return result;
+	}
+	AZONode *clause = azo_node_new_with_children (AZO_TERM_CATCH, AZO_TERM_GENERIC, start, token->end, 2, binding, filters);
+	parser_push (parser, clause);
+	result = parse_block (parser, token, AZO_TERM_BLOCK_PLAIN, quals);
+	parser_pop (parser);
+	if (!result) clause->term.end = parser_peek_last (parser)->term.end;
+	return result;
+}
+
+/*
+ * Throw_statement:
+ *   throw Expression
+ *
+ * Token is at 'throw'.
+ * KEYWORD(THROW): EXPRESSION
+ */
+
+static unsigned int
+parse_throw (AZOParser *parser, AZOToken *token)
+{
+	unsigned int start = token->start;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* throw requires an exception expression (rethrow is throw e;) */
+	if ((token->type == AZO_TOKEN_SEMICOLON) || (token->type == AZO_TOKEN_RIGHT_BRACE) || (token->type == AZO_TOKEN_EOF)) return AZO_PARSER_ERROR_SYNTAX;
+	unsigned int result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_MINIMUM);
+	if (result) return result;
+	AZONode *val = parser_detach_last (parser);
+	AZONode *expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_THROW, start, val->term.end, 1, val);
+	parser_append (parser, expr);
+	return AZO_ERROR_NONE;
+}
+
+/*
+ * Exception_declaration (compile-time directive):
+ *   exception NAME
+ *   exception NAME : NAME [, NAME ...]
+ *
+ * Token is at 'exception'. The terminating ';' is captured by parse_line.
+ * KEYWORD(EXCEPTION): REFERENCE(name), [REFERENCE(category) ...]
+ * One child = category declaration, more = type declaration in categories.
+ */
+
+static unsigned int
+parse_exception_declaration (AZOParser *parser, AZOToken *token)
+{
+	unsigned int start = token->start;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* Declared name */
+	if (!azo_token_is_bareword(token, parser->src)) return AZO_PARSER_ERROR_SYNTAX;
+	AZONode *name = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
+	AZONode *expr = azo_node_new_with_children (AZO_TERM_KEYWORD, AZO_KEYWORD_EXCEPTION, start, name->term.end, 1, name);
+	AZONode *tail = name;
+	if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+		azo_node_free_tree (expr);
+		return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	}
+	/* Optional category list : NAME [, NAME ...] */
+	if (AZO_TOKEN_IS_OPERATOR (token) && (AZO_TOKEN_OPERATOR_CODE (token) == AZO_OPERATOR_COLON)) {
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+			azo_node_free_tree (expr);
+			return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+		}
+		while (1) {
+			if (!azo_token_is_bareword(token, parser->src)) {
+				azo_node_free_tree (expr);
+				return AZO_PARSER_ERROR_SYNTAX;
+			}
+			AZONode *category = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
+			category->parent = expr;
+			tail->next = category;
+			tail = category;
+			expr->term.end = category->term.end;
+			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+				azo_node_free_tree (expr);
+				return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+			}
+			if (!AZO_TOKEN_IS_OPERATOR (token) || (AZO_TOKEN_OPERATOR_CODE (token) != AZO_OPERATOR_COMMA)) break;
+			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+				azo_node_free_tree (expr);
+				return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+			}
+		}
+	}
 	parser_append (parser, expr);
 	return AZO_ERROR_NONE;
 }

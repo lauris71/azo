@@ -139,8 +139,12 @@ calculate_logic (AZOOptimizer *opt, AZONode *expr, AZOSource *src)
 	AZValue result;
 	unsigned int result_code = azo_calculate_logic (lhs->type, &lhs->value.v, rhs->type, &rhs->value.v, expr->term.subtype, &result);
 	if (result_code == AZO_CALCULATE_INVALID_TYPE) {
-		calculate_report ("ERROR", expr, lhs->type, &lhs->value.v, rhs->type, &rhs->value.v, "invalid type", src);
-		return 1;
+		/* Will throw InvalidType at runtime - do not fold, warn once but succeed */
+		if (!(expr->term.flags & AZO_TERM_FLAG_THROW_WARNED)) {
+			expr->term.flags |= AZO_TERM_FLAG_THROW_WARNED;
+			calculate_report ("EXCEPTION WARNING", expr, lhs->type, &lhs->value.v, rhs->type, &rhs->value.v, "invalid type for operation - will throw at runtime", src);
+		}
+		return 0;
 	}
 	node_replace_with_constant(expr, AZ_TYPE_BOOLEAN, &result);
 	opt->n_const_subst += 1;
@@ -159,8 +163,12 @@ calculate_shift (AZOOptimizer *opt, AZONode *expr, AZOSource *src)
 
 	unsigned int result_code = azo_calculate_shift (lhs->type, &lhs->value.v, rhs->type, &rhs->value.v, expr->term.subtype, &type, &c);
 	if (result_code == AZO_CALCULATE_INVALID_TYPE) {
-		calculate_report ("ERROR", expr, lhs->type, &lhs->value.v, rhs->type, &rhs->value.v, "invalid type", src);
-		return 1;
+		/* Will throw InvalidType at runtime - do not fold, warn once but succeed */
+		if (!(expr->term.flags & AZO_TERM_FLAG_THROW_WARNED)) {
+			expr->term.flags |= AZO_TERM_FLAG_THROW_WARNED;
+			calculate_report ("EXCEPTION WARNING", expr, lhs->type, &lhs->value.v, rhs->type, &rhs->value.v, "invalid type for operation - will throw at runtime", src);
+		}
+		return 0;
 	}
 	node_replace_with_constant(expr, type, &c);
 	opt->n_const_subst += 1;
@@ -176,46 +184,44 @@ calculate_arithmetic (AZOOptimizer *opt, AZOCompilerContext *ctx, AZONode *expr,
 	unsigned int type;
 	unsigned int flags;
 	unsigned int result_code = azo_calculate_binary (ctx->calc_mode, lhs_type, lhs, rhs_type, rhs, expr->term.subtype, &type, &c, &flags);
+	/* A constant expression that throws at runtime is legitimate code (the
+	 * exception may be caught) - do not fold it, warn once but succeed.
+	 * This covers invalid type combinations (InvalidType is catchable),
+	 * division by zero and unmasked mode violations. */
+	const char *throw_msg = NULL;
 	if (result_code == AZO_CALCULATE_INVALID_TYPE) {
-		calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "invalid type", src);
-		return 1;
+		throw_msg = "invalid type for operation - will throw at runtime";
+	} else if (result_code == AZO_CALCULATE_DIVIDE_BY_ZERO) {
+		throw_msg = "integer division by zero - will throw at runtime";
+	} else if ((flags & AZO_CALCULATE_FLAG_NON_FINITE) && !(ctx->exception_mask & AZO_INTR_NOT_FINITE_MASK)) {
+		throw_msg = fp_result_is_nan (type, &c) ? "result is NaN - will throw at runtime" : "result is infinite (overflow) - will throw at runtime";
+	} else if ((flags & AZO_CALCULATE_FLAG_MAGNITUDE) && !(ctx->exception_mask & AZO_INTR_CHANGE_OF_MAGNITUDE_MASK)) {
+		throw_msg = "value clamping - will throw at runtime";
+	} else if ((flags & AZO_CALCULATE_FLAG_OVERFLOW) && !(ctx->exception_mask & AZO_INTR_INTEGER_OVERFLOW_MASK)) {
+		throw_msg = "integer overflow - will throw at runtime";
+	} else if ((flags & AZO_CALCULATE_FLAG_ROUNDED) && !(ctx->exception_mask & AZO_INTR_CHANGE_OF_PRECISION_MASK)) {
+		throw_msg = "conversion changes precision - will throw at runtime";
 	}
-	if (result_code == AZO_CALCULATE_DIVIDE_BY_ZERO) {
-		calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "integer division by zero", src);
-		return 1;
+	if (throw_msg) {
+		if (!(expr->term.flags & AZO_TERM_FLAG_THROW_WARNED)) {
+			expr->term.flags |= AZO_TERM_FLAG_THROW_WARNED;
+			calculate_report ("EXCEPTION WARNING", expr, lhs_type, lhs, rhs_type, rhs, throw_msg, src);
+		}
+		return 0;
 	}
+	/* Masked conversions produce the same value at runtime as the folded one */
 	if (flags & AZO_CALCULATE_FLAG_NON_FINITE) {
 		const char *msg = fp_result_is_nan (type, &c) ? "result is NaN" : "result is infinite (overflow)";
-		if (ctx->exception_mask & AZO_INTR_NOT_FINITE_MASK) {
-			calculate_report ("WARNING", expr, lhs_type, lhs, rhs_type, rhs, msg, src);
-		} else {
-			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, msg, src);
-			return 1;
-		}
+		calculate_report ("WARNING", expr, lhs_type, lhs, rhs_type, rhs, msg, src);
 	}
 	if (flags & AZO_CALCULATE_FLAG_MAGNITUDE) {
-		if (ctx->exception_mask & AZO_INTR_CHANGE_OF_MAGNITUDE_MASK) {
-			calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_CLAMPED, src);
-		} else {
-			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "value clamping", src);
-			return 1;
-		}
+		calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_CLAMPED, src);
 	}
 	if (flags & AZO_CALCULATE_FLAG_OVERFLOW) {
-		if (ctx->exception_mask & AZO_INTR_INTEGER_OVERFLOW_MASK) {
-			calculate_report ("WARNING", expr, lhs_type, lhs, rhs_type, rhs, "integer overflow", src);
-		} else {
-			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "integer overflow", src);
-			return 1;
-		}
+		calculate_report ("WARNING", expr, lhs_type, lhs, rhs_type, rhs, "integer overflow", src);
 	}
 	if (flags & AZO_CALCULATE_FLAG_ROUNDED) {
-		if (ctx->exception_mask & AZO_INTR_CHANGE_OF_PRECISION_MASK) {
-			calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_ROUNDED, src);
-		} else {
-			calculate_report ("ERROR", expr, lhs_type, lhs, rhs_type, rhs, "conversion changes precision", src);
-			return 1;
-		}
+		calculate_warn_conversion (expr, lhs_type, lhs, rhs_type, rhs, type, &c, AZ_CONVERSION_ROUNDED, src);
 	}
 	/* The children are freed here, after all operand reads */
 	node_replace_with_constant(expr, type, &c);
@@ -281,8 +287,12 @@ azo_compiler_calculate_rvalue_prefix(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZ
 			if (ctx->exception_mask & AZO_INTR_INTEGER_OVERFLOW_MASK) {
 				fprintf (stderr, "WARNING: unary minus overflows (value clamped/wrapped)\n");
 			} else {
-				fprintf (stderr, "ERROR: unary minus overflows\n");
-				return 1;
+				/* Will throw at runtime - do not fold, warn once but succeed */
+				if (!(node->term.flags & AZO_TERM_FLAG_THROW_WARNED)) {
+					node->term.flags |= AZO_TERM_FLAG_THROW_WARNED;
+					fprintf (stderr, "WARNING: unary minus overflows - will throw at runtime\n");
+				}
+				return 0;
 			}
 		}
 		node_replace_with_constant(node, rhs->type, &result);

@@ -94,6 +94,78 @@ azo_intepreter_push_values (AZOInterpreter *intr, const AZImplementation **impls
 	}
 }
 
+static void azo_interpreter_run_code(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ipc, const uint8_t *end);
+
+static void
+intr_trace_push (AZOInterpreter *intr, AZOInterpreterCtx *ictx, unsigned int ip)
+{
+	AZOContext *ctx = intr->ctx;
+	if (ctx->n_traces < 64) {
+		azo_stack_trace_element_set(&ctx->traces[ctx->n_traces], ictx->prog, ip);
+		ctx->n_traces += 1;
+	} else {
+		ctx->n_truncated += 1;
+	}
+}
+
+/*
+ * Unwind the current frame after an exception: pop values, run defers, scan
+ * catch handle runs. On a match the run and the flags word are popped, the
+ * flags restored, a fresh exception value materialized at the flags position
+ * and the catch address returned; otherwise NULL (unwind continues in the
+ * caller frame).
+ */
+static const uint8_t *
+intr_unwind (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
+{
+	unsigned int frame_base = intr->frames[intr->n_frames - 1];
+	while (intr->stack.length > frame_base) {
+		const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, 0);
+		if (impl == &azo_defer_handle_class->impl) {
+			AZODeferHandle handle = *((AZODeferHandle *) azo_stack_instance_bw (&intr->stack, 0));
+			azo_stack_pop (&intr->stack, 1);
+			uint32_t flags = intr->flags;
+			intr->flags |= AZO_INTR_FLAG_NO_THROW;
+			unsigned int len = intr->stack.length;
+			azo_interpreter_run_code (intr, ictx, ictx->tcode + handle.ip, ictx->tcode + handle.ip + handle.len);
+			intr->flags = flags;
+			/* A defer body that exits on a pending exception leaves its locals behind */
+			while (intr->stack.length > len) azo_stack_pop (&intr->stack, 1);
+		} else if (impl == AZ_IMPL_FROM_TYPE (azo_catch_handle_get_type ())) {
+			/* Scan the contiguous handle run (top-down = declaration order) */
+			unsigned int n_handles = 0;
+			while (((int) intr->stack.length - 1 - (int) n_handles >= (int) frame_base) &&
+				(azo_stack_impl_bw (&intr->stack, n_handles) == AZ_IMPL_FROM_TYPE (azo_catch_handle_get_type ()))) {
+				n_handles++;
+			}
+			unsigned int catch_ip = 0;
+			unsigned int found = 0;
+			for (unsigned int i = 0; i < n_handles; i++) {
+				const AZOCatchHandle *handle = (const AZOCatchHandle *) azo_stack_instance_bw (&intr->stack, i);
+				if ((handle->type && (intr->ctx->az_ctx.exc.type == handle->type)) || (intr->ctx->az_ctx.exc.mask & handle->mask)) {
+					catch_ip = handle->ip;
+					found = 1;
+					break;
+				}
+			}
+			/* The flags word sits directly below the run */
+			uint32_t saved_flags = azo_stack_value_bw (&intr->stack, n_handles)->uint32_v;
+			azo_stack_pop (&intr->stack, n_handles + 1);
+			intr->flags = saved_flags;
+			if (found) {
+				AZOException *exc = azo_exception_new (intr->ctx);
+				AZValue val;
+				val.reference = (AZReference *) exc;
+				azo_stack_push_value_transfer (&intr->stack, AZ_IMPL_FROM_TYPE (azo_exception_get_type ()), &val);
+				return ictx->tcode + catch_ip;
+			}
+		} else {
+			azo_stack_pop (&intr->stack, 1);
+		}
+	}
+	return NULL;
+}
+
 static void
 azo_interpreter_run_code(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ipc, const uint8_t *end)
 {
@@ -101,6 +173,13 @@ azo_interpreter_run_code(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const ui
 		unsigned int ip = ipc - ictx->tcode;
 		assert((ictx->tcode <= ipc) && (ipc < end));
 		ipc = azo_interpreter_interpret_tc(intr, ictx, ipc);
+		if (!ipc && intr->ctx->az_ctx.exc.type && !(intr->flags & AZO_INTR_FLAG_NO_THROW)) {
+			/* The exception was raised at ip (throw or call) - record it and unwind the frame;
+			 * native code may raise without setting an ip - then the call site is the best we have */
+			if (!intr->ctx->exc_ip) intr->ctx->exc_ip = ictx->tcode + ip;
+			intr_trace_push (intr, ictx, ip);
+			ipc = intr_unwind (intr, ictx);
+		}
 	}
 }
 
@@ -115,9 +194,8 @@ intr_rewind(AZOInterpreter *intr, AZOInterpreterCtx *ictx, unsigned int n_values
 			azo_stack_pop(&intr->stack, 1);
 			unsigned int len = intr->stack.length;
 			azo_interpreter_run_code(intr, ictx, ictx->tcode + handle.ip, ictx->tcode + handle.ip + handle.len);
-			if (intr->stack.length != len) {
-				fprintf(stderr, "rewind: Stack is littered\n");
-			}
+			/* A defer body that exits on a pending exception leaves its locals behind */
+			while (intr->stack.length > len) azo_stack_pop (&intr->stack, 1);
 		} else {
 			azo_stack_pop(&intr->stack, 1);
 		}
@@ -147,7 +225,8 @@ azo_interpreter_pop_frame (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 static inline void
 set_exception_if_clear(AZOInterpreter *intr, unsigned int type, const uint8_t *ip) {
 	if (!intr->ctx->az_ctx.exc.type) {
-		azo_context_set_exception(intr->ctx, type, 1UL << type, ip);
+		/* The category mask is looked up from the context exception registry */
+		azo_context_set_exception(intr->ctx, type, NULL, ip);
 	}
 }
 
@@ -279,7 +358,7 @@ static unsigned int
 test_stack_overflow (AZOInterpreter *intr, const uint8_t *ip, unsigned int n_values)
 {
 	if ((intr->stack.length + n_values) > 65536) {
-		azo_context_set_exception(intr->ctx, AZO_EXCEPTION_STACK_OVERFLOW, 1UL << AZO_EXCEPTION_STACK_OVERFLOW, ip);
+		azo_context_set_exception(intr->ctx, AZO_EXCEPTION_STACK_OVERFLOW, NULL, ip);
 		return 0;
 	}
 	return 1;
@@ -314,6 +393,35 @@ interpret_EXCEPTION (AZOInterpreter *intr, const unsigned char *ip)
 	}
 	EXCEPTION_THROW(type);
 	return NULL;
+}
+
+/*
+ * AZO_TC_THROW U32:TYPE
+ * Pop payload and message (string or none), set the context exception
+ * state from the exception registry and unwind
+ */
+static const unsigned char *
+interpret_THROW (AZOInterpreter *intr, const uint8_t *ip)
+{
+	uint32_t type;
+	memcpy (&type, ip + 1, 4);
+	CHECK_UNDERFLOW (2);
+	unsigned int msg_type = azo_stack_type_bw (&intr->stack, 1);
+	if ((msg_type != AZ_TYPE_NONE) && (msg_type != AZ_TYPE_STRING)) {
+		/* Bad message value: throw InvalidType instead */
+		azo_stack_pop (&intr->stack, 2);
+		EXCEPTION_THROW (AZ_EXCEPTION_INVALID_TYPE);
+		return ip + 5;
+	}
+	if (!intr->ctx->az_ctx.exc.type) {
+		AZString *msg = NULL;
+		if (msg_type == AZ_TYPE_STRING) msg = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
+		AZPackedValue payload = { azo_stack_impl_bw (&intr->stack, 0), 0, *azo_stack_value_bw (&intr->stack, 0) };
+		azo_context_set_exception_value (intr->ctx, type, msg, &payload, ip);
+	}
+	azo_stack_pop (&intr->stack, 2);
+	if (!(intr->flags & AZO_INTR_FLAG_NO_THROW)) return NULL;
+	return ip + 5;
 }
 
 /*
@@ -1296,9 +1404,9 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 	/* Pop function and the arguments */
 	azo_stack_pop(&intr->stack, 1);
 	azo_stack_push_value_transfer (&intr->stack, ret_val.impl, &ret_val.v);
+	/* On exception run_code unwinds: the trace records the call ip and the
+	 * exception keeps the ip set by its throwing site */
 	if(intr->ctx->az_ctx.exc.type) {
-		/* Set ip to current frame */
-		intr->ctx->exc_ip = ip;
 		return NULL;
 	}
 	return ip + 2;
@@ -1720,6 +1828,9 @@ switch (*ip) {
 		case AZO_TC_EXCEPTION_IF_NOT:
 			ip = interpret_EXCEPTION (intr, ip);
 			break;
+		case AZO_TC_THROW:
+			ip = interpret_THROW (intr, ip);
+			break;
 		case AZO_TC_EXCEPTION_IF_TYPE_IS_NOT:
 			ip = interpret_type_EXCEPTION (intr, ip);
 			break;
@@ -1975,6 +2086,20 @@ switch (*ip) {
 }
 
 void
+azo_interpreter_print_exception (AZOInterpreter *intr, AZOInterpreterCtx *ictx, FILE *pf)
+{
+	unsigned char b[1024];
+	unsigned int ip = intr->ctx->exc_ip - ictx->tcode;
+	fprintf (pf, "Fatal exception: %s\n", intr->ctx->az_ctx.exc.msg->str);
+	azo_debug_print_term (ictx->debug, ip, pf);
+	fprintf (pf, "Position: %d %d\n", ip, ictx->tcode[ip]);
+	azo_bc_print_instruction (b, 256, ictx->tcode, ip, ictx->tcode_len);
+	fprintf (pf, "%s\n", b);
+	azo_intepreter_print_stack (intr, pf);
+	fprintf (pf, "\n");
+}
+
+void
 azo_interpreter_run_frame(AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 {
 	const uint8_t *ipc = ictx->tcode;
@@ -1982,19 +2107,6 @@ azo_interpreter_run_frame(AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 	assert(!intr->ctx->az_ctx.exc.type);
 
 	azo_interpreter_run_code(intr, ictx, ipc, end);
-
-	if (intr->ctx->az_ctx.exc.type != AZ_EXCEPTION_NONE) {
-		unsigned char b[1024];
-		unsigned int ip = intr->ctx->exc_ip - ictx->tcode;
-		/* Exception */
-		fprintf (stderr, "Fatal exception: %s\n",intr->ctx->az_ctx.exc.msg->str);
-		azo_debug_print_term(ictx->debug, ip, stderr);
-		fprintf(stderr, "Position: %d %d\n", ip, ictx->tcode[ip]);
-		azo_bc_print_instruction(b, 256, ictx->tcode, ip, ictx->tcode_len);
-		fprintf(stderr, "%s\n", b);
-		azo_intepreter_print_stack (intr, stderr);
-		fprintf (stderr, "\n");
-	}
 }
 
 static const uint8_t *

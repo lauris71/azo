@@ -114,6 +114,15 @@ enum {
 	 */
 	AZO_TERM_ARGUMENT_DECLARATION,
 	/**
+	 * @brief Catch clause
+	 *
+	 * CATCH
+	 *   REFERENCE_VARIABLE (binding name)
+	 *   LIST [REFERENCE ...] (filter exception/category names; empty = catch-all)
+	 *   BLOCK (handler body)
+	 */
+	AZO_TERM_CATCH,
+	/**
 	 * @brief Function definition
 	 * 
 	 * FUNCTION - MEMBER
@@ -408,6 +417,9 @@ enum {
 	AZO_TERM_FLAG_FINITE = 0x800,
 	AZO_TERM_FLAG_SATURATE = 0x1000,
 	AZO_TERM_FLAG_WRAP = 0x2000,
+	/* Optimizer: this constant expression was found to throw at runtime and the
+	 * warning was already emitted (suppresses duplicates across iterations) */
+	AZO_TERM_FLAG_THROW_WARNED = 0x4000,
 	AZO_TERM_DEBUG_RESOLVER_TREE = 0x100,
 	AZO_TERM_DEBUG_OPTIMIZER_TREE = 0x200,
 	AZO_TERM_DEBUG_INTERPRETER_STACK = 0x400,

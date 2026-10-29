@@ -13,9 +13,37 @@
 #include <azo/errors.h>
 #include <azo/context.h>
 #include <azo/compiler/resolver.h>
+#include <azo/compiler/variable.h>
 
 #include "unity/unity.h"
 #include "test.h"
+
+/* Resolve a program text against globals, returning the resolver result (0 = success) */
+static int
+resolve_text(AZOContext *globals, const char *text, AZOParser *parser, AZOSource **src, AZONode **tree)
+{
+    *tree = parse_text(text, parser, src);
+    if (!*tree) return 1;
+    AZOCompiler comp;
+    azo_compiler_setup(&comp, globals, *src);
+    AZOResolveCtx rctx = {
+        .ret_type = AZ_TYPE_NONE
+    };
+    rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+    rctx.this_variant = AZO_COMPILER_NO_THIS;
+    int result = azo_compiler_resolve_program(&comp, &rctx, *tree);
+    azo_compiler_release(&comp);
+    return result;
+}
+
+static const AZOExceptionDef *
+lookup_exception_by_str(AZOContext *ctx, const char *name)
+{
+    AZString *str = az_string_new((const uint8_t *) name);
+    const AZOExceptionDef *def = azo_context_lookup_exception(ctx, str);
+    az_string_unref(str);
+    return def;
+}
 
 void
 test_resolver(void)
@@ -486,6 +514,219 @@ test_resolver(void)
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
         azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* Exception category declaration registers and becomes EMPTY */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "exception ResolverTestCategory;", &parser, &src, &tree);
+        TEST_ASSERT(!result);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *decl = tree->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, decl->term.type);
+        const AZOExceptionDef *def = lookup_exception_by_str(globals, "ResolverTestCategory");
+        TEST_ASSERT_NOT_NULL(def);
+        TEST_ASSERT_EQUAL_UINT(AZ_EXCEPTION_NONE, def->type);
+        TEST_ASSERT(def->category != 0);
+        free_parse(&parser, src, tree);
+    }
+    /* Exception type declaration registers with the category mask */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "exception ResolverTestException : ResolverTestCategory, IOException;", &parser, &src, &tree);
+        TEST_ASSERT(!result);
+        const AZOExceptionDef *def = lookup_exception_by_str(globals, "ResolverTestException");
+        TEST_ASSERT_NOT_NULL(def);
+        TEST_ASSERT(def->type != AZ_EXCEPTION_NONE);
+        const AZOExceptionDef *cat1 = lookup_exception_by_str(globals, "ResolverTestCategory");
+        const AZOExceptionDef *cat2 = lookup_exception_by_str(globals, "IOException");
+        TEST_ASSERT_EQUAL_UINT64(cat1->category | cat2->category, def->category);
+        free_parse(&parser, src, tree);
+    }
+    /* Idempotent re-declaration succeeds */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "exception ResolverTestException : ResolverTestCategory, IOException;", &parser, &src, &tree);
+        TEST_ASSERT(!result);
+        free_parse(&parser, src, tree);
+    }
+    /* Re-declaration with different categories fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "exception ResolverTestException : IOException;", &parser, &src, &tree);
+        TEST_ASSERT(result);
+        if (tree) free_parse(&parser, src, tree);
+    }
+    /* Type name conflicting with category fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "exception ResolverTestCategory : IOException;", &parser, &src, &tree);
+        TEST_ASSERT(result);
+        if (tree) free_parse(&parser, src, tree);
+    }
+    /* Exception declaration inside a block fails (program scope only) */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "{ exception ScopedCategory; }", &parser, &src, &tree);
+        TEST_ASSERT(result);
+        if (tree) free_parse(&parser, src, tree);
+    }
+    /* Try/catch: binding becomes VARIABLE at the sentinel position, filters become constants */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "try { int32 a = 1; } catch (e : ResolverTestException, IOException) { int32 b = 2; }", &parser, &src, &tree);
+        TEST_ASSERT(!result);
+        AZONode *try_node = tree->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, try_node->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_TRY, try_node->term.subtype);
+        AZONode *clause = try_node->children->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CATCH, clause->term.type);
+        /* Binding: final exception-typed variable at the sentinel position */
+        AZONode *binding = clause->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, binding->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE_LOCAL, binding->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_VARIABLE_FLAG_FINAL, binding->term.flags & AZO_VARIABLE_FLAG_FINAL);
+        TEST_ASSERT_EQUAL_UINT(AZO_TYPE_EXCEPTION, binding->type);
+        TEST_ASSERT_EQUAL_UINT(try_node->var_idx, binding->var_idx);
+        /* Filters: type -> UINT32 code, category -> UINT64 mask bit */
+        AZONode *f1 = clause->children->next->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, f1->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZ_TYPE_UINT32, f1->type);
+        TEST_ASSERT_EQUAL_UINT(lookup_exception_by_str(globals, "ResolverTestException")->type, f1->value.v.uint32_v);
+        AZONode *f2 = f1->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, f2->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZ_TYPE_UINT64, f2->type);
+        TEST_ASSERT_EQUAL_UINT64(lookup_exception_by_str(globals, "IOException")->category, f2->value.v.uint64_v);
+        free_parse(&parser, src, tree);
+    }
+    /* Catch-all not in last position fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "try { } catch (e) { } catch (e : IOException) { }", &parser, &src, &tree);
+        TEST_ASSERT(result);
+        if (tree) free_parse(&parser, src, tree);
+    }
+    /* Unknown exception in filter fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "try { } catch (e : NoSuchException) { }", &parser, &src, &tree);
+        TEST_ASSERT(result);
+        if (tree) free_parse(&parser, src, tree);
+    }
+    /* Try/catch stack layout: body locals after sentinel+handles, catch locals after the binding */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "try { int32 a = 1; } catch (e : IOException, ArithmeticException) { int32 b = 2; }", &parser, &src, &tree);
+        TEST_ASSERT(!result);
+        AZONode *try_node = tree->children;
+        unsigned int sentinel = try_node->var_idx;
+        /* 2 filter alternatives + sentinel = 3 reserved positions; body local follows them */
+        AZONode *body = try_node->children;
+        AZONode *a_var = body->children->children->next->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, a_var->term.type);
+        TEST_ASSERT_EQUAL_UINT(sentinel + 3, a_var->var_idx);
+        /* Catch binding at the sentinel position, catch local right after it */
+        AZONode *clause = try_node->children->next;
+        AZONode *binding = clause->children;
+        TEST_ASSERT_EQUAL_UINT(sentinel, binding->var_idx);
+        AZONode *cbody = clause->children->next->next;
+        AZONode *b_var = cbody->children->children->next->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, b_var->term.type);
+        TEST_ASSERT_EQUAL_UINT(sentinel + 1, b_var->var_idx);
+        free_parse(&parser, src, tree);
+    }
+    /* Catch binding is not visible in the try body */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "try { e = 1; } catch (e : IOException) { }", &parser, &src, &tree);
+        TEST_ASSERT(result);
+        if (tree) free_parse(&parser, src, tree);
+    }
+    /* Throw constructor rewrites to the fixed structure */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "throw ResolverTestException(\"bad\", 42);", &parser, &src, &tree);
+        TEST_ASSERT(!result);
+        AZONode *thr = tree->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, thr->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_THROW, thr->term.subtype);
+        /* CODE(U32), MESSAGE, PAYLOAD (mask is looked up from the registry at throw time) */
+        AZONode *code = thr->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, code->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZ_TYPE_UINT32, code->type);
+        TEST_ASSERT_EQUAL_UINT(lookup_exception_by_str(globals, "ResolverTestException")->type, code->value.v.uint32_v);
+        AZONode *msg = code->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, msg->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZ_TYPE_STRING, msg->type);
+        AZONode *payload = msg->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, payload->term.type);
+        TEST_ASSERT_EQUAL_INT32(42, payload->value.v.int32_v);
+        TEST_ASSERT_NULL(payload->next);
+        free_parse(&parser, src, tree);
+    }
+    /* Throw constructor with no arguments gets EMPTY message/payload */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "throw ResolverTestException();", &parser, &src, &tree);
+        TEST_ASSERT(!result);
+        AZONode *thr = tree->children;
+        AZONode *msg = thr->children->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, msg->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_EMPTY, msg->next->term.type);
+        TEST_ASSERT_NULL(msg->next->next);
+        free_parse(&parser, src, tree);
+    }
+    /* Throw of unregistered name fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "throw NoSuchException();", &parser, &src, &tree);
+        TEST_ASSERT(result);
+        if (tree) free_parse(&parser, src, tree);
+    }
+    /* Throw of a category (not a type) fails */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "throw IOException();", &parser, &src, &tree);
+        TEST_ASSERT(result);
+        if (tree) free_parse(&parser, src, tree);
+    }
+    /* Rethrow inside a catch clause resolves */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        int result = resolve_text(globals, "try { } catch (e : IOException) { throw e; }", &parser, &src, &tree);
+        TEST_ASSERT(!result);
         free_parse(&parser, src, tree);
     }
 }

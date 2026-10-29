@@ -1533,4 +1533,175 @@ test_parser(void)
         azo_parser_release(&parser);
         az_object_unref((AZObject *) src);
     }
+    /* Exception declaration (category): KEYWORD(EXCEPTION) [name] */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("exception MyCategory;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *decl = tree->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, decl->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_EXCEPTION, decl->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, decl->children->term.type);
+        TEST_ASSERT_NULL(decl->children->next);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Exception declaration (type in categories): KEYWORD(EXCEPTION) [name, cat, cat] */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("exception MyException : IOException, NetworkException;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *decl = tree->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, decl->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_EXCEPTION, decl->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, decl->children->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, decl->children->next->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, decl->children->next->next->term.type);
+        TEST_ASSERT_NULL(decl->children->next->next->next);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Exception declaration without name is an error */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("exception;", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_GREATER_THAN_UINT(0, parser.n_errors);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
+    /* Exception declaration with empty category list is an error */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("exception MyException :;", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_GREATER_THAN_UINT(0, parser.n_errors);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
+    /* Throw: KEYWORD(THROW) [call] */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("throw MyException(\"Something bad happened\", value);", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *thr = tree->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, thr->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_THROW, thr->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL, thr->children->term.type);
+        TEST_ASSERT_NULL(thr->children->next);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Rethrow: KEYWORD(THROW) [reference] */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("throw e;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *thr = tree->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, thr->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_THROW, thr->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, thr->children->term.type);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Bare throw is an error */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("throw;", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_GREATER_THAN_UINT(0, parser.n_errors);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
+    /* Try with catch-all: KEYWORD(TRY) [BLOCK, CATCH [ref, LIST(empty), BLOCK]] */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("try { a = 1; } catch (e) { b = 2; }", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *try_node = tree->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_KEYWORD, try_node->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_TRY, try_node->term.subtype);
+        /* Body */
+        AZONode *body = try_node->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, body->term.type);
+        TEST_ASSERT_EQUAL_UINT(0, body->term.flags & (AZO_TERM_FLAG_STATIC | AZO_TERM_FLAG_MODE_MASK));
+        /* Catch clause */
+        AZONode *clause = body->next;
+        TEST_ASSERT_NOT_NULL(clause);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CATCH, clause->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, clause->children->term.type);
+        AZONode *filters = clause->children->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, filters->term.type);
+        TEST_ASSERT_NULL(filters->children);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, filters->next->term.type);
+        TEST_ASSERT_NULL(filters->next->next);
+        TEST_ASSERT_NULL(clause->next);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Try with qualified blocks and filters */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("try finite { a = 1; } catch (e : NonFinite, Arithmetic) wrap { b = 2; }", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *try_node = tree->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_TRY, try_node->term.subtype);
+        /* Body carries the finite flag */
+        AZONode *body = try_node->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, body->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FLAG_FINITE, body->term.flags & AZO_TERM_FLAG_MODE_MASK);
+        /* Catch with two filters */
+        AZONode *clause = body->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CATCH, clause->term.type);
+        AZONode *filters = clause->children->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, filters->term.type);
+        TEST_ASSERT_NOT_NULL(filters->children);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, filters->children->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, filters->children->next->term.type);
+        TEST_ASSERT_NULL(filters->children->next->next);
+        /* Catch body carries the wrap flag */
+        AZONode *cbody = filters->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_BLOCK, cbody->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FLAG_WRAP, cbody->term.flags & AZO_TERM_FLAG_MODE_MASK);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Try with multiple catch clauses */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("try { } catch (e : IOException) { } catch (e) { }", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *try_node = tree->children;
+        TEST_ASSERT_EQUAL_UINT(AZO_KEYWORD_TRY, try_node->term.subtype);
+        AZONode *c1 = try_node->children->next;
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CATCH, c1->term.type);
+        TEST_ASSERT_NOT_NULL(c1->children->next->children);
+        AZONode *c2 = c1->next;
+        TEST_ASSERT_NOT_NULL(c2);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_CATCH, c2->term.type);
+        TEST_ASSERT_NULL(c2->children->next->children);
+        TEST_ASSERT_NULL(c2->next);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Try without catch is an error */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("try { a = 1; }", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_GREATER_THAN_UINT(0, parser.n_errors);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
 }

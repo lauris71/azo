@@ -22,6 +22,8 @@ typedef struct _AZOExceptionDef AZOExceptionDef;
 
 #include <az/context.h>
 
+#include <azo/exception.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -33,10 +35,20 @@ struct _AZOExceptionDef {
 	uint64_t category;
 };
 
+/* Type -> registration lookup (types are allocated sequentially, no holes) */
+typedef struct _AZOExceptionInfo {
+	AZString *name;
+	uint64_t category;
+} AZOExceptionInfo;
+
 struct _AZOContext {
 	AZContext az_ctx;
 	/* Exception ip */
 	const uint8_t *exc_ip;
+	AZPackedValue exc_payload;
+	unsigned int n_traces;
+	unsigned int n_truncated;
+	AZOStackTraceElement traces[64];
 	AZOInterpreter *intr;
 	AZOContextPriv *priv;
 };
@@ -44,8 +56,15 @@ struct _AZOContext {
 AZOContext *azo_context_new(void);
 void azo_context_delete(AZOContext *ctx);
 
-void azo_context_set_exception(AZOContext *ctx, unsigned int type, unsigned int mask, const uint8_t *ipc);
+/* The category mask is looked up from the exception registry */
+void azo_context_set_exception(AZOContext *ctx, unsigned int type, const uint8_t *msg, const uint8_t *ipc);
+/* msg and payload are borrowed (ref'd/copied); msg NULL gives the registered name */
+void azo_context_set_exception_value(AZOContext *ctx, unsigned int type, AZString *msg, const AZPackedValue *payload, const uint8_t *ipc);
 void azo_context_clear_exception(AZOContext *ctx);
+
+/* Borrowed references, NULL if type is not a registered exception */
+const AZOExceptionInfo *azo_context_get_exception_info(AZOContext *ctx, unsigned int type);
+AZString *azo_context_get_exception_name(AZOContext *ctx, unsigned int type);
 
 unsigned int azo_context_define (AZOContext *ctx, AZString *key, const AZImplementation *impl, void *inst);
 unsigned int azo_context_define_by_str (AZOContext *ctx, const unsigned char *key, const AZImplementation *impl, void *inst);

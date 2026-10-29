@@ -53,6 +53,7 @@ struct _AZOInterpreter {
 };
 
 struct _AZOInterpreterCtx {
+	AZOProgram *prog;
 	const uint8_t *tcode;
 	unsigned int tcode_len;
 	AZODataBlock *static_data;
@@ -62,6 +63,9 @@ struct _AZOInterpreterCtx {
 
 AZOInterpreter *azo_interpreter_new (AZOContext *ctx);
 void interpreter_delete (AZOInterpreter *intr);
+
+/* Print the pending exception with position and stack trace (for unhandled exceptions) */
+void azo_interpreter_print_exception (AZOInterpreter *intr, AZOInterpreterCtx *ictx, FILE *pf);
 
 void azo_interpreter_init(AZOInterpreter *intr);
 

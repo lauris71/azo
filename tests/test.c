@@ -231,6 +231,214 @@ test_language(void)
 		TEST_ASSERT_EQUAL_STRING("S1 S5 S2 S4 S3 ", str);
 		free(str);
     }
+	/* throw X(msg, payload): context exception state is set and execution unwinds */
+    {
+        const char *src =
+        "throw IntegerOverflow(\"custom boom\", 42);\n"
+        "return 42;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT(AZO_EXCEPTION_INTEGER_OVERFLOW, ctx->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_STRING("custom boom", ctx->az_ctx.exc.msg->str);
+        TEST_ASSERT_EQUAL_INT32(42, ctx->exc_payload.v.int32_v);
+        TEST_ASSERT(ctx->exc_ip != NULL);
+        azo_context_clear_exception(ctx);
+    }
+	/* throw X(): message defaults to the registered name, mask comes from the registry */
+    {
+        const char *src =
+        "throw DivideByZero();\n"
+        "return 42;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT(AZO_EXCEPTION_DIVIDE_BY_ZERO, ctx->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_STRING("DivideByZero", ctx->az_ctx.exc.msg->str);
+		const AZOExceptionInfo *info = azo_context_get_exception_info(ctx, AZO_EXCEPTION_DIVIDE_BY_ZERO);
+		TEST_ASSERT(info);
+		TEST_ASSERT_EQUAL_UINT64(info->category, ctx->az_ctx.exc.mask);
+        azo_context_clear_exception(ctx);
+    }
+	/* throw X(non-string): throws InvalidType instead */
+    {
+        const char *src =
+        "throw IntegerOverflow(123);\n"
+        "return 42;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT(AZ_EXCEPTION_INVALID_TYPE, ctx->az_ctx.exc.type);
+        azo_context_clear_exception(ctx);
+    }
+	/* throw e: the value is deconstructed into the context exception state */
+    {
+        azo_context_set_exception(ctx, AZO_EXCEPTION_INTEGER_OVERFLOW, (const uint8_t *) "custom boom", NULL);
+        AZPackedValue payload = { AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), 0 };
+        payload.v.int32_v = 42;
+        az_packed_value_copy(&ctx->exc_payload, &payload);
+        AZOException *exc = azo_exception_new(ctx);
+        const char *src =
+        "throw e;\n"
+        "return 42;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        const AZImplementation *e_impls[1] = { AZ_IMPL_FROM_TYPE(AZO_TYPE_EXCEPTION) };
+        AZValue e_vals[1];
+        az_value_set_from_inst(AZ_IMPL_FROM_TYPE(AZO_TYPE_EXCEPTION), &e_vals[0], exc);
+        const AZValue *e_val_ptrs[1] = { &e_vals[0] };
+        const char *e_names[] = {"e"};
+        TEST_ASSERT(test_program(ctx, src, 1, e_names, e_impls, e_val_ptrs, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT(AZO_EXCEPTION_INTEGER_OVERFLOW, ctx->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_STRING("custom boom", ctx->az_ctx.exc.msg->str);
+        TEST_ASSERT_EQUAL_INT32(42, ctx->exc_payload.v.int32_v);
+        azo_context_clear_exception(ctx);
+        azo_exception_unref(exc);
+    }
+	/* throw of a non-exception value throws InvalidType at runtime */
+    {
+        const char *src =
+        "throw 123;\n"
+        "return 42;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT(AZ_EXCEPTION_INVALID_TYPE, ctx->az_ctx.exc.type);
+        azo_context_clear_exception(ctx);
+    }
+	/* try/catch: the matching clause catches and runs; the binding is a live exception value */
+    {
+        const char *src =
+        "int32 r = 0;\n"
+        "try {\n"
+        "  try {\n"
+        "    throw IntegerOverflow(\"boom\", 7);\n"
+        "  } catch (e : IntegerOverflow) {\n"
+        "    r = 1;\n"
+        "    throw e;\n"
+        "  }\n"
+        "} catch (e : IntegerOverflow) {\n"
+        "  r = (int32) e.type;\n"
+        "}\n"
+        "return r;\n";
+        /* Outer catch: r = AZO_EXCEPTION_INTEGER_OVERFLOW (10) */
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT(AZ_EXCEPTION_NONE, ctx->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_INT(AZO_EXCEPTION_INTEGER_OVERFLOW, ret_val.int32_v);
+    }
+	/* try/catch: first matching clause wins, categories match by mask */
+    {
+        const char *src =
+        "int32 r = 0;\n"
+        "try {\n"
+        "  throw DivideByZero();\n"
+        "} catch (e : IntegerOverflow) {\n"
+        "  r = 1;\n"
+        "} catch (e : ArithmeticException) {\n"
+        "  r = 2;\n"
+        "} catch (e) {\n"
+        "  r = 3;\n"
+        "}\n"
+        "return r;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(2, ret_val.int32_v);
+    }
+	/* try/catch: unmatched exception propagates, defer in try body runs during unwind */
+    {
+        const char *src =
+        "ofs.print(\"A\");\n"
+        "try {\n"
+        "  defer { ofs.print(\"D\"); }\n"
+        "  throw InvalidProperty();\n"
+        "} catch (e : IOException) {\n"
+        "  ofs.print(\"C\");\n"
+        "}\n"
+        "return 42;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT(AZO_EXCEPTION_INVALID_PROPERTY, ctx->az_ctx.exc.type);
+		char *str = strndup((const char *) bostream->buffer, bostream->pos);
+		TEST_ASSERT_EQUAL_STRING("AD", str);
+		free(str);
+        azo_context_clear_exception(ctx);
+    }
+	/* nested try: inner no-match unwinds to the outer clause */
+    {
+        const char *src =
+        "try {\n"
+        "  try {\n"
+        "    throw DivideByZero();\n"
+        "  } catch (e : IntegerOverflow) {\n"
+        "    return 1;\n"
+        "  }\n"
+        "} catch (e : ArithmeticException) {\n"
+        "  return 2;\n"
+        "}\n"
+        "return 0;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(2, ret_val.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZ_EXCEPTION_NONE, ctx->az_ctx.exc.type);
+    }
+	/* exception through a function call: the trace starts at the callee's throw site */
+    {
+        const char *src =
+        "function thrower = () => {\n"
+        "  throw InvalidValue();\n"
+        "};\n"
+        "thrower();\n"
+        "return 0;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT(AZ_EXCEPTION_INVALID_VALUE, ctx->az_ctx.exc.type);
+        TEST_ASSERT(ctx->exc_ip != NULL);
+        TEST_ASSERT(ctx->n_traces >= 2);
+        TEST_ASSERT(ctx->traces[0].ip != 0);
+        azo_context_clear_exception(ctx);
+    }
+	/* The exception object */
+    {
+        const char *src =
+        "try {\n"
+        "  try {\n"
+        "    throw DivideByZero();\n"
+        "  } catch (e : IntegerOverflow) {\n"
+        "    return 1;\n"
+        "  }\n"
+        "} catch (e : ArithmeticException) {\n"
+        "  ofs.printLn(e.type);\n"
+        "  ofs.printLn(e.category);\n"
+        "  ofs.printLn(e.stackTrace);\n"
+        "  return 2;\n"
+        "}\n"
+        "return 0;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(2, ret_val.int32_v);
+        TEST_ASSERT_EQUAL_UINT(AZ_EXCEPTION_NONE, ctx->az_ctx.exc.type);
+		char *str = strndup((const char *) bostream->buffer, (bostream->pos < 30) ? bostream->pos : 30);
+		fprintf(stderr, "Output: %s\n", str);
+		TEST_ASSERT_EQUAL_STRING("11\n8\nInstance of AZOStackTrace", str);
+		free(str);
+    }
     azo_context_delete(ctx);
 }
 

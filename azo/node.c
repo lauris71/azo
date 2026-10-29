@@ -559,6 +559,17 @@ print_sentence (AZONode *expr, FILE *ofs)
 		print_sentences (expr->children, ofs);
 		fprintf (ofs, "}\n");
 		break;
+	case AZO_TERM_CATCH:
+		fprintf (ofs, "catch (");
+		azo_node_print (expr->children, ofs);
+		if (expr->children->next && expr->children->next->children) {
+			fprintf (ofs, " : ");
+			azo_node_print_list (expr->children->next->children, ofs, ", ");
+		}
+		fprintf (ofs, ") ");
+		azo_node_print (expr->children->next->next, ofs);
+		fprintf (ofs, "\n");
+		break;
 	case AZO_TERM_KEYWORD:
 		switch (expr->term.subtype) {
 		case AZO_KEYWORD_FOR:
@@ -590,6 +601,12 @@ print_sentence (AZONode *expr, FILE *ofs)
 				azo_node_print (expr->children->next->next, ofs);
 				fprintf (ofs, " }");
 			}
+			fprintf (ofs, "\n");
+			break;
+		case AZO_KEYWORD_TRY:
+			fprintf (ofs, "try ");
+			azo_node_print (expr->children, ofs);
+			for (AZONode *c = expr->children->next; c; c = c->next) azo_node_print (c, ofs);
 			fprintf (ofs, "\n");
 			break;
 		default:
@@ -635,6 +652,7 @@ const char *expr_names[] = {
 	"DECLARATION_LIST",
 	"DECLARATION",
 	"ARGUMENT_DECLARATION",
+	"CATCH",
 	"FUNCTION",
 	"FUNCTION_CALL",
 	"ARRAY_ELEMENT",
@@ -650,6 +668,7 @@ const char *expr_names[] = {
 	"ASSIGN",
 	"TEST",
 	"SELECT",
+	"MODE_EXPRESSION",
 
 	"CONSTANT",
 	"VARIABLE",
