@@ -19,6 +19,7 @@ typedef struct _AZOStackTrace AZOStackTrace;
 typedef struct _AZOException AZOException;
 
 #include <az/types.h>
+#include <az/az.h>
 #include <az/reference.h>
 #include <az/function-value.h>
 #include <azo/program.h>
@@ -56,6 +57,31 @@ enum AZOExceptionTypes {
 	/* Value is final and cannot be written */
 	AZO_EXCEPTION_NOT_WRITABLE,
 };
+
+/**
+ * @brief Translate an az error code to an azo exception type
+ *
+ * AZ_NOT_IMPLEMENTED is deliberately not mapped: its meaning is operation-specific
+ * (e.g. a missing list set_element means the list type does not support writing,
+ * i.e. AZO_EXCEPTION_NOT_WRITABLE) and has to be resolved by the caller.
+ */
+static inline unsigned int
+azo_exception_from_az_error (int code)
+{
+	switch (code) {
+	case AZ_OK: return AZ_EXCEPTION_NONE;
+	case AZ_OUT_OF_MEMORY: return AZ_EXCEPTION_OUT_OF_MEMORY;
+	case AZ_INVALID_TYPE: return AZ_EXCEPTION_INVALID_TYPE;
+	case AZ_INVALID_VALUE: return AZ_EXCEPTION_INVALID_VALUE;
+	case AZ_NULL_DESTINATION:
+	case AZ_NULL_VALUE: return AZ_EXCEPTION_NULL_DEREFERENCE;
+	case AZ_NO_SUCH_PROPERTY: return AZO_EXCEPTION_INVALID_PROPERTY;
+	case AZ_VALUE_NOT_READABLE: return AZ_EXCEPTION_INVALID_VALUE;
+	case AZ_VALUE_NOT_WRITABLE:
+	case AZ_VALUE_IS_FINAL: return AZO_EXCEPTION_NOT_WRITABLE;
+	default: return AZ_EXCEPTION_SYSTEM;
+	}
+}
 
 struct _AZOCatchHandle {
 	/* Ip of catch block */

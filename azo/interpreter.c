@@ -124,6 +124,11 @@ intr_unwind (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 		if (impl == &azo_defer_handle_class->impl) {
 			AZODeferHandle handle = *((AZODeferHandle *) azo_stack_instance_bw (&intr->stack, 0));
 			azo_stack_pop (&intr->stack, 1);
+			if (!handle.len) {
+				/* Flags handle: restore the saved flags, keeping unwinding no-throw */
+				intr->flags = handle.flags | AZO_INTR_FLAG_NO_THROW;
+				continue;
+			}
 			uint32_t flags = intr->flags;
 			intr->flags |= AZO_INTR_FLAG_NO_THROW;
 			unsigned int len = intr->stack.length;
@@ -148,10 +153,9 @@ intr_unwind (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 					break;
 				}
 			}
-			/* The flags word sits directly below the run */
-			uint32_t saved_flags = azo_stack_value_bw (&intr->stack, n_handles)->uint32_v;
+			/* The placeholder slot sits directly below the run (flags were
+			 * already restored from flags handles encountered during the walk) */
 			azo_stack_pop (&intr->stack, n_handles + 1);
-			intr->flags = saved_flags;
 			if (found) {
 				AZOException *exc = azo_exception_new (intr->ctx);
 				AZValue val;
@@ -192,6 +196,12 @@ intr_rewind(AZOInterpreter *intr, AZOInterpreterCtx *ictx, unsigned int n_values
 		if (azo_stack_impl_bw(&intr->stack, 0) == &azo_defer_handle_class->impl) {
 			AZODeferHandle handle = *((AZODeferHandle *) azo_stack_instance_bw(&intr->stack, 0));
 			azo_stack_pop(&intr->stack, 1);
+			if (!handle.len) {
+				/* Flags handle: restore the saved flags, keeping unwinding no-throw */
+				flags = handle.flags;
+				intr->flags = handle.flags | AZO_INTR_FLAG_NO_THROW;
+				continue;
+			}
 			unsigned int len = intr->stack.length;
 			azo_interpreter_run_code(intr, ictx, ictx->tcode + handle.ip, ictx->tcode + handle.ip + handle.len);
 			/* A defer body that exits on a pending exception leaves its locals behind */
@@ -660,6 +670,21 @@ interpret_EXCHANGE_FRAME (AZOInterpreter *intr, const unsigned char *ip)
 	return ip + 5;
 }
 
+/* Instance-aware "implements" test: the static type relation first, then
+ * delegating classes (boxed interfaces) answer interface queries per instance */
+static unsigned int
+type_implements_instance (AZOInterpreter *intr, unsigned int pos, unsigned int type)
+{
+	unsigned int vtype = azo_stack_type_bw (&intr->stack, pos);
+	if (!vtype) return 0;
+	if (az_type_implements (vtype, type)) return 1;
+	const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, pos);
+	if (AZ_CLASS_FROM_IMPL (impl)->delegate_idx) {
+		return az_instance_get_interface (impl, azo_stack_instance_bw (&intr->stack, pos), type, NULL) != NULL;
+	}
+	return 0;
+}
+
 static const unsigned char *
 interpret_TYPE (AZOInterpreter *intr, const uint8_t *ip)
 {
@@ -679,7 +704,7 @@ interpret_TYPE (AZOInterpreter *intr, const uint8_t *ip)
 		result = (type) ? az_type_is_a (type, azo_stack_type_bw (&intr->stack, pos)) : 0;
 		break;
 	case AZO_TC_TYPE_IMPLEMENTS:
-		result = azo_stack_type_bw (&intr->stack, pos) ? az_type_implements (azo_stack_type_bw (&intr->stack, pos), type) : 0;
+		result = type_implements_instance (intr, pos, type);
 		break;
 	}
 	azo_stack_pop (&intr->stack, 1);
@@ -705,7 +730,7 @@ interpret_TYPE_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip)
 		result = az_type_is_a (type, azo_stack_type_bw (&intr->stack, pos));
 		break;
 	case AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE:
-		result = azo_stack_type_bw (&intr->stack, pos) ? az_type_implements (azo_stack_type_bw (&intr->stack, pos), type) : 0;
+		result = type_implements_instance (intr, pos, type);
 		break;
 	}
 	azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE(AZ_TYPE_BOOLEAN), &result);
@@ -827,6 +852,17 @@ interpret_convert (AZOInterpreter *intr, const uint8_t *ip, unsigned int strict,
 		*from_val = to_val;
 		*azo_stack_impls_bw (&intr->stack, 0) = AZ_IMPL_FROM_TYPE (to_type);
 		return ip + 5;
+	}
+	/* Assignment conversion (strict): values already assignable to the target pass
+	 * through unchanged (same type, subtypes, interfaces). Everything else is an
+	 * invalid conversion - primitive types are final and not mutually assignable,
+	 * so boolean to int32 & co. require an explicit cast and must not be silently
+	 * converted here */
+	if (strict) {
+		if (az_type_is_assignable_to (azo_stack_type_bw (&intr->stack, 0), to_type)) {
+			return ip + 5;
+		}
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 	}
 	if (!azo_stack_convert_bw(&intr->stack, 0, to_type)) {
 		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
@@ -1092,10 +1128,24 @@ interpret_NEGATE (AZOInterpreter *intr, const unsigned char *ip)
 static const unsigned char *
 interpret_PUSH_FLAGS (AZOInterpreter *intr, const unsigned char *ip)
 {
-	AZValue val;
-	val.uint32_v = intr->flags;
-	azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE (AZ_TYPE_UINT32), &val);
+	/* A flags word is a defer handle with len == 0: rewind paths restore it */
+	AZODeferHandle handle = { .flags = intr->flags, .len = 0 };
+	azo_stack_push_instance (&intr->stack, &azo_defer_handle_class->impl, &handle);
 	return ip + 1;
+}
+
+/*
+ * SET_FLAGS_MASK U32:AND U32:OR
+ * flags = (flags & AND) | OR
+ */
+static const unsigned char *
+interpret_SET_FLAGS_MASK (AZOInterpreter *intr, const unsigned char *ip)
+{
+	uint32_t and_mask, or_mask;
+	memcpy (&and_mask, ip + 1, 4);
+	memcpy (&or_mask, ip + 5, 4);
+	intr->flags = (intr->flags & and_mask) | or_mask;
+	return ip + 9;
 }
 
 static const unsigned char *
@@ -1365,19 +1415,34 @@ interpret_GET_INTERFACE_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip
 	CHECK_UNDERFLOW(1);
 	uint32_t type;
 	memcpy (&type, ip + 1, 4);
-	CHECK(AZ_IMPL_IS_BLOCK(azo_stack_impl_bw(&intr->stack, 0)), AZ_EXCEPTION_INVALID_TYPE);
 	CHECK(AZ_TYPE_IS_INTERFACE(type), AZ_EXCEPTION_INVALID_TYPE);
-	void *inst;
-	const AZImplementation *impl = az_instance_get_interface(azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0), type, &inst);
-	azo_stack_push_value (&intr->stack, impl, &inst);
+	const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, 0);
+	if(!impl) EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
+	void *inst = azo_stack_instance_bw(&intr->stack, 0);
+	void *if_inst;
+	const AZImplementation *if_impl = az_instance_get_interface_autobox(impl, inst, type, &if_inst);
+	if (!if_impl) EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
+	/* Push the interface value, then remove the original value underneath */
+	if (AZ_IMPL_IS_CLASS (if_impl)) {
+		/* Boxed interface: transfer the owned reference */
+		AZValue val;
+		val.reference = (AZReference *) if_inst;
+		azo_stack_push_value_transfer (&intr->stack, if_impl, &val);
+	} else {
+		/* Naked interface: copy the instance data */
+		azo_stack_push_instance (&intr->stack, if_impl, if_inst);
+	}
+	azo_stack_remove (&intr->stack, intr->stack.length - 2, 1);
 	return ip + 5;
 }
 
 /*
  * INVOKE N_ARGS
  *
- * [func : this, arg1...]
- * [func : this, arg1..., result]
+ * [func : [this], arg1...]
+ * [func : [this], arg1..., result]
+ * 
+ * If the actual signature has n_args - 1 arguments, invoke without the first argument
  */
 static const unsigned char *
 interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
@@ -1388,6 +1453,13 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 	const AZFunctionImplementation *func_impl = (const AZFunctionImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, pos), azo_stack_instance_bw (&intr->stack, pos), AZ_TYPE_FUNCTION, (void **) &func_inst);
 	if (!func_impl) EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	const AZFunctionSignature *sig = az_function_get_signature (func_impl, func_inst);
+	if (sig->n_args != pos) {
+		if ((*ip != AZO_TC_INVOKE_MEMBER) || (pos != (sig->n_args + 1))) {
+			EXCEPTION_THROW(AZ_EXCEPTION_SIGNATURE_MISMATCH);
+		}
+		/* The special case - compiler assigned this value but the function does not expect it */
+		fprintf(stderr, "Function expects %u arguments, got %u\n", sig->n_args, pos);
+	}
 	for (unsigned int i = 0; i < sig->n_args; i++) {
 		if (!azo_stack_convert_bw (&intr->stack, sig->n_args - 1 - i, sig->arg_types[i])) {
 			EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
@@ -1401,7 +1473,7 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 		&ret_val.impl, &ret_val.v, &intr->ctx->az_ctx);
 	unsigned int new_prev = azo_interpreter_pop_frame(intr, ictx);
 	assert(new_prev == prev);
-	/* Pop function and the arguments */
+	/* Pop function */
 	azo_stack_pop(&intr->stack, 1);
 	azo_stack_push_value_transfer (&intr->stack, ret_val.impl, &ret_val.v);
 	/* On exception run_code unwinds: the trace records the call ip and the
@@ -1478,10 +1550,21 @@ interpret_LOAD_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 		EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
 	}
 	void *list_inst;
-	AZListImplementation *list_impl = (AZListImplementation *) az_instance_get_interface(obj_impl, azo_stack_instance_bw(&intr->stack, 1), AZ_TYPE_LIST, (void **) &list_inst);
-	if (!list_impl) {
+	const AZImplementation *iface_impl;
+	/* The value must already be a list view: a naked list interface value or a boxed
+	 * interface (normalization to the list interface happens in the generated code) */
+	if (obj_impl == &AZBoxedInterfaceKlass.klass.impl) {
+		AZBoxedInterface *boxed = (AZBoxedInterface *) azo_stack_instance_bw (&intr->stack, 1);
+		iface_impl = boxed->impl;
+		list_inst = boxed->inst;
+	} else {
+		iface_impl = obj_impl;
+		list_inst = azo_stack_instance_bw (&intr->stack, 1);
+	}
+	if (!az_type_is_a (AZ_IMPL_TYPE (iface_impl), AZ_TYPE_LIST)) {
 		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
+	AZListImplementation *list_impl = (AZListImplementation *) iface_impl;
 	if (!convert_to_u32 (intr, &idx, idx_impl, azo_stack_value_bw(&intr->stack, 0), ip)) {
 		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 	}
@@ -1497,28 +1580,42 @@ interpret_LOAD_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 static const unsigned char *
 interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 {
-	AZValueArray *varray;
 	unsigned int idx;
-	AZPackedValue val = { 0 };
-	if (intr->flags & AZO_INTR_FLAG_CHECK_ARGS) {
-		if (!az_type_is_a (azo_stack_type_bw (&intr->stack, 2), AZ_TYPE_VALUE_ARRAY)) {
-			EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
-		}
-		varray = *((AZValueArray **) azo_stack_value_bw (&intr->stack, 2));
-		if (!convert_to_u32 (intr, &idx, azo_stack_impl_bw (&intr->stack, 1), azo_stack_value_bw (&intr->stack, 1), ip)) {
-			EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
-		}
-		if (idx >= varray->size) {
-			EXCEPTION_THROW(AZ_EXCEPTION_OUT_OF_BOUNDS);
-		}
-		az_packed_value_set_from_impl_value (&val, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0));
-	} else {
-		varray = *((AZValueArray **) azo_stack_value_bw (&intr->stack, 2));
-		idx = *((unsigned int *) azo_stack_value_bw (&intr->stack, 1));
-		az_packed_value_set_from_impl_value (&val, azo_stack_impl_bw (&intr->stack, 0), azo_stack_value_bw (&intr->stack, 0));
+	CHECK_UNDERFLOW(3);
+	const AZImplementation *obj_impl = azo_stack_impl_bw (&intr->stack, 2);
+	const AZImplementation *idx_impl = azo_stack_impl_bw (&intr->stack, 1);
+	if (!obj_impl || !idx_impl) {
+		EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
 	}
-	az_value_array_set_element_from_val (varray, idx, val.impl, &val.v);
-	az_packed_value_clear (&val);
+	/* Boxed interface: unwrap the stored list view. Other values (concrete list
+	 * implementations like value arrays) resolve their list interface directly */
+	void *list_inst;
+	const AZImplementation *iface_impl;
+	if (obj_impl == &AZBoxedInterfaceKlass.klass.impl) {
+		AZBoxedInterface *boxed = (AZBoxedInterface *) azo_stack_instance_bw (&intr->stack, 2);
+		iface_impl = boxed->impl;
+		list_inst = boxed->inst;
+	} else {
+		iface_impl = az_instance_get_interface (obj_impl, azo_stack_instance_bw (&intr->stack, 2), AZ_TYPE_LIST, &list_inst);
+	}
+	if (!iface_impl || !az_type_is_a (AZ_IMPL_TYPE (iface_impl), AZ_TYPE_LIST)) {
+		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
+	}
+	AZListImplementation *list_impl = (AZListImplementation *) iface_impl;
+	if (!convert_to_u32 (intr, &idx, idx_impl, azo_stack_value_bw (&intr->stack, 1), ip)) {
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
+	}
+	if (idx >= az_collection_get_size (&list_impl->collection_impl, list_inst)) {
+		EXCEPTION_THROW(AZ_EXCEPTION_OUT_OF_BOUNDS);
+	}
+	int result = az_list_set_element (list_impl, list_inst, idx, azo_stack_impl_bw (&intr->stack, 0), azo_stack_instance_bw (&intr->stack, 0));
+	if (result != AZ_OK) {
+		if (result == AZ_NOT_IMPLEMENTED) {
+			/* The list type does not support writing */
+			EXCEPTION_THROW(AZO_EXCEPTION_NOT_WRITABLE);
+		}
+		EXCEPTION_THROW(azo_exception_from_az_error (result));
+	}
 	azo_stack_pop (&intr->stack, 2);
 	return ip + 1;
 }
@@ -1894,6 +1991,9 @@ switch (*ip) {
 		case AZO_TC_PUSH_FLAGS:
 			ip = interpret_PUSH_FLAGS (intr, ip);
 			break;
+		case AZO_TC_SET_FLAGS_MASK:
+			ip = interpret_SET_FLAGS_MASK (intr, ip);
+			break;
 		case AZO_TC_STORE_FLAGS:
 			ip = interpret_STORE_FLAGS (intr, ip);
 			break;
@@ -2028,6 +2128,7 @@ switch (*ip) {
 			ip = interpret_GET_INTERFACE_IMMEDIATE (intr, ip);
 			break;
 		case AZO_TC_INVOKE:
+		case AZO_TC_INVOKE_MEMBER:
 			ip = interpret_INVOKE (intr, ictx, ip);
 			break;
 		case AZO_TC_RETURN:

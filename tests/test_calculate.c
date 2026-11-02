@@ -356,6 +356,107 @@ test_calculate(void)
 		TEST_ASSERT_EQUAL_STRING("m=1 n=1 m=2 n=2 m=3 n=3 m=4 n=1 m=5 n=2 m=6 n=3 m=7 n=1 m=8 n=2 m=9 n=3 ", str);
 		free(str);
     }
+	/* Interface assignment: closure boxed into function variable and called */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "function f = () int32 => { return 21; };\n"
+            "return f() + f();\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+    }
+	/* Interface assignment: any holding a closure converts to function (runtime-checked) */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "any a = () int32 => { return 21; };\n"
+            "function f = a;\n"
+            "return f() + f();\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+    }
+	/* Arithmetic assignment from unknown-typed (any) source converts at runtime */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "any a = 41;\n"
+            "int8 x = a;\n"
+            "x = a + 1;\n"
+            "return x;\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+    }
+	/* Array element read through any: value boxed to list interface, then unwrapped */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "any a = {10, 20, 30};\n"
+            "return a[0] + a[1] + a[2];\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_INT(60, ret_val.int32_v);
+    }
+	/* Array element read of non-list through any throws INVALID_TYPE */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "any a = 42;\n"
+            "return a[0];\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_INVALID_TYPE, globals->az_ctx.exc.type);
+    }
+	/* Array element write on a value array works through any */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "any a = {10, 20, 30};\n"
+            "a[1] = 42;\n"
+            "return a[1];\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+    }
+	/* Arithmetic assignment of non-arithmetic unknown-typed value throws INVALID_CONVERSION */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "any a = \"foo\";\n"
+            "int8 x = a;\n"
+            "return x;\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_CONVERSION, globals->az_ctx.exc.type);
+    }
+	/* Interface roundtrip: function -> any -> function does not double-box */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "function f = () int32 => { return 21; };\n"
+            "any a = f;\n"
+            "function g = a;\n"
+            "return g();\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_INT(21, ret_val.int32_v);
+    }
+	/* Interface assignment from non-implementing value throws INVALID_TYPE */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "any a = 42;\n"
+            "function f = a;\n"
+            "return 0;\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_INVALID_TYPE, globals->az_ctx.exc.type);
+    }
 	/* Binary arithmetic operations int32-int32 (runtime values, not pre-computed) */
     {
         arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);
@@ -498,10 +599,13 @@ test_calculate(void)
     }
 	/* Arithmetic assignment is allowed (converted at runtime) */
     {
+		print_code = 1;
         const AZImplementation *ret_impl;
         AZValue ret_val;
         TEST_ASSERT(test_program(globals, "int8 x = 42;x = x + 1;return x;\n", 0, arg_names, arg_impls, arg_vals, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_INT(43, ret_val.int32_v);
+		fprintf(stderr, "exc.type=%u ret=%d\n", globals->az_ctx.exc.type, ret_val.int8_v);
+		print_code = 0;
+        TEST_ASSERT_EQUAL_INT(43, ret_val.int8_v);
         TEST_ASSERT(test_program(globals, "uint32 a = 1; a = a + 1; return a;\n", 0, NULL, NULL, NULL, AZ_TYPE_UINT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_UINT32(2, ret_val.uint32_v);
     }

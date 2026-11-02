@@ -436,7 +436,7 @@ test_language(void)
         TEST_ASSERT_EQUAL_UINT(AZ_EXCEPTION_NONE, ctx->az_ctx.exc.type);
 		char *str = strndup((const char *) bostream->buffer, (bostream->pos < 30) ? bostream->pos : 30);
 		fprintf(stderr, "Output: %s\n", str);
-		TEST_ASSERT_EQUAL_STRING("11\n8\nInstance of AZOStackTrace", str);
+		TEST_ASSERT_EQUAL_STRING("12\n8\nInstance of AZOStackTrace", str);
 		free(str);
     }
     azo_context_delete(ctx);
@@ -494,6 +494,28 @@ test_cycles(void)
     TEST_ASSERT(test_program_noargs(ctx, "int32 i = 1; do {i *= 7;} while (i < 1000000);\nreturn i;\n", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
     TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
     TEST_ASSERT_EQUAL_INT(5764801, ret_val.int32_v);
+    /* break exits the for cycle */
+    TEST_ASSERT(test_program_noargs(ctx, "int32 r = 0; for (int32 i = 0; i < 100; i++) { if (i == 5) break; r = i; } return r;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT_EQUAL_INT(4, ret_val.int32_v);
+    /* continue skips to the for step */
+    TEST_ASSERT(test_program_noargs(ctx, "int32 r = 0; for (int32 i = 0; i < 10; i++) { if (i % 2 == 0) continue; r += i; } return r;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT_EQUAL_INT(25, ret_val.int32_v);
+    /* break exits the while cycle */
+    TEST_ASSERT(test_program_noargs(ctx, "int32 i = 0; while (i < 100) { i += 1; if (i == 7) break; } return i;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT_EQUAL_INT(7, ret_val.int32_v);
+    /* continue in do jumps to the test at end */
+    TEST_ASSERT(test_program_noargs(ctx, "int32 r = 0; do { r += 1; continue; r += 100; } while (r < 10); return r;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT_EQUAL_INT(10, ret_val.int32_v);
+    /* break from a body with locals unwinds the stack correctly */
+    TEST_ASSERT(test_program_noargs(ctx, "int32 r = 0; for (int32 i = 0; i < 100; i++) { int32 x = i * 2; if (i == 5) break; r = x; } return r;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT_EQUAL_INT(8, ret_val.int32_v);
+    /* break runs the body defers registered before it */
+    TEST_ASSERT(test_program_noargs(ctx, "int32 n = 0; for (int32 i = 0; i < 10; i++) { defer { n += 1; } if (i == 3) break; } return n;", AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+    TEST_ASSERT_EQUAL_INT(4, ret_val.int32_v);
+    /* break/continue outside a cycle are compile errors */
+    TEST_ASSERT(test_program_noargs(ctx, "break;\n", AZ_TYPE_INT32, &ret_impl, &ret_val) != 0);
+    TEST_ASSERT(test_program_noargs(ctx, "continue;\n", AZ_TYPE_INT32, &ret_impl, &ret_val) != 0);
+    TEST_ASSERT(test_program_noargs(ctx, "int32 i = 0; if (i == 0) break; return i;\n", AZ_TYPE_INT32, &ret_impl, &ret_val) != 0);
     azo_context_delete(ctx);
 }
 

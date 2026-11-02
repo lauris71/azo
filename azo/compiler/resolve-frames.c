@@ -217,8 +217,11 @@ resolve_for (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	if (resolve_check_boolean (comp, rctx, test)) result = 1;
 	lresult = azo_compiler_resolve_node (comp, rctx, step);
 	if (lresult) result = 1;
+	unsigned int flow_flags = rctx->flow_flags;
+	rctx->flow_flags = AZO_FLOW_BREAK_ABLE | AZO_FLOW_CONTINUE_ABLE;
 	lresult = azo_compiler_resolve_node (comp, rctx, content);
 	if (lresult) result = 1;
+	rctx->flow_flags = flow_flags;
 	azo_frame_pop_scope (rctx->frame);
 	/* The body may not execute at all */
 	rctx->frame->ret_is_last = 0;
@@ -242,8 +245,11 @@ resolve_while (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	unsigned int lresult = azo_compiler_resolve_node (comp, rctx, test);
 	if (lresult) result = 1;
 	if (resolve_check_boolean (comp, rctx, test)) result = 1;
+	unsigned int flow_flags = rctx->flow_flags;
+	rctx->flow_flags = AZO_FLOW_BREAK_ABLE | AZO_FLOW_CONTINUE_ABLE;
 	lresult = azo_compiler_resolve_node (comp, rctx, content);
 	if (lresult) result = 1;
+	rctx->flow_flags = flow_flags;
 	azo_frame_pop_scope (rctx->frame);
 	/* The body may not execute at all */
 	rctx->frame->ret_is_last = 0;
@@ -264,8 +270,11 @@ resolve_do (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	AZONode *test = content->next;
 	/* The loop (body and condition) is a scope */
 	azo_frame_push_scope (rctx->frame);
+	unsigned int flow_flags = rctx->flow_flags;
+	rctx->flow_flags = AZO_FLOW_BREAK_ABLE | AZO_FLOW_CONTINUE_ABLE;
 	unsigned int lresult = azo_compiler_resolve_node (comp, rctx, content);
 	if (lresult) result = 1;
+	rctx->flow_flags = flow_flags;
 	lresult = azo_compiler_resolve_node (comp, rctx, test);
 	if (lresult) result = 1;
 	if (resolve_check_boolean (comp, rctx, test)) result = 1;
@@ -330,8 +339,6 @@ resolve_new (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 
 	unsigned int result = azo_compiler_resolve_type_expression(comp, rctx, type);
 	if (result) return result;
-	//result = azo_compiler_resolve_node (comp, rctx, args);
-	//if (result) return result;
 
 	/* Replace with: FUNCTION_CALL->(REF_MEMBER(TYPE,new), ARGS) */
 	type->term.type = AZO_TERM_CONSTANT;
@@ -343,10 +350,10 @@ resolve_new (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	ref->next = args;
 	node->children = ref;
 	node->term.type = AZO_TERM_FUNCTION_CALL;
+
 	/* We create plain call and re-invoke resolver to resolve it into a proper reference variant */
 	node->term.subtype = AZO_TERM_FUNCTION_CALL_PLAIN;
 	az_packed_value_clear(&node->value);
-
 	return azo_compiler_resolve_node(comp, rctx, node);
 }
 
@@ -1008,6 +1015,8 @@ resolve_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	AZOResolveCtx lctx = *rctx;
 	/* Static block evaluates in static context (this == NONE) */
 	if (node->term.flags & AZO_TERM_FLAG_STATIC) lctx.this_variant = AZO_COMPILER_NO_THIS;
+	/* Defer bodies may not transfer flow out of the block */
+	if (node->term.subtype == AZO_TERM_BLOCK_DEFER) lctx.flow_flags = 0;
 	/* Mode-qualified block starts a new computation mode */
 	if (node->term.flags & AZO_TERM_FLAG_MODE_MASK) {
 		lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
@@ -1099,6 +1108,18 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 				return resolve_for(comp, rctx, node);
 			} else if (node->term.subtype == AZO_KEYWORD_WHILE) {
 				return resolve_while(comp, rctx, node);
+			} else if (node->term.subtype == AZO_KEYWORD_BREAK) {
+				if (!(rctx->flow_flags & AZO_FLOW_BREAK_ABLE)) {
+					azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "break outside a cycle\n");
+					return 1;
+				}
+				return 0;
+			} else if (node->term.subtype == AZO_KEYWORD_CONTINUE) {
+				if (!(rctx->flow_flags & AZO_FLOW_CONTINUE_ABLE)) {
+					azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "continue outside a cycle\n");
+					return 1;
+				}
+				return 0;
 			} else if (node->term.subtype == AZO_KEYWORD_DO) {
 				return resolve_do(comp, rctx, node);
 			} else if (node->term.subtype == AZO_KEYWORD_IF) {

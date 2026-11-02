@@ -417,7 +417,8 @@ azo_context_define_basic_types (AZOContext *ctx)
 	exc = azo_context_register_exception_by_str(ctx, (const uint8_t *) "InvalidType", cat_runtime);
 	exc = azo_context_register_exception_by_str(ctx, (const uint8_t *) "InvalidValue", cat_runtime);
 	exc = azo_context_register_exception_by_str(ctx, (const uint8_t *) "OutOfBounds", cat_runtime);
-	assert(exc == AZ_EXCEPTION_OUT_OF_BOUNDS);
+	exc = azo_context_register_exception_by_str(ctx, (const uint8_t *) "SignatureMismatch", cat_runtime);
+	assert(exc == AZ_EXCEPTION_SIGNATURE_MISMATCH);
 	/* AZO exceptions */
 	exc = azo_context_register_exception_by_str(ctx, (const uint8_t *) "ChangeOfMagnitude", cat_arithmetic);
 	exc = azo_context_register_exception_by_str(ctx, (const uint8_t *) "ChangeOfPrecision", cat_arithmetic);

@@ -119,6 +119,8 @@ enum {
 	 * [..., val, flags] -> [..., val]
 	 */
 	AZO_TC_STORE_FLAGS,
+	/* SET_FLAGS_MASK U32:AND U32:OR: flags = (flags & AND) | OR */
+	AZO_TC_SET_FLAGS_MASK,
 
 	/* Type tests */
 	/* TEST POS(U8) */
@@ -245,12 +247,29 @@ enum {
 
 	/* Interface */
 	/* GET_INTERFACE_IMMEDIATE TYPE(U32) */
-	/* Get interface of topmost element */
-	/* Do not pop element to guarantee that interface is alive */
+	/* Replace the topmost element with its view of the interface (resolved */
+	/* and autoboxed: the box holds the source lifecycle). Throw INVALID_TYPE */
+	/* if the value cannot be viewed as the interface */
 	AZO_TC_GET_INTERFACE_IMMEDIATE,
 
-	/* Invoke function */
+	/**
+	 * @brief Invoke a function
+	 * 
+	 * [function, arg1, ..., argN]
+	 * INVOKE U8:POS
+	 * [result]
+	 */
 	AZO_TC_INVOKE,
+	/**
+	 * @brief Invoke a function with optional first parameter (this)
+	 * 
+	 * [function, this, arg1, ..., argN]
+	 * INVOKE_MEMBER U8:POS
+	 * [result]
+	 * 
+	 * The first argument is passed as the zeroeth argument to the function, which ignores it if its signature does not have this
+	 */
+	AZO_TC_INVOKE_MEMBER,
 	/**
 	 * @brief Return from frame
 	 * 

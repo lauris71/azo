@@ -195,6 +195,22 @@ struct _AZOCompilerContext {
 	unsigned int n_stack;
 	/* debug */
 	unsigned int print_tree;
+
+	/* Flow control: AZO_FLOW_* bits allowed at the current point */
+	unsigned int flow_flags;
+	/* Pointers to the current cycle's break/continue jump-location chains
+	 * (chained through the jump operands, 0 = end of chain); compile_cycle
+	 * owns the chain heads and patches them at the end */
+	unsigned int *break_chain;
+	unsigned int *continue_chain;
+	/* Pointer to the current cycle's body baseline (n_stack at content start);
+	 * break/continue rewind to it before jumping */
+	unsigned int *cycle_body_base;
+};
+
+enum {
+	AZO_FLOW_BREAK_ABLE = 1,
+	AZO_FLOW_CONTINUE_ABLE = 2
 };
 
 struct _AZOCompiler {

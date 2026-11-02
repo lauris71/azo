@@ -1,5 +1,6 @@
 #define __AZO_BYTECODE_C__
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -61,6 +62,7 @@ AZOBCInfo bc_info[] = {
 	{AZO_TC_EXCHANGE_FRAME, "EXCHANGE FRAME", ARG_U32},
 	{AZO_TC_PUSH_FLAGS, "PUSH FLAGS", ARG_NONE},
 	{AZO_TC_STORE_FLAGS, "STORE FLAGS", ARG_NONE},
+	{AZO_TC_SET_FLAGS_MASK, "SET FLAGS MASK", ARG_U32_U32},
 
 	{AZO_TC_TYPE_EQUALS, "TYPE EQUALS", ARG_U8},
 	{AZO_TC_TYPE_IS, "TYPE IS", ARG_U8},
@@ -118,6 +120,7 @@ AZOBCInfo bc_info[] = {
 	{AZO_TC_GET_INTERFACE_IMMEDIATE, "GET INTERFACE IMMEDIATE", ARG_U32},
 
 	{AZO_TC_INVOKE, "INVOKE", ARG_U8},
+	{AZO_TC_INVOKE_MEMBER, "INVOKE MEMBER", ARG_U8},
 	{AZO_TC_RETURN, "RETURN", ARG_NONE},
 	{AZO_TC_RETURN_VALUE, "RETURN VALUE", ARG_NONE},
 	{AZO_TC_CLOSURE, "CLOSURE", ARG_U32},
@@ -137,6 +140,8 @@ AZOBCInfo bc_info[] = {
 	{AZO_TC_JMP_IF_SHARED_SET, "JMP IF SHARED SET", ARG_ADDR32_U32},
 	{AZO_TC_JMP_IF_CAPTURE_SET, "JMP IF CAPTURE SET", ARG_ADDR32_U32}
 };
+static_assert(sizeof(bc_info) / sizeof(bc_info[0]) == AZO_TC_END, "bc_info array size mismatch");
+
 
 static AZOBCInfo
 get_bc_info(unsigned int bc)

@@ -362,8 +362,27 @@ test_function(void)
         TEST_ASSERT_EQUAL_STRING("true false true false true ", str);
         free(str);
     }
+    /* Explicit static call */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = TestObject.build(\"Hello\");\n"
+            "bofs.print(tobj.text);\n";
+		az_buffer_output_stream_reset(bostream);
+        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
+        char *str = strndup((const char *) bostream->buffer, bostream->pos);
+        fprintf(stderr, "Output: %s\n", str);
+        TEST_ASSERT_EQUAL_STRING("built: Hello", str);
+        free(str);
+    }
 }
 
+/* An non-abstact ActiveObject subclass for property/attribute/static tests */
 struct _TestObject {
 	AZActiveObject object;
 
@@ -386,6 +405,7 @@ static AZFunctionSignature *sig_tobj_i32 = NULL;
 /* Properties */
 enum {
     FUNC_NEW_STR,
+    FUNC_BUILD_STR,
 	FUNC_PRINT_I32,
 	FUNC_PRINT_TOBJ_I32,
     PROP_TEXT,
@@ -421,6 +441,15 @@ test_object_new_str (AZString *key)
     return tobj;
 }
 
+static TestObject *
+test_object_build_str (AZString *key)
+{
+	TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+    tobj->text = az_string_concat(az_string_new((const uint8_t *) "built: "), key);
+    az_string_ref(key);
+    return tobj;
+}
+
 static void
 test_object_class_init (TestObjectClass *klass)
 {
@@ -428,6 +457,7 @@ test_object_class_init (TestObjectClass *klass)
     sig_tobj_i32 = az_function_signature_new_va(AZ_TYPE_NONE, 2, TYPE_TESTOBJ, AZ_TYPE_INT32);
 	/* Properties */
 	az_class_define_static_method_native_va ((AZClass *) klass, FUNC_NEW_STR, (const unsigned char *) "new", (void (*)()) test_object_new_str, TYPE_TESTOBJ, 1, AZ_TYPE_STRING);
+	az_class_define_static_method_native_va ((AZClass *) klass, FUNC_BUILD_STR, (const unsigned char *) "build", (void (*)()) test_object_build_str, TYPE_TESTOBJ, 1, AZ_TYPE_STRING);
 	az_class_define_property_function_packed ((AZClass *) klass, FUNC_PRINT_I32, (const unsigned char *) "print_i32", 0,
         AZ_FIELD_INSTANCE, AZ_FIELD_READ_PACKED, AZ_FIELD_WRITE_PACKED,
 		ARIKKEI_OFFSET(TestObject,onPrint1), sig_i32);

@@ -19,9 +19,13 @@ extern "C" {
 #endif
 
 struct _AZODeferHandle {
-    /* The instruction pointer */
-    unsigned int ip;
-    /* The length of block code */
+    union {
+	/* The instruction pointer (defer block) */
+	unsigned int ip;
+	/* Saved interpreter flags (flags handle) */
+	unsigned int flags;
+    };
+    /* The length of block code; 0 marks a flags handle (nothing to execute) */
     unsigned int len;
 };
 
