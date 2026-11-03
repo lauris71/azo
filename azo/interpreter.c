@@ -233,20 +233,22 @@ azo_interpreter_pop_frame (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 }
 
 static inline void
-set_exception_if_clear(AZOInterpreter *intr, unsigned int type, const uint8_t *ip) {
+set_exception_if_clear(AZOInterpreter *intr, AZOInterpreterCtx *ictx, unsigned int type, const uint8_t *ip) {
 	if (!intr->ctx->az_ctx.exc.type) {
 		/* The category mask is looked up from the context exception registry */
 		azo_context_set_exception(intr->ctx, type, NULL, ip);
 	}
+	/* fixme: Think how to make it configurable, but we want to see stack contents at moment */
+	azo_interpreter_print_exception(intr, ictx, stderr);
 }
 
-#define EXCEPTION(type) set_exception_if_clear(intr, type, ip);
-#define EXCEPTION_THROW(type) { set_exception_if_clear(intr, type, ip); if (!(intr->flags & AZO_INTR_FLAG_NO_THROW)) return NULL; }
+#define EXCEPTION(type) set_exception_if_clear(intr, ictx, type, ip);
+#define EXCEPTION_THROW(type) { set_exception_if_clear(intr, ictx, type, ip); if (!(intr->flags & AZO_INTR_FLAG_NO_THROW)) return NULL; }
 
 /* Convert value to u32, return 1 on success, fill exception data and return 0 on failure */
 
 static unsigned int
-convert_to_u32 (AZOInterpreter *intr, unsigned int *dst, const AZImplementation *impl, void *val, const uint8_t *ip)
+convert_to_u32 (AZOInterpreter *intr, AZOInterpreterCtx *ictx, unsigned int *dst, const AZImplementation *impl, void *val, const uint8_t *ip)
 {
 	unsigned int overflow = 0;
 	unsigned int negative = 0;
@@ -345,7 +347,7 @@ convert_to_u32 (AZOInterpreter *intr, unsigned int *dst, const AZImplementation 
 /* New stack methods */
 
 static unsigned int
-test_stack_type_exact(AZOInterpreter *intr, const unsigned char *ip, unsigned int pos, unsigned int type)
+test_stack_type_exact(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip, unsigned int pos, unsigned int type)
 {
 	if (azo_stack_type_bw (&intr->stack, pos) != type) {
 		EXCEPTION(AZ_EXCEPTION_INVALID_TYPE);
@@ -355,7 +357,7 @@ test_stack_type_exact(AZOInterpreter *intr, const unsigned char *ip, unsigned in
 }
 
 static unsigned int
-test_stack_type_is(AZOInterpreter *intr, const unsigned char *ip, unsigned int pos, unsigned int type)
+test_stack_type_is(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip, unsigned int pos, unsigned int type)
 {
 	if (!az_type_is_a(azo_stack_type_bw(&intr->stack, pos), type)) {
 		EXCEPTION(AZ_EXCEPTION_INVALID_TYPE);
@@ -365,7 +367,7 @@ test_stack_type_is(AZOInterpreter *intr, const unsigned char *ip, unsigned int p
 }
 
 static unsigned int
-test_stack_overflow (AZOInterpreter *intr, const uint8_t *ip, unsigned int n_values)
+test_stack_overflow (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip, unsigned int n_values)
 {
 	if ((intr->stack.length + n_values) > 65536) {
 		azo_context_set_exception(intr->ctx, AZO_EXCEPTION_STACK_OVERFLOW, NULL, ip);
@@ -379,12 +381,12 @@ test_stack_overflow (AZOInterpreter *intr, const uint8_t *ip, unsigned int n_val
 #define CHECK_UNDERFLOW(n_values) CHECK(n_values <= intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
 #define TEST_OVERFLOW(n_values) TEST((intr->stack.length + n_values) <= 65536, AZO_EXCEPTION_STACK_OVERFLOW);
 
-#define CHECK_TYPE_EXACT(pos,type) if ((intr->flags & AZO_INTR_FLAG_CHECK_ARGS) && !test_stack_type_exact(intr, ip, pos, type)) return NULL;
-#define TEST_TYPE_EXACT(pos,type) if (!test_stack_type_exact(intr, ip, pos, type)) return NULL;
-#define TEST_TYPE_IS(pos,type) if (!test_stack_type_is(intr, ip, pos, type)) return NULL;
+#define CHECK_TYPE_EXACT(pos,type) if ((intr->flags & AZO_INTR_FLAG_CHECK_ARGS) && !test_stack_type_exact(intr, ictx, ip, pos, type)) return NULL;
+#define TEST_TYPE_EXACT(pos,type) if (!test_stack_type_exact(intr, ictx, ip, pos, type)) return NULL;
+#define TEST_TYPE_IS(pos,type) if (!test_stack_type_is(intr, ictx, ip, pos, type)) return NULL;
 
 static const unsigned char *
-interpret_EXCEPTION (AZOInterpreter *intr, const unsigned char *ip)
+interpret_EXCEPTION (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t type;
 	memcpy (&type, ip + 1, 4);
@@ -411,7 +413,7 @@ interpret_EXCEPTION (AZOInterpreter *intr, const unsigned char *ip)
  * state from the exception registry and unwind
  */
 static const unsigned char *
-interpret_THROW (AZOInterpreter *intr, const uint8_t *ip)
+interpret_THROW (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	uint32_t type;
 	memcpy (&type, ip + 1, 4);
@@ -439,7 +441,7 @@ interpret_THROW (AZOInterpreter *intr, const uint8_t *ip)
 * Throw INVALID_TYPE if element at pos is not type
 */
 static const unsigned char *
-interpret_type_EXCEPTION (AZOInterpreter *intr, const uint8_t *ip)
+interpret_type_EXCEPTION (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	uint32_t pos, type;
 	memcpy (&pos, ip + 1, 4);
@@ -457,7 +459,7 @@ interpret_type_EXCEPTION (AZOInterpreter *intr, const uint8_t *ip)
  * Throw INVALID_TYPE if element at pos is not assignable to type
  */
 static const unsigned char *
-interpret_exception_if_not_assignable (AZOInterpreter *intr, const uint8_t *ip)
+interpret_exception_if_not_assignable (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	uint32_t pos, type;
 	memcpy (&pos, ip + 1, 4);
@@ -487,7 +489,7 @@ interpret_DEBUG (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned c
 #endif
 
 static const unsigned char *
-interpret_POP (AZOInterpreter *intr, const unsigned char *ip)
+interpret_POP (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	unsigned int n_values;
 	memcpy (&n_values, ip + 1, 4);
@@ -509,7 +511,7 @@ interpret_REWIND (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned 
 }
 
 static const unsigned char *
-interpret_REMOVE (AZOInterpreter *intr, const unsigned char *ip)
+interpret_REMOVE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	unsigned int first, n_values;
 	memcpy (&first, ip + 1, 4);
@@ -520,7 +522,7 @@ interpret_REMOVE (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_PUSH_EMPTY (AZOInterpreter *intr, const unsigned char *ip)
+interpret_PUSH_EMPTY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t type;
 	memcpy (&type, ip + 1, 4);
@@ -538,7 +540,7 @@ interpret_PUSH_EMPTY (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_PUSH_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip)
+interpret_PUSH_IMMEDIATE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	unsigned int type;
 	AZClass *klass;
@@ -629,7 +631,7 @@ interpret_JMP_IF_CAPTURE_SET(AZOInterpreter *intr, AZOInterpreterCtx *ictx, cons
 }
 
 static const unsigned char *
-interpret_DUPLICATE (AZOInterpreter *intr, const unsigned char *ip)
+interpret_DUPLICATE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t pos;
 	memcpy (&pos, ip + 1, 4);
@@ -640,7 +642,7 @@ interpret_DUPLICATE (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_DUPLICATE_FRAME (AZOInterpreter *intr, const unsigned char *ip)
+interpret_DUPLICATE_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t pos;
 	memcpy (&pos, ip + 1, 4);
@@ -651,17 +653,27 @@ interpret_DUPLICATE_FRAME (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_EXCHANGE (AZOInterpreter *intr, const unsigned char *ip)
+interpret_EXCHANGE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	unsigned int pos;
 	memcpy (&pos, ip + 1, 4);
 	CHECK_UNDERFLOW(pos + 1);
-	azo_stack_exchange (&intr->stack, intr->stack.length - 1 - pos);
+	azo_stack_exchange(&intr->stack, intr->stack.length - 1 - pos);
 	return ip + 5;
 }
 
 static const unsigned char *
-interpret_EXCHANGE_FRAME (AZOInterpreter *intr, const unsigned char *ip)
+interpret_ROLL (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	unsigned int pos;
+	memcpy (&pos, ip + 1, 4);
+	CHECK_UNDERFLOW(pos + 1);
+	azo_stack_roll(&intr->stack, intr->stack.length - 1 - pos);
+	return ip + 5;
+}
+
+static const unsigned char *
+interpret_EXCHANGE_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	unsigned int pos;
 	memcpy (&pos, ip + 1, 4);
@@ -686,7 +698,7 @@ type_implements_instance (AZOInterpreter *intr, unsigned int pos, unsigned int t
 }
 
 static const unsigned char *
-interpret_TYPE (AZOInterpreter *intr, const uint8_t *ip)
+interpret_TYPE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	unsigned int pos, result;
 	pos = ip[1];
@@ -713,7 +725,7 @@ interpret_TYPE (AZOInterpreter *intr, const uint8_t *ip)
 }
 
 static const unsigned char *
-interpret_TYPE_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip)
+interpret_TYPE_IMMEDIATE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	unsigned int pos, type, result;
 	pos = ip[1];
@@ -738,7 +750,7 @@ interpret_TYPE_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_TYPE_OF (AZOInterpreter *intr, const unsigned char *ip)
+interpret_TYPE_OF (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	unsigned int type;
 	unsigned int pos;
@@ -756,7 +768,7 @@ interpret_TYPE_OF (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_JMP_32 (AZOInterpreter *intr, const unsigned char *ip)
+interpret_JMP_32 (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	int32_t raddr;
 	memcpy (&raddr, ip + 1, 4);
@@ -764,7 +776,7 @@ interpret_JMP_32 (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_JMP_32_COND (AZOInterpreter *intr, const unsigned char *ip)
+interpret_JMP_32_COND (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	int raddr;
 	const unsigned char *dst;
@@ -797,7 +809,7 @@ interpret_JMP_32_COND (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_PROMOTE (AZOInterpreter *intr, const uint8_t *ip)
+interpret_PROMOTE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	unsigned int pos, result;
 	pos = ip[1];
@@ -814,7 +826,7 @@ interpret_PROMOTE (AZOInterpreter *intr, const uint8_t *ip)
 #define EXCEPTION_THROW_MASKED(type,mask) if(!(intr->flags & mask)) EXCEPTION_THROW(type);
 
 static const unsigned char *
-interpret_convert (AZOInterpreter *intr, const uint8_t *ip, unsigned int strict, unsigned int exact)
+interpret_convert (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip, unsigned int strict, unsigned int exact)
 {
 	uint32_t to_type;
 	memcpy(&to_type, ip + 1, 4);
@@ -871,25 +883,25 @@ interpret_convert (AZOInterpreter *intr, const uint8_t *ip, unsigned int strict,
 }
 
 static const unsigned char *
-interpret_CONVERT_TYPE (AZOInterpreter *intr, const uint8_t *ip)
+interpret_CONVERT_TYPE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
-	return interpret_convert (intr, ip, 0, 0);
+	return interpret_convert (intr, ictx, ip, 0, 0);
 }
 
 static const unsigned char *
-interpret_CONVERT_TYPE_ASSIGN (AZOInterpreter *intr, const uint8_t *ip)
+interpret_CONVERT_TYPE_ASSIGN (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
-	return interpret_convert (intr, ip, 1, 0);
+	return interpret_convert (intr, ictx, ip, 1, 0);
 }
 
 static const unsigned char *
-interpret_CONVERT_TYPE_EXACT (AZOInterpreter *intr, const uint8_t *ip)
+interpret_CONVERT_TYPE_EXACT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
-	return interpret_convert (intr, ip, 0, 1);
+	return interpret_convert (intr, ictx, ip, 0, 1);
 }
 
 static const unsigned char *
-interpret_EQUAL_TYPED (AZOInterpreter *intr, const uint8_t *ip)
+interpret_EQUAL_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	unsigned int type, result;
 	const AZValue *lhs, *rhs;
@@ -944,7 +956,7 @@ interpret_EQUAL_TYPED (AZOInterpreter *intr, const uint8_t *ip)
 }
 
 static const unsigned char *
-interpret_EQUAL (AZOInterpreter *intr, const uint8_t *ip)
+interpret_EQUAL (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	unsigned int type, result;
 	const void *lhs, *rhs;
@@ -1001,7 +1013,7 @@ interpret_EQUAL (AZOInterpreter *intr, const uint8_t *ip)
 }
 
 static const unsigned char *
-interpret_COMPARE_TYPED (AZOInterpreter *intr, const unsigned char *ip)
+interpret_COMPARE_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	unsigned int type;
 	const AZValue *lhs, *rhs;
@@ -1051,7 +1063,7 @@ interpret_COMPARE_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_COMPARE (AZOInterpreter *intr, const uint8_t *ip)
+interpret_COMPARE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	unsigned int type;
 	const AZValue *lhs, *rhs;
@@ -1100,7 +1112,7 @@ interpret_COMPARE (AZOInterpreter *intr, const uint8_t *ip)
 }
 
 static const unsigned char *
-interpret_LOGICAL_NOT (AZOInterpreter *intr, const unsigned char *ip)
+interpret_LOGICAL_NOT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	AZValue *val;
 	CHECK_TYPE_EXACT(0, AZ_TYPE_BOOLEAN);
@@ -1110,7 +1122,7 @@ interpret_LOGICAL_NOT (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_NEGATE (AZOInterpreter *intr, const unsigned char *ip)
+interpret_NEGATE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
 	unsigned int type = azo_stack_type_bw(&intr->stack, 0);
@@ -1126,7 +1138,7 @@ interpret_NEGATE (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_PUSH_FLAGS (AZOInterpreter *intr, const unsigned char *ip)
+interpret_PUSH_FLAGS (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	/* A flags word is a defer handle with len == 0: rewind paths restore it */
 	AZODeferHandle handle = { .flags = intr->flags, .len = 0 };
@@ -1139,7 +1151,7 @@ interpret_PUSH_FLAGS (AZOInterpreter *intr, const unsigned char *ip)
  * flags = (flags & AND) | OR
  */
 static const unsigned char *
-interpret_SET_FLAGS_MASK (AZOInterpreter *intr, const unsigned char *ip)
+interpret_SET_FLAGS_MASK (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t and_mask, or_mask;
 	memcpy (&and_mask, ip + 1, 4);
@@ -1149,7 +1161,7 @@ interpret_SET_FLAGS_MASK (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_STORE_FLAGS (AZOInterpreter *intr, const unsigned char *ip)
+interpret_STORE_FLAGS (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
 	const AZValue *val = azo_stack_value_bw (&intr->stack, 0);
@@ -1159,7 +1171,7 @@ interpret_STORE_FLAGS (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_CONJUGATE (AZOInterpreter *intr, const unsigned char *ip)
+interpret_CONJUGATE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
 	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
@@ -1177,7 +1189,7 @@ interpret_CONJUGATE (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_BITWISE_NOT (AZOInterpreter *intr, const unsigned char *ip)
+interpret_BITWISE_NOT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
 	unsigned int type = azo_stack_type_bw (&intr->stack, 0);
@@ -1188,7 +1200,7 @@ interpret_BITWISE_NOT (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_LOGICAL_BINARY (AZOInterpreter *intr, const unsigned char *ip)
+interpret_LOGICAL_BINARY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	AZValue *lhs, *rhs;
 	CHECK_TYPE_EXACT(0, AZ_TYPE_BOOLEAN);
@@ -1205,7 +1217,7 @@ interpret_LOGICAL_BINARY (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const uint8_t *
-interpret_binary_typed_calculate (AZOInterpreter *intr, const unsigned char *ip, unsigned int operation)
+interpret_binary_typed_calculate (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip, unsigned int operation)
 {
 	unsigned int type = AZ_TYPE_FROM_INDEX(ip[1]);
 	CHECK_TYPE_EXACT(0, type);
@@ -1235,13 +1247,13 @@ interpret_binary_typed_calculate (AZOInterpreter *intr, const unsigned char *ip,
 }
 
 static const unsigned char *
-interpret_ADD_TYPED (AZOInterpreter *intr, const unsigned char *ip)
+interpret_ADD_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
-	return interpret_binary_typed_calculate (intr, ip, AZO_TERM_ARITHMETIC_PLUS);
+	return interpret_binary_typed_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_PLUS);
 }
 
 static const unsigned char *
-interpret_binary_calculate (AZOInterpreter *intr, const unsigned char *ip, unsigned int operation)
+interpret_binary_calculate (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip, unsigned int operation)
 {
 	CHECK_UNDERFLOW(2);
 	const AZValue *lhs = azo_stack_value_bw (&intr->stack, 1);
@@ -1271,61 +1283,61 @@ interpret_binary_calculate (AZOInterpreter *intr, const unsigned char *ip, unsig
 }
 
 static const unsigned char *
-interpret_ADD (AZOInterpreter *intr, const unsigned char *ip)
+interpret_ADD (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
-	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_PLUS);
+	return interpret_binary_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_PLUS);
 }
 
 static const uint8_t *
-interpret_SUBTRACT_TYPED (AZOInterpreter *intr, const uint8_t *ip)
+interpret_SUBTRACT_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
-	return interpret_binary_typed_calculate (intr, ip, AZO_TERM_ARITHMETIC_MINUS);
+	return interpret_binary_typed_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_MINUS);
 }
 
 static const uint8_t *
-interpret_SUBTRACT (AZOInterpreter *intr, const uint8_t *ip)
+interpret_SUBTRACT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
-	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_MINUS);
+	return interpret_binary_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_MINUS);
 }
 
 static const uint8_t *
-interpret_MULTIPLY_TYPED (AZOInterpreter *intr, const uint8_t *ip)
+interpret_MULTIPLY_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
-	return interpret_binary_typed_calculate (intr, ip, AZO_TERM_ARITHMETIC_STAR);
+	return interpret_binary_typed_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_STAR);
+}
+
+static const uint8_t *
+interpret_MULTIPLY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	return interpret_binary_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_STAR);
+}
+
+static const uint8_t *
+interpret_DIVIDE_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	return interpret_binary_typed_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_SLASH);
+}
+
+static const uint8_t *
+interpret_DIVIDE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	return interpret_binary_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_SLASH);
+}
+
+static const uint8_t *
+interpret_MODULO_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	return interpret_binary_typed_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_PERCENT);
+}
+
+static const uint8_t *
+interpret_MODULO (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	return interpret_binary_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_PERCENT);
 }
 
 static const unsigned char *
-interpret_MULTIPLY (AZOInterpreter *intr, const unsigned char *ip)
-{
-	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_STAR);
-}
-
-static const uint8_t *
-interpret_DIVIDE_TYPED (AZOInterpreter *intr, const uint8_t *ip)
-{
-	return interpret_binary_typed_calculate (intr, ip, AZO_TERM_ARITHMETIC_SLASH);
-}
-
-static const uint8_t *
-interpret_DIVIDE (AZOInterpreter *intr, const uint8_t *ip)
-{
-	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_SLASH);
-}
-
-static const uint8_t *
-interpret_MODULO_TYPED (AZOInterpreter *intr, const uint8_t *ip)
-{
-	return interpret_binary_typed_calculate (intr, ip, AZO_TERM_ARITHMETIC_PERCENT);
-}
-
-static const uint8_t *
-interpret_MODULO (AZOInterpreter *intr, const uint8_t *ip)
-{
-	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_PERCENT);
-}
-
-static const unsigned char *
-interpret_binary_shift (AZOInterpreter *intr, const unsigned char *ip, unsigned int operation)
+interpret_binary_shift (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip, unsigned int operation)
 {
 	CHECK_UNDERFLOW(2);
 	unsigned int lhs_type = azo_stack_type_bw (&intr->stack, 1);
@@ -1343,37 +1355,37 @@ interpret_binary_shift (AZOInterpreter *intr, const unsigned char *ip, unsigned 
 }
 
 static const unsigned char *
-interpret_BITWISE_AND (AZOInterpreter *intr, const unsigned char *ip)
+interpret_BITWISE_AND (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
-	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_AND);
+	return interpret_binary_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_AND);
 }
 
 static const unsigned char *
-interpret_BITWISE_OR (AZOInterpreter *intr, const unsigned char *ip)
+interpret_BITWISE_OR (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
-	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_OR);
+	return interpret_binary_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_OR);
 }
 
 static const unsigned char *
-interpret_BITWISE_XOR (AZOInterpreter *intr, const unsigned char *ip)
+interpret_BITWISE_XOR (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
-	return interpret_binary_calculate (intr, ip, AZO_TERM_ARITHMETIC_CARET);
+	return interpret_binary_calculate (intr, ictx, ip, AZO_TERM_ARITHMETIC_CARET);
 }
 
 static const unsigned char *
-interpret_SHIFT_LEFT (AZOInterpreter *intr, const unsigned char *ip)
+interpret_SHIFT_LEFT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
-	return interpret_binary_shift (intr, ip, AZO_TERM_ARITHMETIC_SHIFT_LEFT);
+	return interpret_binary_shift (intr, ictx, ip, AZO_TERM_ARITHMETIC_SHIFT_LEFT);
 }
 
 static const unsigned char *
-interpret_SHIFT_RIGHT (AZOInterpreter *intr, const unsigned char *ip)
+interpret_SHIFT_RIGHT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
-	return interpret_binary_shift (intr, ip, AZO_TERM_ARITHMETIC_SHIFT_RIGHT);
+	return interpret_binary_shift (intr, ictx, ip, AZO_TERM_ARITHMETIC_SHIFT_RIGHT);
 }
 
 static const unsigned char *
-interpret_MIN_MAX_TYPED (AZOInterpreter *intr, const unsigned char *ip)
+interpret_MIN_MAX_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	unsigned int remove;
 	unsigned int type = AZ_TYPE_FROM_INDEX(ip[1]);
@@ -1410,7 +1422,7 @@ interpret_MIN_MAX_TYPED (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_GET_INTERFACE_IMMEDIATE (AZOInterpreter *intr, const unsigned char *ip)
+interpret_GET_INTERFACE_IMMEDIATE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
 	uint32_t type;
@@ -1485,13 +1497,13 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 }
 
 static const unsigned char *
-interpret_RETURN (AZOInterpreter *intr, const unsigned char *ip)
+interpret_RETURN (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	return NULL;
 }
 
 static const unsigned char *
-interpret_RETURN_VALUE (AZOInterpreter *intr, const unsigned char *ip)
+interpret_RETURN_VALUE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
 	intr->vals[0].impl = az_value_copy_autobox(azo_stack_impl_bw(&intr->stack, 0), &intr->vals[0].v.value, azo_stack_value_bw(&intr->stack, 0), 64);
@@ -1500,7 +1512,7 @@ interpret_RETURN_VALUE (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const uint8_t *
-interpret_CLOSURE(AZOInterpreter *intr, const unsigned char *ip)
+interpret_CLOSURE(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t n_vals;
 	memcpy (&n_vals, ip + 1, 4);
@@ -1522,7 +1534,7 @@ interpret_CLOSURE(AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_NEW_ARRAY (AZOInterpreter *intr, const unsigned char *ip)
+interpret_NEW_ARRAY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
 	unsigned int size;
@@ -1539,7 +1551,7 @@ interpret_NEW_ARRAY (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_LOAD_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
+interpret_LOAD_ARRAY_ELEMENT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	unsigned int idx;
 	CHECK_UNDERFLOW(2);
@@ -1565,7 +1577,7 @@ interpret_LOAD_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
 	AZListImplementation *list_impl = (AZListImplementation *) iface_impl;
-	if (!convert_to_u32 (intr, &idx, idx_impl, azo_stack_value_bw(&intr->stack, 0), ip)) {
+	if (!convert_to_u32 (intr, ictx, &idx, idx_impl, azo_stack_value_bw(&intr->stack, 0), ip)) {
 		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 	}
 	if (idx >= az_collection_get_size(&list_impl->collection_impl, list_inst)) {
@@ -1578,7 +1590,7 @@ interpret_LOAD_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 }
 
 static const unsigned char *
-interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
+interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	unsigned int idx;
 	CHECK_UNDERFLOW(3);
@@ -1602,7 +1614,7 @@ interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
 	AZListImplementation *list_impl = (AZListImplementation *) iface_impl;
-	if (!convert_to_u32 (intr, &idx, idx_impl, azo_stack_value_bw (&intr->stack, 1), ip)) {
+	if (!convert_to_u32 (intr, ictx, &idx, idx_impl, azo_stack_value_bw (&intr->stack, 1), ip)) {
 		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
 	}
 	if (idx >= az_collection_get_size (&list_impl->collection_impl, list_inst)) {
@@ -1621,7 +1633,7 @@ interpret_WRITE_ARRAY_ELEMENT (AZOInterpreter *intr, const uint8_t *ip)
 }
 
 static const unsigned char *
-interpret_GET_GLOBAL (AZOInterpreter *intr, const unsigned char *ip)
+interpret_GET_GLOBAL (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	AZString *key;
 	CHECK_TYPE_EXACT(0, AZ_TYPE_STRING);
@@ -1640,7 +1652,7 @@ interpret_GET_GLOBAL (AZOInterpreter *intr, const unsigned char *ip)
 /* Instance, String -> Value */
 
 static const unsigned char *
-interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
+interpret_GET_PROPERTY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	const AZImplementation *impl;
 	void *inst;
@@ -1710,7 +1722,7 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 /* Instance, String, Arguments -> Instance, String, Arguments, Function | null */
 
 static const unsigned char *
-interpret_GET_FUNCTION (AZOInterpreter *intr, const uint8_t *ip)
+interpret_GET_FUNCTION (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	unsigned int n_args = ip[1];
 	CHECK_TYPE_EXACT(n_args, AZ_TYPE_STRING);
@@ -1743,7 +1755,7 @@ interpret_GET_FUNCTION (AZOInterpreter *intr, const uint8_t *ip)
 }
 
 static const unsigned char *
-interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
+interpret_SET_PROPERTY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	unsigned int result = 0;
 	/* INSTANCE STRING VALUE */
@@ -1799,7 +1811,7 @@ interpret_SET_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 /* Class, String -> Value */
 
 static const unsigned char *
-interpret_GET_STATIC_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
+interpret_GET_STATIC_PROPERTY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	AZString *key;
 	AZClass *klass;
@@ -1835,7 +1847,7 @@ interpret_GET_STATIC_PROPERTY (AZOInterpreter *intr, const uint8_t *ip)
 /* Class, String, Arguments -> Class, String, Arguments, Function | null */
 
 static const unsigned char *
-interpret_GET_STATIC_FUNCTION (AZOInterpreter *intr, const unsigned char *ip)
+interpret_GET_STATIC_FUNCTION (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	AZFunctionSignature32 sig;
 	unsigned int n_args = ip[1];
@@ -1863,20 +1875,20 @@ interpret_GET_STATIC_FUNCTION (AZOInterpreter *intr, const unsigned char *ip)
 }
 
 static const unsigned char *
-interpret_GET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
+interpret_GET_ATTRIBUTE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
-	AZString *key;
-	void *attrd_inst;
-	const AZAttribDictImplementation *attrd_impl;
-	unsigned int flags;
 	CHECK_TYPE_EXACT(0, AZ_TYPE_STRING);
 	CHECK_UNDERFLOW(2);
-	CHECK(az_type_implements(azo_stack_type_bw(&intr->stack, 1), AZ_TYPE_ATTRIBUTE_DICT), AZ_EXCEPTION_INVALID_TYPE);
-	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
-	attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, 1), azo_stack_instance_bw (&intr->stack, 1), AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
+	const AZImplementation *impl = azo_stack_impl_bw(&intr->stack, 1);
+	void *inst = azo_stack_instance_bw(&intr->stack, 1);
+	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
+	/* fixme: Compiler should resolve interfaces */
+	void *attrd_inst;
+	const AZAttribDictImplementation *attrd_impl = (const AZAttribDictImplementation *) az_instance_get_interface (impl, inst, AZ_TYPE_ATTRIBUTE_DICT, &attrd_inst);
 	if (!attrd_impl) {
 		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	}
+	unsigned int flags;
 	intr->vals[0].impl = az_attrib_dict_lookup (attrd_impl, attrd_inst, key, &intr->vals[0].v.value, 64, &flags);
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value_transfer (&intr->stack, intr->vals[0].impl, &intr->vals[0].v);
@@ -1894,7 +1906,7 @@ interpret_GET_ATTRIBUTE (AZOInterpreter *intr, const unsigned char *ip)
  * Throws INVALID_VALUE if attribute cannot be set
  */
 static const unsigned char *
-interpret_SET_ATTRIBUTE (AZOInterpreter *intr, const uint8_t *ip)
+interpret_SET_ATTRIBUTE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	CHECK_TYPE_EXACT(1, AZ_TYPE_STRING);
 	CHECK_UNDERFLOW(3);
@@ -1923,16 +1935,16 @@ switch (*ip) {
 	case AZO_TC_EXCEPTION:
 		case AZO_TC_EXCEPTION_IF:
 		case AZO_TC_EXCEPTION_IF_NOT:
-			ip = interpret_EXCEPTION (intr, ip);
+			ip = interpret_EXCEPTION (intr, ictx, ip);
 			break;
 		case AZO_TC_THROW:
-			ip = interpret_THROW (intr, ip);
+			ip = interpret_THROW (intr, ictx, ip);
 			break;
 		case AZO_TC_EXCEPTION_IF_TYPE_IS_NOT:
-			ip = interpret_type_EXCEPTION (intr, ip);
+			ip = interpret_type_EXCEPTION (intr, ictx, ip);
 			break;
 		case AZO_TC_EXCEPTION_IF_NOT_ASSIGNABLE_IMMEDIATE:
-			ip = interpret_exception_if_not_assignable (intr, ip);
+			ip = interpret_exception_if_not_assignable (intr, ictx, ip);
 			break;
 
 #ifdef AZO_TC_HAS_DEBUG
@@ -1944,25 +1956,25 @@ switch (*ip) {
 
 		/* Stack management */
 		case AZO_TC_POP:
-			ip = interpret_POP(intr, ip);
+			ip = interpret_POP(intr, ictx, ip);
 			break;
 		case AZO_TC_REWIND:
 			ip = interpret_REWIND(intr, ictx, ip);
 			break;
 		case AZO_TC_REMOVE:
-			ip = interpret_REMOVE (intr, ip);
+			ip = interpret_REMOVE (intr, ictx, ip);
 			break;
 		case AZO_TC_PUSH_EMPTY:
-			ip = interpret_PUSH_EMPTY (intr, ip);
+			ip = interpret_PUSH_EMPTY (intr, ictx, ip);
 			break;
 		case AZO_TC_PUSH_IMMEDIATE:
-			ip = interpret_PUSH_IMMEDIATE (intr, ip);
+			ip = interpret_PUSH_IMMEDIATE (intr, ictx, ip);
 			break;
 		case AZO_TC_PUSH_VALUE:
 			ip = interpret_PUSH_VALUE (intr, ictx, ip);
 			break;
 		case AZO_TC_STORE_VALUE:
-			ip = interpret_STORE_VALUE (intr, ictx,ip);
+			ip = interpret_STORE_VALUE (intr, ictx, ip);
 			break;
 		case AZO_TC_PUSH_CAPTURE:
 			ip = interpret_PUSH_CAPTURE (intr, ictx, ip);
@@ -1977,25 +1989,28 @@ switch (*ip) {
 			ip = interpret_JMP_IF_CAPTURE_SET (intr, ictx, ip);
 			break;
 		case AZO_TC_DUPLICATE:
-			ip = interpret_DUPLICATE (intr, ip);
+			ip = interpret_DUPLICATE (intr, ictx, ip);
 			break;
 		case AZO_TC_DUPLICATE_FRAME:
-			ip = interpret_DUPLICATE_FRAME (intr, ip);
+			ip = interpret_DUPLICATE_FRAME (intr, ictx, ip);
 			break;
 		case AZO_TC_EXCHANGE:
-			ip = interpret_EXCHANGE (intr, ip);
+			ip = interpret_EXCHANGE (intr, ictx, ip);
+			break;
+		case AZO_TC_ROLL:
+			ip = interpret_ROLL (intr, ictx, ip);
 			break;
 		case AZO_TC_EXCHANGE_FRAME:
-			ip = interpret_EXCHANGE_FRAME (intr, ip);
+			ip = interpret_EXCHANGE_FRAME (intr, ictx, ip);
 			break;
 		case AZO_TC_PUSH_FLAGS:
-			ip = interpret_PUSH_FLAGS (intr, ip);
+			ip = interpret_PUSH_FLAGS (intr, ictx, ip);
 			break;
 		case AZO_TC_SET_FLAGS_MASK:
-			ip = interpret_SET_FLAGS_MASK (intr, ip);
+			ip = interpret_SET_FLAGS_MASK (intr, ictx, ip);
 			break;
 		case AZO_TC_STORE_FLAGS:
-			ip = interpret_STORE_FLAGS (intr, ip);
+			ip = interpret_STORE_FLAGS (intr, ictx, ip);
 			break;
 
 		/* Type tests */
@@ -2003,177 +2018,177 @@ switch (*ip) {
 		case AZO_TC_TYPE_IS:
 		case AZO_TC_TYPE_IS_SUPER:
 		case AZO_TC_TYPE_IMPLEMENTS:
-			ip = interpret_TYPE (intr, ip);
+			ip = interpret_TYPE (intr, ictx, ip);
 			break;
 		case AZO_TC_TYPE_EQUALS_IMMEDIATE:
 		case AZO_TC_TYPE_IS_IMMEDIATE:
 		case AZO_TC_TYPE_IS_SUPER_IMMEDIATE:
 		case AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE:
-			ip = interpret_TYPE_IMMEDIATE (intr, ip);
+			ip = interpret_TYPE_IMMEDIATE (intr, ictx, ip);
 			break;
 		case AZO_TC_TYPE_OF:
 		case AZO_TC_TYPE_OF_CLASS:
-			ip = interpret_TYPE_OF (intr, ip);
+			ip = interpret_TYPE_OF (intr, ictx, ip);
 			break;
 
 		/* Jumps */
 		case JMP_32:
-			ip = interpret_JMP_32 (intr, ip);
+			ip = interpret_JMP_32 (intr, ictx, ip);
 			break;
 		case JMP_32_IF:
 		case JMP_32_IF_NOT:
 		case JMP_32_IF_ZERO:
 		case JMP_32_IF_POSITIVE:
 		case JMP_32_IF_NEGATIVE:
-			ip = interpret_JMP_32_COND (intr, ip);
+			ip = interpret_JMP_32_COND (intr, ictx, ip);
 			break;
 
 		/* Conversions */
 		case AZO_TC_PROMOTE:
-			ip = interpret_PROMOTE (intr, ip);
+			ip = interpret_PROMOTE (intr, ictx, ip);
 			break;
 		case AZO_TC_CONVERT_TYPE:
-			ip = interpret_CONVERT_TYPE (intr, ip);
+			ip = interpret_CONVERT_TYPE (intr, ictx, ip);
 			break;
 		case AZO_TC_CONVERT_TYPE_ASSIGN:
-			ip = interpret_CONVERT_TYPE_ASSIGN (intr, ip);
+			ip = interpret_CONVERT_TYPE_ASSIGN (intr, ictx, ip);
 			break;
 		case AZO_TC_CONVERT_TYPE_EXACT:
-			ip = interpret_CONVERT_TYPE_EXACT (intr, ip);
+			ip = interpret_CONVERT_TYPE_EXACT (intr, ictx, ip);
 			break;
 
 		/* Comparisons */
 		case AZO_TC_EQUAL_TYPED:
-			ip = interpret_EQUAL_TYPED (intr, ip);
+			ip = interpret_EQUAL_TYPED (intr, ictx, ip);
 			break;
 		case EQUAL:
-			ip = interpret_EQUAL (intr, ip);
+			ip = interpret_EQUAL (intr, ictx, ip);
 			break;
 		case AZO_TC_COMPARE_TYPED:
-			ip = interpret_COMPARE_TYPED (intr, ip);
+			ip = interpret_COMPARE_TYPED (intr, ictx, ip);
 			break;
 		case COMPARE:
-			ip = interpret_COMPARE (intr, ip);
+			ip = interpret_COMPARE (intr, ictx, ip);
 			break;
 
 		case AZO_TC_LOGICAL_NOT:
-			ip = interpret_LOGICAL_NOT (intr, ip);
+			ip = interpret_LOGICAL_NOT (intr, ictx, ip);
 			break;
 		case AZO_TC_NEGATE:
-			ip = interpret_NEGATE (intr, ip);
+			ip = interpret_NEGATE (intr, ictx, ip);
 			break;
 		case AZO_TC_CONJUGATE:
-			ip = interpret_CONJUGATE (intr, ip);
+			ip = interpret_CONJUGATE (intr, ictx, ip);
 			break;
 		case AZO_TC_BITWISE_NOT:
-			ip = interpret_BITWISE_NOT (intr, ip);
+			ip = interpret_BITWISE_NOT (intr, ictx, ip);
 			break;
 
 		case AZO_TC_LOGICAL_AND:
 		case AZO_TC_LOGICAL_OR:
-			ip = interpret_LOGICAL_BINARY (intr, ip);
+			ip = interpret_LOGICAL_BINARY (intr, ictx, ip);
 			break;
 		case AZO_TC_ADD_TYPED:
-			ip = interpret_ADD_TYPED (intr, ip);
+			ip = interpret_ADD_TYPED (intr, ictx, ip);
 			break;
 		case AZO_TC_SUBTRACT_TYPED:
-			ip = interpret_SUBTRACT_TYPED (intr, ip);
+			ip = interpret_SUBTRACT_TYPED (intr, ictx, ip);
 			break;
 		case AZO_TC_MULTIPLY_TYPED:
-			ip = interpret_MULTIPLY_TYPED (intr, ip);
+			ip = interpret_MULTIPLY_TYPED (intr, ictx, ip);
 			break;
 		case AZO_TC_DIVIDE_TYPED:
-			ip = interpret_DIVIDE_TYPED (intr, ip);
+			ip = interpret_DIVIDE_TYPED (intr, ictx, ip);
 			break;
 		case AZO_TC_MODULO_TYPED:
-			ip = interpret_MODULO_TYPED (intr, ip);
+			ip = interpret_MODULO_TYPED (intr, ictx, ip);
 			break;
 		case AZO_TC_ADD:
-			ip = interpret_ADD (intr, ip);
+			ip = interpret_ADD (intr, ictx, ip);
 			break;
 		case AZO_TC_SUBTRACT:
-			ip = interpret_SUBTRACT (intr, ip);
+			ip = interpret_SUBTRACT (intr, ictx, ip);
 			break;
 		case AZO_TC_MULTIPLY:
-			ip = interpret_MULTIPLY (intr, ip);
+			ip = interpret_MULTIPLY (intr, ictx, ip);
 			break;
 		case AZO_TC_DIVIDE:
-			ip = interpret_DIVIDE (intr, ip);
+			ip = interpret_DIVIDE (intr, ictx, ip);
 			break;
 		case AZO_TC_MODULO:
-			ip = interpret_MODULO (intr, ip);
+			ip = interpret_MODULO (intr, ictx, ip);
 			break;
 		case AZO_TC_BITWISE_AND:
-			ip = interpret_BITWISE_AND (intr, ip);
+			ip = interpret_BITWISE_AND (intr, ictx, ip);
 			break;
 		case AZO_TC_BITWISE_OR:
-			ip = interpret_BITWISE_OR (intr, ip);
+			ip = interpret_BITWISE_OR (intr, ictx, ip);
 			break;
 		case AZO_TC_BITWISE_XOR:
-			ip = interpret_BITWISE_XOR (intr, ip);
+			ip = interpret_BITWISE_XOR (intr, ictx, ip);
 			break;
 		case AZO_TC_SHIFT_LEFT:
-			ip = interpret_SHIFT_LEFT (intr, ip);
+			ip = interpret_SHIFT_LEFT (intr, ictx, ip);
 			break;
 		case AZO_TC_SHIFT_RIGHT:
-			ip = interpret_SHIFT_RIGHT (intr, ip);
+			ip = interpret_SHIFT_RIGHT (intr, ictx, ip);
 			break;
 
 		case AZO_TC_MIN_TYPED:
 		case AZO_TC_MAX_TYPED:
-			ip = interpret_MIN_MAX_TYPED (intr, ip);
+			ip = interpret_MIN_MAX_TYPED (intr, ictx, ip);
 			break;
 
 		case AZO_TC_GET_INTERFACE_IMMEDIATE:
-			ip = interpret_GET_INTERFACE_IMMEDIATE (intr, ip);
+			ip = interpret_GET_INTERFACE_IMMEDIATE (intr, ictx, ip);
 			break;
 		case AZO_TC_INVOKE:
 		case AZO_TC_INVOKE_MEMBER:
 			ip = interpret_INVOKE (intr, ictx, ip);
 			break;
 		case AZO_TC_RETURN:
-			ip = interpret_RETURN (intr, ip);
+			ip = interpret_RETURN (intr, ictx, ip);
 			break;
 		case AZO_TC_RETURN_VALUE:
-			ip = interpret_RETURN_VALUE (intr, ip);
+			ip = interpret_RETURN_VALUE (intr, ictx, ip);
 			break;
 		case AZO_TC_CLOSURE:
-			ip = interpret_CLOSURE (intr, ip);
+			ip = interpret_CLOSURE (intr, ictx, ip);
 			break;
 
 		case NEW_ARRAY:
-			ip = interpret_NEW_ARRAY (intr, ip);
+			ip = interpret_NEW_ARRAY (intr, ictx, ip);
 			break;
 		case LOAD_ARRAY_ELEMENT:
-			ip = interpret_LOAD_ARRAY_ELEMENT (intr, ip);
+			ip = interpret_LOAD_ARRAY_ELEMENT (intr, ictx, ip);
 			break;
 		case WRITE_ARRAY_ELEMENT:
-			ip = interpret_WRITE_ARRAY_ELEMENT (intr, ip);
+			ip = interpret_WRITE_ARRAY_ELEMENT (intr, ictx, ip);
 			break;
 
 		case AZO_TC_GET_GLOBAL:
-			ip = interpret_GET_GLOBAL (intr, ip);
+			ip = interpret_GET_GLOBAL (intr, ictx, ip);
 			break;
 		case AZO_TC_GET_PROPERTY:
-			ip = interpret_GET_PROPERTY (intr, ip);
+			ip = interpret_GET_PROPERTY (intr, ictx, ip);
 			break;
 		case AZO_TC_GET_FUNCTION:
-			ip = interpret_GET_FUNCTION (intr, ip);
+			ip = interpret_GET_FUNCTION (intr, ictx, ip);
 			break;
 		case AZO_TC_SET_PROPERTY:
-			ip = interpret_SET_PROPERTY (intr, ip);
+			ip = interpret_SET_PROPERTY (intr, ictx, ip);
 			break;
 		case AZO_TC_GET_STATIC_PROPERTY:
-			ip = interpret_GET_STATIC_PROPERTY (intr, ip);
+			ip = interpret_GET_STATIC_PROPERTY (intr, ictx, ip);
 			break;
 		case AZO_TC_GET_STATIC_FUNCTION:
-			ip = interpret_GET_STATIC_FUNCTION (intr, ip);
+			ip = interpret_GET_STATIC_FUNCTION (intr, ictx, ip);
 			break;
 		case AZO_TC_GET_ATTRIBUTE:
-			ip = interpret_GET_ATTRIBUTE (intr, ip);
+			ip = interpret_GET_ATTRIBUTE (intr, ictx, ip);
 			break;
 		case AZO_TC_SET_ATTRIBUTE:
-			ip = interpret_SET_ATTRIBUTE (intr, ip);
+			ip = interpret_SET_ATTRIBUTE (intr, ictx, ip);
 			break;
 
 		case NOP:

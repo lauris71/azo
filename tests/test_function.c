@@ -163,28 +163,27 @@ test_function(void)
 	vals[3].int32_v = 3;
 	arg_vals[3] = &vals[3];
 	const char *arg_names[] = {"bofs", "ofs", "a_i32", "b_i32"};
+    const AZImplementation *ret_impl;
+    AZValue ret_val;
 
 	/* Simple program runs */
     {
         print_tree = 0;
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, simple_src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
         TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
         print_tree = 0;
     }
     {
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
-        TEST_ASSERT(test_program_with_this(globals, simple_src2, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        static const char *src = ""
+            "any func = (int32 i) int32 => i;\n"
+            "return func(425);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
         TEST_ASSERT_EQUAL_INT(425, ret_val.int32_v);
     }
 	/* Multiple variables */
     {
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, function_src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
         TEST_ASSERT_EQUAL_INT(128, ret_val.int32_v);
@@ -204,8 +203,6 @@ test_function(void)
             "};\n"
             "test();\n";
 		az_buffer_output_stream_reset(bostream);
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
@@ -228,8 +225,6 @@ test_function(void)
             "};\n"
             "test();\n";
 		az_buffer_output_stream_reset(bostream);
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
         int32_t this_val = 42;
         TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), &this_val, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
@@ -254,8 +249,6 @@ test_function(void)
             "test();\n"
             "}\n";
 		az_buffer_output_stream_reset(bostream);
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
@@ -271,8 +264,6 @@ test_function(void)
             "};\n"
             "print_tobj_i32(42);\n";
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
@@ -285,11 +276,146 @@ test_function(void)
             "};\n"
             "print_tobj_i32(42);\n";
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_INVALID_VALUE, globals->az_ctx.exc.type);
+    }
+    /* Attribute functions */
+    /* Calling missing attribute throws NULL_DEREFERENCE */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj->doSomething(1,2,3);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NULL_DEREFERENCE, globals->az_ctx.exc.type);
+    }
+    /* Calling non-function throws INVALID_TYPE */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj->doSomething = \"Do something!\";\n"
+            "tobj->doSomething(1,2,3);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_INVALID_TYPE, globals->az_ctx.exc.type);
+    }
+    /* Calling with wrong signature throws SIGNATURE_MISMATCH */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj->doSomething = (int32 arg) => {return arg;};\n"
+            "tobj->doSomething(1,2,3);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_SIGNATURE_MISMATCH, globals->az_ctx.exc.type);
+    }
+    /* Calling with exact signature suceeds */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj->doSomething = (int32 arg) int32 => {return arg;};\n"
+            "return tobj->doSomething(123);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
+        TEST_ASSERT_EQUAL_INT32(ret_val.int32_v, 123);
+    }
+    /* Attribute lambda signature is exact */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj->doSomething = (int32 arg) int32 => {return arg;};\n"
+            "function f = tobj->doSomething;\n"
+            "return f(123);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
+        TEST_ASSERT_EQUAL_INT32(ret_val.int32_v, 123);
+    }
+    /* Calling static with exact signature suceeds */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "function doSomething = (int32 arg) int32 => {return arg;};\n"
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj->doSomething = doSomething;\n"
+            "return tobj->doSomething(123);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
+        TEST_ASSERT_EQUAL_INT32(ret_val.int32_v, 123);
+    }
+    /* Calling static with method signature suceeds */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "function doSomething = (TestObject tobj, int32 arg) int32 => {return arg;};\n"
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj->doSomething = doSomething;\n"
+            "return tobj->doSomething(123);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
+        TEST_ASSERT_EQUAL_INT32(ret_val.int32_v, 123);
+    }
+    /* new TestObject("Hello") */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "bofs.print(tobj.text);\n";
+		az_buffer_output_stream_reset(bostream);
+        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
+        char *str = strndup((const char *) bostream->buffer, bostream->pos);
+        fprintf(stderr, "Output: %s\n", str);
+        TEST_ASSERT_EQUAL_STRING("Hello", str);
+        free(str);
+    }
+    /* Explicit static call */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = TestObject.build(\"Hello\");\n"
+            "bofs.print(tobj.text);\n";
+		az_buffer_output_stream_reset(bostream);
+        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
+        char *str = strndup((const char *) bostream->buffer, bostream->pos);
+        fprintf(stderr, "Output: %s\n", str);
+        TEST_ASSERT_EQUAL_STRING("built: Hello", str);
+        free(str);
+    }
+    /* Set and property member with full signature and call as member */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj.print_tobj_i32 = (TestObject tobj, int32 arg) => {bofs.print(arg + 5);};\n"
+            "tobj.print_tobj_i32(37);\n";
+		az_buffer_output_stream_reset(bostream);
+        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
+        char *str = strndup((const char *) bostream->buffer, bostream->pos);
+        fprintf(stderr, "Output: %s\n", str);
+        TEST_ASSERT_EQUAL_STRING("42", str);
+        free(str);
     }
     /* A complex program */
     {
@@ -304,8 +430,6 @@ test_function(void)
             "cnt({2, 4, 6, 7, 9});\n";
 		az_buffer_output_stream_reset(bostream);
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
@@ -313,25 +437,7 @@ test_function(void)
         TEST_ASSERT_EQUAL_STRING("false true false true false true true false true false ", str);
         free(str);
     }
-    /* new TestObject("Hello") */
-    {
-        print_tree = 0;
-        print_bytecode = 0;
-        static const char *src =
-            "TestObject tobj = new TestObject(\"Hello\");\n"
-            "bofs.print(tobj.text);\n";
-		az_buffer_output_stream_reset(bostream);
-        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
-        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
-        char *str = strndup((const char *) bostream->buffer, bostream->pos);
-        fprintf(stderr, "Output: %s\n", str);
-        TEST_ASSERT_EQUAL_STRING("Hello", str);
-        free(str);
-    }
-    /* new TestObject("Hello") */
+    /* A bit more complex call */
     {
         print_tree = 0;
         print_bytecode = 0;
@@ -353,31 +459,11 @@ test_function(void)
             "find (odd);\n";
 		az_buffer_output_stream_reset(bostream);
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
         TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         char *str = strndup((const char *) bostream->buffer, bostream->pos);
         fprintf(stderr, "Output: %s\n", str);
         TEST_ASSERT_EQUAL_STRING("true false true false true ", str);
-        free(str);
-    }
-    /* Explicit static call */
-    {
-        print_tree = 0;
-        print_bytecode = 0;
-        static const char *src =
-            "TestObject tobj = TestObject.build(\"Hello\");\n"
-            "bofs.print(tobj.text);\n";
-		az_buffer_output_stream_reset(bostream);
-        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
-        const AZImplementation *ret_impl;
-        AZValue ret_val;
-        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
-        TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
-        char *str = strndup((const char *) bostream->buffer, bostream->pos);
-        fprintf(stderr, "Output: %s\n", str);
-        TEST_ASSERT_EQUAL_STRING("built: Hello", str);
         free(str);
     }
 }

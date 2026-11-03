@@ -298,7 +298,12 @@ enum {
 	 * @brief First property lookup, then attribute lookup
 	 * 
 	 */
-	AZO_TERM_FUNCTION_CALL_PROPERTY_OR_ATTRIBUTE
+	AZO_TERM_FUNCTION_CALL_PROPERTY_OR_ATTRIBUTE,
+	/**
+	 * @brief Static function call (class property without instance)
+	 * 
+	 */
+	AZO_TERM_FUNCTION_CALL_STATIC
 };
 
 /* Variable subtypes */

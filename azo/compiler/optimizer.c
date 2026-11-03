@@ -986,17 +986,17 @@ azo_compiler_optimize_program(AZOOptimizer *opt, AZOOptimizerCtx *ctx, AZONode *
 	assert(AZO_NODE_IS(root, AZO_TERM_PROGRAM, AZO_TERM_GENERIC));
 	unsigned int iter = 0;
 	do {
-		fprintf(stderr, "---- Optimizer iteration %d ------\n", iter++);
+		DBG_PRINTF(stderr, "---- Optimizer iteration %d ------\n", iter++);
 		opt->n_const_subst = 0;
 		int result = optimize_chain(opt, ctx, root->children, flags);
 		if (result) return result;
-		// fprintf(stderr, "----------before--------------\n");
+		// DBG_PRINTF(stderr, "----------before--------------\n");
 		//azo_node_print_info(root, stderr, opt->comp->src, 0);
 		AZOVariableList *vars = optimize_const_assign(opt, ctx, root, NULL);
-		//fprintf(stderr, "----------after---------------\n");
+		//DBG_PRINTF(stderr, "----------after---------------\n");
 		//azo_node_print_info(root, stderr, opt->comp->src, 0);
 		azo_var_list_free(vars);
-		fprintf(stderr, "---- Num substitutions %d ------\n", opt->n_const_subst);
+		DBG_PRINTF(stderr, "---- Num substitutions %d ------\n", opt->n_const_subst);
 	} while (opt->n_const_subst > 0);
 	return 0;
 }

@@ -45,24 +45,24 @@ describe(FILE *ofs, const char *text, const AZString *name, const AZImplementati
 }
 
 static const AZImplementation *
-resolve_type_chain(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, AZValue *val)
+resolve_type_chain(AZOCompiler *comp, AZOResolveCtx *rctx, unsigned int silent, AZONode *node, AZValue *val)
 {
 	if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE)) {
 		const AZImplementation *impl = azo_context_lookup (comp->globals, node->value.v.string, val, AZ_VALUE_MAX_SIZE);
 		if (!impl) {
-			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Global variable %s is not defined\n", node->value.v.string->str);
+			if (!silent) azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Global variable %s is not defined\n", node->value.v.string->str);
 		}
 		return impl;
 	} else if (AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
 		AZONode *parent = node->children;
 		AZONode *member = parent->next;
 		AZValue parent_val;
-		const AZImplementation *parent_impl = resolve_type_chain(comp, rctx, parent, &parent_val);
+		const AZImplementation *parent_impl = resolve_type_chain(comp, rctx, silent, parent, &parent_val);
 		if (!parent_impl) return NULL;
 		void *adict_inst;
 		const AZImplementation *adict_impl = az_instance_get_interface(parent_impl, az_value_get_inst(parent_impl, &parent_val), AZ_TYPE_ATTRIBUTE_DICT, &adict_inst);
 		if (!adict_impl) {
-			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, parent->term.start, parent->term.end, "Parent is not an attribute dictionary\n");
+			if (!silent) azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, parent->term.start, parent->term.end, "Parent is not an attribute dictionary\n");
 			az_value_clear(parent_impl, &parent_val);
 			return NULL;
 		}
@@ -70,22 +70,22 @@ resolve_type_chain(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node, AZValu
 		const AZImplementation *impl = az_attrib_dict_lookup((const AZAttribDictImplementation *) adict_impl, (AZAttribDict *) adict_inst, member->value.v.string, val, AZ_PACKED_VALUE_MAX_SIZE, &adict_flags);
 		az_value_clear(parent_impl, &parent_val);
 		if (!impl) {
-			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, member->term.start, member->term.end, "Property %s is not defined\n", member->value.v.string->str);
+			if (!silent) azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, member->term.start, member->term.end, "Property %s is not defined\n", member->value.v.string->str);
 		}
 		return impl;
 	}
-	azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Node type not supported\n");
+	if (!silent) azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Node type not supported\n");
 	return NULL;
 }
 
 int
-azo_compiler_resolve_type_expression(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
+azo_compiler_resolve_type_expression(AZOCompiler *comp, AZOResolveCtx *rctx, unsigned int silent, AZONode *node)
 {
 	AZValue val;
-	const AZImplementation *impl = resolve_type_chain(comp, rctx, node, &val);
+	const AZImplementation *impl = resolve_type_chain(comp, rctx, silent, node, &val);
 	if (!impl) return 1;
 	if (AZ_IMPL_TYPE(impl) != AZ_TYPE_CLASS) {
-		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Expression is not a class type\n");
+		if (!silent) azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Expression is not a class type\n");
 		az_value_clear(impl, &val);
 		return 1;
 	}

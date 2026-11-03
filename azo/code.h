@@ -123,6 +123,12 @@ azo_code_write_REMOVE (AZOCode *code, unsigned int first, unsigned int n_values,
 }
 
 static inline void
+azo_code_write_ROLL (AZOCode *code, unsigned int pos, const AZONode *expr)
+{
+	azo_code_write_ic_u32(code, AZO_TC_ROLL, pos, expr);
+}
+
+static inline void
 azo_code_write_PUSH_EMPTY (AZOCode *code, uint32_t type, const AZONode *expr)
 {
 	azo_code_write_ic_u32 (code, AZO_TC_PUSH_EMPTY, type, expr);

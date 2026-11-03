@@ -352,34 +352,6 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 	return 1;
 }
 
-
-static unsigned int
-compile_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, const AZONode *list, AZOSource *src)
-{
-	unsigned int is_function;
-	unsigned int n_args;
-	AZONode *child;
-	AZOCode *code = &ctx->frame->code;
-	/* [func] */
-	if (!az_type_is_a (func->type, AZ_TYPE_FUNCTION)) {
-		azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, func);
-	}
-	n_args = 0;
-	/* [func, this] */
-	for (child = list->children; child; child = child->next) {
-		azo_compiler_compile_expression (comp, ctx, child, src);
-		n_args += 1;
-		if (n_args > 32) {
-			fprintf(stderr, "Too many function arguments: %d\n", n_args);
-			return 1;
-		}
-	}
-	/* [func, this, arg1...] */
-	azo_code_write_ic_u8 (code, AZO_TC_INVOKE, n_args, func);
-	/* [retval] */
-	return 0;
-}
-
 static void
 compile_call_inst_func_args (AZOCompiler *comp, AZOCompilerContext *ctx, unsigned int n_args, const AZONode *expr)
 {
@@ -392,14 +364,14 @@ compile_call_inst_func_args (AZOCompiler *comp, AZOCompilerContext *ctx, unsigne
 }
 
 static unsigned int
-compile_call_property (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, const AZONode *list, AZOSource *src)
+compile_call_property_or_attribute (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, const AZONode *list, AZOSource *src)
 {
 	unsigned int is_member_function, is_class, not_active_obj, no_static_function, invalid_type, finished, finished_2, finished_3;
 	AZOCode *code = &ctx->frame->code;
 
-	/* Instance, String */
+	/* [inst, name] */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, 1, func);
-	/* Instance, String, This */
+	/* [inst, name, inst] */
 	unsigned int n_args = 1;
 	for (const AZONode *child = list->children; child; child = child->next) {
 		azo_compiler_compile_expression (comp, ctx, child, src);
@@ -471,6 +443,115 @@ compile_call_property (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 	return 1;
 }
 
+static unsigned int
+compile_call_static (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *inst, const AZONode *name, const AZONode *list, AZOSource *src)
+{
+	unsigned int not_exact_sig, finished;
+	AZOCode *code = &ctx->frame->code;
+
+	/* [inst, name] */
+	//azo_compiler_write_DEBUG_STRING(comp, ctx, "static", name);
+	//azo_compiler_write_DEBUG_STACK(comp, ctx, name);
+	unsigned int n_args = 0;
+	for (const AZONode *child = list->children; child; child = child->next) {
+		azo_compiler_compile_expression (comp, ctx, child, src);
+		n_args += 1;
+	}
+	/* [inst, name, arg1...] */
+	azo_code_write_GET_STATIC_FUNCTION(code, n_args, name);
+	/* [inst, name, arg1..., func|null] */
+	azo_code_compile_type_is_immediate(code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_exact_sig, NULL, name);
+
+	/* Function property with exact signature */
+	/* [inst, name, arg1..., func] */
+	/* fixme: If we can ensure that properties store strict interfaces we can omit this */
+	azo_code_write_ic_u32(code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, name);
+	/* [inst, name, arg1..., func] */
+	azo_code_write_REMOVE(code, n_args + 1, 2, name);
+	/* [arg1..., func] */
+	if (n_args) {
+		azo_code_write_ROLL(code, n_args, name);
+	}
+	/* [func, arg1...] */
+	azo_code_write_ic_u8(code, AZO_TC_INVOKE, n_args, name);
+	/* [retval] */
+	finished = azo_code_write_JMP32 (code, JMP_32, 0, name);
+
+	/* [inst, inst, name, arg1..., null] */
+	azo_code_update_JMP32 (code, not_exact_sig);
+	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_PROPERTY, name);
+	azo_code_update_JMP32 (code, finished);
+	return 1;
+}
+
+static unsigned int
+compile_call_property (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *inst, const AZONode *name, const AZONode *list, AZOSource *src)
+{
+	unsigned int not_exact_sig, not_member_sig, finished, finished_2;
+	unsigned int is_member_function, is_class, not_active_obj, no_static_function, invalid_type, finished_3;
+	AZOCode *code = &ctx->frame->code;
+
+	/* [inst, name] */
+	unsigned int n_args = 0;
+	for (const AZONode *child = list->children; child; child = child->next) {
+		azo_compiler_compile_expression (comp, ctx, child, src);
+		n_args += 1;
+	}
+	/* [inst, name, arg1...] */
+	azo_code_write_GET_FUNCTION(code, n_args, name);
+	/* [inst, name, arg1..., func|null] */
+	azo_code_compile_type_is_immediate(code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_exact_sig, NULL, name);
+
+	/* Function property with exact signature */
+	/* [inst, name, arg1..., func] */
+	/* fixme: If we can ensure that properties store strict interfaces we can omit this */
+	azo_code_write_ic_u32(code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, name);
+	/* [inst, name, arg1..., func] */
+	azo_code_write_REMOVE(code, n_args + 2, 2, name);
+	/* [arg1..., func] */
+	azo_code_write_ROLL(code, n_args + 1, name);
+	/* [func, arg1...] */
+	azo_code_write_ic_u8(code, AZO_TC_INVOKE, n_args, name);
+	/* [retval] */
+	finished = azo_code_write_JMP32 (code, JMP_32, 0, name);
+
+	/* Try member signature */
+	azo_code_update_JMP32 (code, not_exact_sig);
+	/* [inst, name, arg1..., null] */
+	azo_code_write_POP (code, 1, name);
+	/* [inst, name, arg1...] */
+	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, inst);
+	/* [inst, name, arg1..., inst] */
+	if (n_args) {
+		azo_code_write_ROLL(code, n_args, name);
+	}
+	/* [inst, name, inst, arg1...] */
+	azo_code_write_GET_FUNCTION(code, n_args + 1, name);
+	/* [inst, name, inst, arg1..., func|null] */
+	azo_code_compile_type_is_immediate(code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_member_sig, NULL, name);
+
+	/* Function property with member signature */
+	/* [inst, name, inst, arg1..., func] */
+	/* fixme: If we can ensure that properties store strict interfaces we can omit this */
+	azo_code_write_ic_u32(code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, name);
+	/* [inst, name, inst, arg1..., func] */
+	azo_code_write_REMOVE(code, n_args + 2, 2, name);
+	/* [inst, arg1..., func] */
+	azo_code_write_ROLL(code, n_args + 1, name);
+	/* [func, inst, arg1...] */
+	azo_code_write_ic_u8(code, AZO_TC_INVOKE, n_args + 1, name);
+	/* [retval] */
+	finished_2 = azo_code_write_JMP32 (code, JMP_32, 0, name);
+
+	// not_exact_sig
+	/* [inst, inst, name, arg1..., null] */
+	azo_code_update_JMP32 (code, not_member_sig);
+	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_PROPERTY, name);
+	azo_code_update_JMP32 (code, finished);
+	azo_code_update_JMP32 (code, finished_2);
+	return 1;
+}
+
 /*
  * compile_call_attribute - call a function stored as an attribute
  *
@@ -486,13 +567,14 @@ compile_call_attribute (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, 1, inst);
 	/* [inst, name, inst] */
 	if (!az_type_is_a(inst->type, AZ_TYPE_ATTRIBUTE_DICT)) {
-		azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_LIST, inst);
+		azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_ATTRIBUTE_DICT, inst);
 	}
 	/* [inst, name, adict] */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_EXCHANGE, 1, name);
 	/* [inst, adict, name] */
 	azo_code_write_GET_ATTRIBUTE(code, name);
 	/* [inst, value|null] */
+	/* Get interface throws on null */
 	azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, name);
 	/* [inst, function */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_EXCHANGE, 1, name);
@@ -554,6 +636,78 @@ compile_new (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *klass, c
 	/* Finished */
 	azo_code_update_JMP32 (code, finished);
 
+	return 1;
+}
+
+static unsigned int
+compile_function_call_member (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
+{
+	AZONode *base = node->children;
+	AZONode *name = base->next;
+	AZONode *list = name->next;
+	if (!azo_compiler_compile_expression (comp, ctx, base, src)) return 0;
+	compile_PUSH_VALUE_const_string (comp, ctx, name->value.v.string, name);
+	/* instance, key */
+	switch (node->term.subtype) {
+		case AZO_TERM_FUNCTION_CALL_PROPERTY:
+			compile_call_property(comp, ctx, base, name, list, src);
+			break;
+		case AZO_TERM_FUNCTION_CALL_ATTRIBUTE:
+			compile_call_attribute(comp, ctx, base, name, list, src);
+			break;
+		case AZO_TERM_FUNCTION_CALL_PROPERTY_OR_ATTRIBUTE:
+			compile_call_property_or_attribute(comp, ctx, node, list, src);
+			break;
+		case AZO_TERM_FUNCTION_CALL_STATIC:
+			compile_call_static(comp, ctx, base, name, list, src);
+			break;
+		default:
+			fprintf (stderr, "compile_function_call_member: Unknown function call type %u\n", node->term.subtype);
+			return 0;
+	}
+	return 1;
+}
+
+static unsigned int
+compile_call_plain (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, const AZONode *list, AZOSource *src)
+{
+	AZOCode *code = &ctx->frame->code;
+	if (!azo_compiler_compile_expression(comp, ctx, func, src)) return 0;
+	/* [func] */
+	if (!az_type_is_a (func->type, AZ_TYPE_FUNCTION)) {
+		azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, func);
+	}
+	unsigned int n_args = 0;
+	/* [func, this] */
+	for (AZONode *child = list->children; child; child = child->next) {
+		azo_compiler_compile_expression (comp, ctx, child, src);
+		n_args += 1;
+		if (n_args > 32) {
+			fprintf(stderr, "Too many function arguments: %d\n", n_args);
+			return 1;
+		}
+	}
+	/* [func, this, arg1...] */
+	azo_code_write_ic_u8 (code, AZO_TC_INVOKE, n_args, func);
+	/* [retval] */
+	return 0;
+}
+
+static unsigned int
+compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src, unsigned int silent)
+{
+	AZOCode *code = &ctx->frame->code;
+	if (node->term.subtype == AZO_TERM_FUNCTION_CALL_PLAIN) {
+		AZONode *func = node->children;
+		AZONode *list = func->next;
+		unsigned int result = compile_call_plain (comp, ctx, func, list, src);
+		if (result) return 0;
+	} else {
+		if (!compile_function_call_member (comp, ctx, node, src)) return 0;
+	}
+	if (silent) {
+		azo_code_write_POP (code, 1, node);
+	}
 	return 1;
 }
 
@@ -652,51 +806,6 @@ compile_suffix (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 	return 1;
 }
 
-static unsigned int
-compile_function_call_member (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
-{
-	AZONode *base = node->children;
-	AZONode *name = base->next;
-	AZONode *list = name->next;
-	if (!azo_compiler_compile_expression (comp, ctx, base, src)) return 0;
-	compile_PUSH_VALUE_const_string (comp, ctx, name->value.v.string, name);
-	/* instance, key */
-	switch (node->term.subtype) {
-		case AZO_TERM_FUNCTION_CALL_PROPERTY:
-			compile_call_property (comp, ctx, node, list, src);
-			break;
-		case AZO_TERM_FUNCTION_CALL_ATTRIBUTE:
-			compile_call_attribute (comp, ctx, base, name, list, src);
-			break;
-		case AZO_TERM_FUNCTION_CALL_PROPERTY_OR_ATTRIBUTE:
-			compile_call_property (comp, ctx, node, list, src);
-			break;
-		default:
-			fprintf (stderr, "compile_function_call_member: Unknown function call type %u\n", node->term.subtype);
-			return 0;
-	}
-	return 1;
-}
-
-static unsigned int
-compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src, unsigned int silent)
-{
-	AZOCode *code = &ctx->frame->code;
-	if (node->term.subtype == AZO_TERM_FUNCTION_CALL_PLAIN) {
-		AZONode *func = node->children;
-		AZONode *list = func->next;
-		if (!azo_compiler_compile_expression(comp, ctx, func, src)) return 0;
-		unsigned int result = compile_call (comp, ctx, func, list, src);
-		if (result) return 0;
-	} else {
-		if (!compile_function_call_member (comp, ctx, node, src)) return 0;
-	}
-	if (silent) {
-		azo_code_write_POP (code, 1, node);
-	}
-	return 1;
-}
-
 #define noDEBUG_FUNCTION
 
 static unsigned int
@@ -736,14 +845,12 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	/* program */
 	if (func_frame->this_is_captured) {
 		// fixme: This should be fetched from context
-		fprintf(stderr, "This is captured\n");
 		compile_this(comp, ctx, node, src);
 		/* program [this] */
 	}
 	for (AZOVariableList *list = func_frame->parent_vars; list; list = list->next) {
 		/* list->var.parent is variable in *current* frame */
 		AZOVariable *var = list->var.parent;
-		fprintf(stderr, "%s is captured\n", var->name->str);
 		if (var->parent) {
 			azo_code_write_PUSH_CAPTURE(code, var->pos, node);
 		} else if (var->flags & AZO_VARIABLE_FLAG_STATIC) {

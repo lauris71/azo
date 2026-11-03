@@ -337,24 +337,23 @@ resolve_new (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	AZONode *args = type->next;
 	assert (!args->next);
 
-	unsigned int result = azo_compiler_resolve_type_expression(comp, rctx, type);
+	unsigned int result = azo_compiler_resolve_type_expression(comp, rctx, 0, type);
+	if (result) return result;
+	result = azo_compiler_resolve_node(comp, rctx, args);
 	if (result) return result;
 
-	/* Replace with: FUNCTION_CALL->(REF_MEMBER(TYPE,new), ARGS) */
+	/* Replace with: FUNCTION_CALL(STATIC)->(class, "new", ARGS) */
 	type->term.type = AZO_TERM_CONSTANT;
 	az_packed_value_set(&type->value, AZ_IMPL_FROM_TYPE(AZ_TYPE_CLASS), AZ_CLASS_FROM_TYPE(type->type));
 	type->type = AZ_TYPE_CLASS;
-	AZONode *str = azo_node_new(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER, node->term.start, node->term.end);
-	az_packed_value_set_string(&str->value, azo_keyword_str(AZO_KEYWORD_NEW));
-	AZONode *ref = azo_node_new_with_children(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY, node->term.start, type->term.end, 2, type, str);
-	ref->next = args;
-	node->children = ref;
+	AZONode *name = azo_node_new(AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER, node->term.start, node->term.end);
+	az_packed_value_set_string(&name->value, azo_keyword_str(AZO_KEYWORD_NEW));
+	type->next = name;
+	name->next = args;
 	node->term.type = AZO_TERM_FUNCTION_CALL;
-
-	/* We create plain call and re-invoke resolver to resolve it into a proper reference variant */
-	node->term.subtype = AZO_TERM_FUNCTION_CALL_PLAIN;
+	node->term.subtype = AZO_TERM_FUNCTION_CALL_STATIC;
 	az_packed_value_clear(&node->value);
-	return azo_compiler_resolve_node(comp, rctx, node);
+	return 0;
 }
 
 static unsigned int
@@ -411,7 +410,7 @@ resolve_declaration_list (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	unsigned int result;
 	AZONode *type = expr->children;
 	AZONode *child = type->next;
-	result = azo_compiler_resolve_type_expression(comp, rctx, type);
+	result = azo_compiler_resolve_type_expression(comp, rctx, 0, type);
 	if (result) return result;
 	unsigned int resolved_type = type->type;
 	for (child = type->next; child; child = child->next) {
@@ -429,7 +428,7 @@ resolve_argument_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *e
 	AZONode *type = expr->children;
 	AZONode *child = type->next;
 	if (type->term.type != AZO_TERM_EMPTY) {
-		result = azo_compiler_resolve_type_expression(comp, rctx, type);
+		result = azo_compiler_resolve_type_expression(comp, rctx, 0, type);
 		if (result) return result;
 		// fixme: Use type
 	}
@@ -450,7 +449,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 		ret_type->term.type = AZO_TERM_TYPE;
 		ret_type->type = AZ_TYPE_NONE;
 	} else {
-		result = azo_compiler_resolve_type_expression(comp, rctx, ret_type);
+		result = azo_compiler_resolve_type_expression(comp, rctx, 0, ret_type);
 		if (result) return result;
 	}
 
@@ -467,7 +466,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 			type->term.type = AZO_TERM_CONSTANT;
 			type->type = AZ_TYPE_ANY;
 		} else {
-			result = azo_compiler_resolve_type_expression(comp, rctx, type);
+			result = azo_compiler_resolve_type_expression(comp, rctx, 0, type);
 			if (result) return result;
 		}
 		if (!AZO_NODE_IS(name, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE)) {
@@ -526,6 +525,25 @@ resolve_function_call (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, args->term.start, args->term.end, "Arguments node is not a list\n");
 		return 1;
 	}
+	if (AZO_NODE_IS(ref, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_PROPERTY)) {
+		AZONode *base = ref->children;
+		AZONode *name = base->next;
+		assert(!name->next);
+		unsigned int result = azo_compiler_resolve_type_expression(comp, rctx, 1, base);
+		if (!result) {
+			/* Reference resolves to type - static call */
+			result = azo_compiler_resolve_node (comp, rctx, args);
+			if (result) return result;
+			base->term.type = AZO_TERM_CONSTANT;
+			az_packed_value_set(&base->value, AZ_IMPL_FROM_TYPE(AZ_TYPE_CLASS), AZ_CLASS_FROM_TYPE(base->type));
+			base->type = AZ_TYPE_CLASS;
+			func->term.subtype = AZO_TERM_FUNCTION_CALL_STATIC;
+			func->children = base;
+			name->next = args;
+			azo_node_free(ref);
+			return 0;
+		}
+	}
 	unsigned int result = azo_compiler_resolve_reference (comp, rctx, ref);
 	if (result) return result;
 	result = azo_compiler_resolve_node (comp, rctx, args);
@@ -550,10 +568,12 @@ resolve_function_call (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 		AZONode *base = ref->children;
 		AZONode *name = base->next;
 		assert(!name->next);
-		func->term.subtype = AZO_TERM_FUNCTION_CALL_PROPERTY;
 		func->children = base;
 		name->next = args;
 		azo_node_free(ref);
+	} else {
+		assert(ref->term.type == AZO_TERM_VARIABLE);
+		assert(func->term.subtype == AZO_TERM_FUNCTION_CALL_PLAIN);
 	}
 
 	return 0;

@@ -98,6 +98,14 @@ enum {
 	 */
 	AZO_TC_EXCHANGE,
 	/**
+	 * @brief Inserts the topmost element in stack into given position
+	 * 
+	 * [val1, ..., val_n1, val_n]
+	 * ROLL U32:POS
+	 * [val_n, val1, ..., val_n1]
+	 */
+	AZO_TC_ROLL,
+	/**
 	 * @brief Exchanges frame-relative element with the top of stack
 	 * 
 	 * [...; ..., val1, ..., val2]

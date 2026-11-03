@@ -200,7 +200,7 @@ test_resolver(void)
         unsigned int n = azo_node_flatten(tree, nodes, 16);
         TEST_ASSERT_EQUAL_UINT(9, n);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL, nodes[2]->term.type);
-        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL_PROPERTY, nodes[2]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION_CALL_STATIC, nodes[2]->term.subtype);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_CONSTANT, nodes[3]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE, nodes[4]->term.type);
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_REFERENCE_MEMBER, nodes[4]->term.subtype);

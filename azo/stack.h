@@ -79,6 +79,14 @@ void azo_stack_exchange_bw (AZOStack *stack, unsigned int pos_from_last)
 	azo_stack_exchange (stack, stack->length - 1 - pos_from_last);
 }
 
+/* Move-insert the last element to given position */
+void azo_stack_roll (AZOStack *stack, unsigned int pos);
+ARIKKEI_INLINE
+void azo_stack_roll_bw (AZOStack *stack, unsigned int pos_from_last)
+{
+	azo_stack_roll (stack, stack->length - 1 - pos_from_last);
+}
+
 /* Change type of value */
 unsigned int azo_stack_convert (AZOStack *stack, unsigned int pos, unsigned int to_type);
 ARIKKEI_INLINE

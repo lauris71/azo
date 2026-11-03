@@ -27,7 +27,7 @@ int azo_compiler_resolve_reference(AZOCompiler *comp, AZOResolveCtx *rct, AZONod
  * @param flags Resolver flags
  * @return int 0 on success, non-zero on error
  */
-int azo_compiler_resolve_type_expression(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node);
+int azo_compiler_resolve_type_expression(AZOCompiler *comp, AZOResolveCtx *rctx, unsigned int silent, AZONode *node);
 
 #ifdef __cplusplus
 }

@@ -99,7 +99,15 @@ stack_ensure_size (AZOStack *stack, unsigned int n_entries, unsigned int data_si
 	if ((stack->values[stack->length].ptr + data_size) >= (stack->data + stack->data_size)) {
 		stack->data_size = stack->data_size << 1;
 		if ((stack->values[stack->length].ptr + data_size) >= (stack->data + stack->data_size)) stack->data_size = stack->data_size + data_size;
+		unsigned char *old_data = stack->data;
 		stack->data = (unsigned char *) realloc (stack->data, stack->data_size);
+		/* If the block moved, readjust all value pointers */
+		if (stack->data != old_data) {
+			ptrdiff_t delta = stack->data - old_data;
+			for (unsigned int i = 0; i <= stack->length; i++) {
+				stack->values[i].ptr += delta;
+			}
+		}
 	}
 }
 
@@ -129,23 +137,22 @@ azo_stack_pop (AZOStack *stack, unsigned int n_data)
 void
 azo_stack_remove (AZOStack *stack, unsigned int first, unsigned int n_data)
 {
-	unsigned int i;
 	arikkei_return_if_fail ((first + n_data) <= stack->length);
-	for (i = 0; i < n_data; i++) {
+	for (unsigned int i = 0; i < n_data; i++) {
 		az_value_clear (azo_stack_impl (stack, first + i), azo_stack_value (stack, first + i));
 	}
 	if ((first + n_data) < stack->length) {
 		unsigned int n_tail = stack->length - (first + n_data);
-		const unsigned char *start;
+		unsigned char *start;
 		if (first > 0) {
-			start = (const unsigned char *) azo_stack_value(stack, first - 1) + STACK_IMPL_VALUE_SIZE(azo_stack_impl(stack, first - 1));
+			start = stack->values[first - 1].ptr + STACK_IMPL_VALUE_SIZE(stack->impls[first - 1]);
 		} else {
 			start = stack->data;
 		}
-		const unsigned char *mid = (const unsigned char *) azo_stack_value (stack, first + n_data);
-		const unsigned char *end = (const unsigned char *) azo_stack_value (stack, stack->length);
-		memmove ((unsigned char *) start, mid, end - mid);
-		for (i = 0; i <= n_tail; i++) {
+		unsigned char *mid = stack->values[first + n_data].ptr;
+		unsigned char *end = stack->values[stack->length].ptr;
+		memmove(start, mid, end - mid);
+		for (unsigned int i = 0; i <= n_tail; i++) {
 			stack->impls[first + i] = stack->impls[first + n_data + i];
 			stack->values[first + i].ptr = stack->values[first + n_data + i].ptr - (mid - start);
 		}
@@ -236,52 +243,68 @@ azo_stack_exchange (AZOStack *stack, unsigned int pos)
 	size_a = STACK_IMPL_VALUE_SIZE(azo_stack_impl(stack, pos));
 	size_b = STACK_IMPL_VALUE_SIZE(azo_stack_impl(stack, stack->length - 1));
 	if (size_a == size_b) {
-		stack_ensure_size (stack, 1, size_a);
-		memcpy (azo_stack_value (stack, stack->length), azo_stack_value (stack, pos), size_a);
-		memcpy (azo_stack_value (stack, pos), azo_stack_value (stack, stack->length - 1), size_b);
-		memcpy (azo_stack_value (stack, stack->length - 1), azo_stack_value (stack, stack->length), size_a);
-
-		impl = stack->impls[pos];
-		stack->impls[pos] = stack->impls[stack->length - 1];
-		stack->impls[stack->length - 1] = impl;
+		/* Sizes are equal, swap positions */
+		stack_ensure_size (stack, 0, size_a);
+		/* Copy A to the end of stack  */
+		memcpy(stack->values[stack->length].ptr, stack->values[pos].ptr, size_a);
+		/* Copy B to A-s position */
+		memcpy(stack->values[pos].ptr, stack->values[stack->length - 1].ptr, size_b);
+		/* Copy A to the original B-s position */
+		memcpy(stack->values[stack->length - 1].ptr, stack->values[stack->length].ptr, size_a);
 	} else if (size_a > size_b) {
-		unsigned int i;
+		/* SIZE(A) > SIZE(B), values have to be shifted left */
 		unsigned int shift = size_a - size_b;
 		stack_ensure_size (stack, 0, size_a);
-		/* Copy A to end of stack  */
-		memcpy (stack->values[stack->length].ptr, stack->values[pos].ptr, size_a);
+		/* Copy A to the end of stack  */
+		memcpy(stack->values[stack->length].ptr, stack->values[pos].ptr, size_a);
 		/* Copy B to A-s position */
-		memcpy (stack->values[pos].ptr, stack->values[stack->length - 1].ptr, size_b);
+		memcpy(stack->values[pos].ptr, stack->values[stack->length - 1].ptr, size_b);
 		/* Shift remainder left  */
-		memcpy (stack->values[pos + 1].ptr - shift, stack->values[pos + 1].ptr, stack->values[stack->length - 1].ptr - stack->values[pos + 1].ptr);
-		/* Copy B to len - 1 */
-		memcpy (stack->values[stack->length - 1].ptr - shift, stack->values[stack->length].ptr, size_a);
+		memmove(stack->values[pos + 1].ptr - shift, stack->values[pos + 1].ptr, stack->values[stack->length - 1].ptr - stack->values[pos + 1].ptr);
+		/* Copy A to the new last position */
+		memmove (stack->values[stack->length - 1].ptr - shift, stack->values[stack->length].ptr, size_a);
 		/* Shift entries */
-		for (i = pos + 1; i <= stack->length; i++) stack->values[i].ptr -= shift;
-
-		impl = stack->impls[pos];
-		stack->impls[pos] = stack->impls[stack->length - 1];
-		stack->impls[stack->length - 1] = impl;
+		for (unsigned i = pos + 1; i <= stack->length; i++) stack->values[i].ptr -= shift;
 	} else {
 		unsigned int i;
 		unsigned int shift = size_b - size_a;
 		/* Ensure we have shift + size_a free space */
 		stack_ensure_size (stack, 0, size_b);
-		/* 1: Shift [a+1 - end) right */
-		memcpy (stack->values[pos + 1].ptr + shift, stack->values[pos + 1].ptr, stack->values[stack->length].ptr - stack->values[pos + 1].ptr);
-		/* 2: Copy A to end of shifted stack  */
+		/* Shift right to make room for B at A-s position */
+		memmove(stack->values[pos + 1].ptr + shift, stack->values[pos + 1].ptr, stack->values[stack->length].ptr - stack->values[pos + 1].ptr);
+		/* Copy A to the end of shifted stack  */
 		memcpy (stack->values[stack->length].ptr + shift, stack->values[pos].ptr, size_a);
-		/* 3: Copy shifted B to A */
+		/* Copy shifted B to A-s position */
 		memcpy (stack->values[pos].ptr, stack->values[stack->length - 1].ptr + shift, size_b);
-		/* Copy A to len - 1 */
+		/* Copy A to the new last position */
 		memcpy (stack->values[stack->length - 1].ptr + shift, stack->values[stack->length].ptr + shift, size_a);
-
 		/* Shift entries */
 		for (i = pos + 1; i <= stack->length; i++) stack->values[i].ptr += shift;
+	}
+	impl = stack->impls[pos];
+	stack->impls[pos] = stack->impls[stack->length - 1];
+	stack->impls[stack->length - 1] = impl;
+}
 
-		impl = stack->impls[pos];
-		stack->impls[pos] = stack->impls[stack->length - 1];
-		stack->impls[stack->length - 1] = impl;
+void
+azo_stack_roll (AZOStack *stack, unsigned int pos)
+{
+	arikkei_return_if_fail (pos < stack->length - 1);
+	unsigned int size_last = STACK_IMPL_VALUE_SIZE (stack->impls[stack->length - 1]);
+	/* Ensure scratch space beyond the current end of values */
+	stack_ensure_size (stack, 0, size_last);
+	/* Shift everything from pos right by the rolled element's size: the elements
+	 * pos..length-2 move up one slot and the rolled element lands at the end */
+	memmove (stack->values[pos].ptr + size_last, stack->values[pos].ptr, stack->values[stack->length].ptr - stack->values[pos].ptr);
+	/* Move the rolled element from the end to pos */
+	memcpy (stack->values[pos].ptr, stack->values[stack->length].ptr, size_last);
+	/* Roll the implementation slot */
+	const AZImplementation *impl = stack->impls[stack->length - 1];
+	memmove (&stack->impls[pos + 1], &stack->impls[pos], (stack->length - 1 - pos) * sizeof (const AZImplementation *));
+	stack->impls[pos] = impl;
+	/* Recompute value offsets from pos + 1 onwards */
+	for (unsigned int i = pos + 1; i <= stack->length; i++) {
+		stack->values[i].ptr = stack->values[i - 1].ptr + STACK_IMPL_VALUE_SIZE (stack->impls[i - 1]);
 	}
 }
 
