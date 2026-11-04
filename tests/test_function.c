@@ -259,8 +259,9 @@ test_function(void)
     /* Assigning property function with full signature and calling with implicit 'this' succeeds */
     {
         static const char *src =
-            "print_tobj_i32 = (any x, int32 val) => {\n"
+            "print_tobj_i32 = (any x, int32 val) int32 => {\n"
             "    ofs.printLn(val);\n"
+            "    return val;\n"
             "};\n"
             "print_tobj_i32(42);\n";
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
@@ -279,6 +280,73 @@ test_function(void)
         TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
         TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_INVALID_VALUE, globals->az_ctx.exc.type);
+    }
+    /* Property function */
+    /* Missing property fails */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj.noSuchFunction(1,2,3);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZO_EXCEPTION_INVALID_PROPERTY, globals->az_ctx.exc.type);
+    }
+    /* Clearly wrong signature fails */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj.func(1,2,3);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_SIGNATURE_MISMATCH, globals->az_ctx.exc.type);
+    }
+    /* Overloaded function is resolved to exact first */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "return tobj.func(1);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
+        TEST_ASSERT_EQUAL_INT32(1000, ret_val.int32_v);
+    }
+    /* Overloaded function is resolved to member after exact */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "return tobj.func(\"a\");\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
+        TEST_ASSERT_EQUAL_INT32(1001, ret_val.int32_v);
+    }
+    /* Non-function members are resolved to exact signature */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj.prop = (int32 a, int64 b) int32 => {return 1002;};\n"
+            "return tobj.prop(1, 2);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
+        TEST_ASSERT_EQUAL_INT32(1002, ret_val.int32_v);
+    }
+    /* Non-function members are resolved to member signature */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj.prop = (TestObject tobj, int32 a, int64 b) int32 => {return 1003;};\n"
+            "return tobj.prop(1, 2);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
+        TEST_ASSERT_EQUAL_INT32(1003, ret_val.int32_v);
     }
     /* Attribute functions */
     /* Calling missing attribute throws NULL_DEREFERENCE */
@@ -368,6 +436,25 @@ test_function(void)
         TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
         TEST_ASSERT_EQUAL_INT32(ret_val.int32_v, 123);
     }
+
+    /* Calling in member context */
+    /* Property has priority over attribute */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj.prop = (int32 a, int64 b) int32 => {return 1010;};\n"
+            "tobj->prop = (int32 arg, int64 b) int32 => {return 1011;};\n"
+            "tobj {\n"
+            "    return prop(123, 456);\n"
+            "}\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
+        TEST_ASSERT_EQUAL_INT32(ret_val.int32_v, 1010);
+    }
+
     /* new TestObject("Hello") */
     {
         print_tree = 0;
@@ -400,13 +487,13 @@ test_function(void)
         TEST_ASSERT_EQUAL_STRING("built: Hello", str);
         free(str);
     }
-    /* Set and property member with full signature and call as member */
+    /* Set a property member with full signature and call as member */
     {
         print_tree = 0;
         print_bytecode = 0;
         static const char *src =
             "TestObject tobj = new TestObject(\"Hello\");\n"
-            "tobj.print_tobj_i32 = (TestObject tobj, int32 arg) => {bofs.print(arg + 5);};\n"
+            "tobj.print_tobj_i32 = (TestObject tobj, int32 arg) int32 => {bofs.print(arg + 5);return arg + 5;};\n"
             "tobj.print_tobj_i32(37);\n";
 		az_buffer_output_stream_reset(bostream);
         TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
@@ -476,6 +563,7 @@ struct _TestObject {
 
     AZPackedValue onPrint1;
 	AZPackedValue onPrint2;
+    AZPackedValue prop;
 };
 
 struct _TestObjectClass {
@@ -494,6 +582,9 @@ enum {
     FUNC_BUILD_STR,
 	FUNC_PRINT_I32,
 	FUNC_PRINT_TOBJ_I32,
+    FUNC_INT,
+    FUNC_OBJ_INT,
+    PROP_ANY,
     PROP_TEXT,
 	NUM_PROPERTIES
 };
@@ -536,11 +627,23 @@ test_object_build_str (AZString *key)
     return tobj;
 }
 
+static int32_t
+test_object_func_int(int32_t val)
+{
+    return 1000;
+}
+
+static int32_t
+test_object_func_obj_str(TestObject *tobj, AZString *str)
+{
+    return 1001;
+}
+
 static void
 test_object_class_init (TestObjectClass *klass)
 {
-    sig_i32 = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_INT32);
-    sig_tobj_i32 = az_function_signature_new_va(AZ_TYPE_NONE, 2, TYPE_TESTOBJ, AZ_TYPE_INT32);
+    sig_i32 = az_function_signature_new_va(AZ_TYPE_INT32, 1, AZ_TYPE_INT32);
+    sig_tobj_i32 = az_function_signature_new_va(AZ_TYPE_INT32, 2, TYPE_TESTOBJ, AZ_TYPE_INT32);
 	/* Properties */
 	az_class_define_static_method_native_va ((AZClass *) klass, FUNC_NEW_STR, (const unsigned char *) "new", (void (*)()) test_object_new_str, TYPE_TESTOBJ, 1, AZ_TYPE_STRING);
 	az_class_define_static_method_native_va ((AZClass *) klass, FUNC_BUILD_STR, (const unsigned char *) "build", (void (*)()) test_object_build_str, TYPE_TESTOBJ, 1, AZ_TYPE_STRING);
@@ -550,5 +653,8 @@ test_object_class_init (TestObjectClass *klass)
 	az_class_define_property_function_packed ((AZClass *) klass, FUNC_PRINT_TOBJ_I32, (const unsigned char *) "print_tobj_i32", 0,
         AZ_FIELD_INSTANCE, AZ_FIELD_READ_PACKED, AZ_FIELD_WRITE_PACKED,
 		ARIKKEI_OFFSET(TestObject,onPrint2), sig_tobj_i32);
+	az_class_define_static_method_native_va((AZClass *) klass, FUNC_INT, (const unsigned char *) "func", (void (*)()) test_object_func_int, AZ_TYPE_INT32, 1, AZ_TYPE_INT32);
+	az_class_define_static_method_native_va((AZClass *) klass, FUNC_OBJ_INT, (const unsigned char *) "func", (void (*)()) test_object_func_obj_str, AZ_TYPE_INT32, 2, TYPE_TESTOBJ, AZ_TYPE_STRING);
+    az_class_define_property_packed((AZClass *) klass, PROP_ANY, (const uint8_t *) "prop", AZ_TYPE_ANY, 0, AZ_FIELD_INSTANCE, AZ_FIELD_WRITE_PACKED, ARIKKEI_OFFSET(TestObject, prop));
     az_class_define_property_value((AZClass *) klass, PROP_TEXT, (const uint8_t *) "text", AZ_TYPE_STRING, 0, AZ_FIELD_INSTANCE, AZ_FIELD_WRITE_VALUE, ARIKKEI_OFFSET(TestObject, text));
 }

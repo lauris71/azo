@@ -255,6 +255,11 @@ azo_code_write_MINMAX_TYPED (AZOCode *code, unsigned int typecode, uint32_t type
 {
 	azo_code_write_ic_u8(code, typecode, type, node);
 }
+static inline void
+azo_code_write_GET_PROPERTY(AZOCode *code, const AZONode *node)
+{
+	azo_code_write_ic(code, AZO_TC_GET_PROPERTY, node);
+}
 
 static inline void
 azo_code_write_GET_FUNCTION(AZOCode *code, unsigned int n_args, const AZONode *node)
