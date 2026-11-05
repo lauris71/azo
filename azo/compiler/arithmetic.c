@@ -100,6 +100,15 @@ azo_compiler_compile_tilde (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 	unsigned int lt_i8, gt_i64, gt_cd, finished_1, finished_2;
 	AZOCode *code = &ctx->frame->code;
 	/* Stack: RHS */
+	if (expr->type) {
+		if ((AZ_TYPE_INDEX(expr->type) >= AZ_TYPE_INT8) && (AZ_TYPE_INDEX(expr->type) <= AZ_TYPE_COMPLEX_DOUBLE)) {
+			azo_code_write_ic (code, AZO_TC_BITWISE_NOT, expr);
+			return 1;
+		} else if ((AZ_TYPE_INDEX(expr->type) >= AZ_TYPE_COMPLEX_FLOAT) && (AZ_TYPE_INDEX(expr->type) <= AZ_TYPE_COMPLEX_DOUBLE)) {
+			azo_code_write_ic (code, AZO_TC_CONJUGATE, expr);
+			return 1;
+		}
+	}
 	if (!azo_compiler_compile_expression (comp, ctx, expr, src)) return 0;
 	azo_code_compile_type_is_in_range (code, 0, AZ_TYPE_INT8, AZ_TYPE_INT64, expr, &lt_i8, &gt_i64);
 	azo_code_write_ic (code, AZO_TC_BITWISE_NOT, expr);

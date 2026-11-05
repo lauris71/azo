@@ -130,7 +130,8 @@ tag_assigns(AZOOptimizer *opt, AZONode *node, AZOVariableList *vars)
 static void
 optimize_const_value (AZOOptimizerCtx *ctx, const AZONode *const_node, unsigned int to_type, AZPackedValue *dst)
 {
-	unsigned int from_type = AZ_IMPL_TYPE (const_node->value.impl);
+	/* The null constant has no implementation (NONE) */
+	unsigned int from_type = const_node->value.impl ? AZ_IMPL_TYPE (const_node->value.impl) : AZ_TYPE_NONE;
 	dst->impl = NULL;
 	if (AZ_TYPE_IS_ARITHMETIC (to_type) && AZ_TYPE_IS_ARITHMETIC (from_type) && (to_type != from_type)) {
 		AZValue result;

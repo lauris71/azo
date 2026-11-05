@@ -457,6 +457,51 @@ test_calculate(void)
             0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_INVALID_TYPE, globals->az_ctx.exc.type);
     }
+	/* Equality: cross-type arithmetic compares by exact value */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "any a = 1;\n"
+            "any b = 1.0;\n"
+            "any c = 1.5;\n"
+            "if (a != b) return 1;\n"
+            "if (a == c) return 2;\n"
+            "if (!(a != c)) return 3;\n"
+            "return 42;\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+    }
+	/* Equality: nulls form one equality class */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "any a;\n"
+            "if (a != null) return 1;\n"
+            "string s;\n"
+            "if (!(s == null)) return 2;\n"
+            "if (!(a == s)) return 3;\n"
+            "if (a == 0) return 4;\n"
+            "if (s == \"foo\") return 5;\n"
+            "return 42;\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+    }
+	/* Equality: boolean vs. number comparison throws INVALID_TYPE */
+    {
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+        TEST_ASSERT(test_program(globals,
+            "any a = true;\n"
+            "any b = 1;\n"
+            "if (a == b) return 1;\n"
+            "return 0;\n",
+            0, NULL, NULL, NULL, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_INVALID_TYPE, globals->az_ctx.exc.type);
+    }
 	/* Binary arithmetic operations int32-int32 (runtime values, not pre-computed) */
     {
         arg_impls[1] = AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32);

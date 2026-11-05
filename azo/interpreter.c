@@ -31,6 +31,7 @@
 #include <az/classes/value-array.h>
 
 #include <azo/bytecode.h>
+#include <azo/compare.h>
 #include <azo/calculate.h>
 #include <azo/compiled-function.h>
 #include <azo/private.h>
@@ -527,7 +528,8 @@ interpret_PUSH_EMPTY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsig
 	uint32_t type;
 	memcpy (&type, ip + 1, 4);
 	TEST_OVERFLOW(1);
-	if (type) {
+	/* any is not instantiable - an uninitialized any variable is plain NONE */
+	if (type && (type != AZ_TYPE_ANY)) {
 		AZClass *klass = az_type_get_class (type);
 		// fixme: This is used to reserve variables
 		// fixme: The proper way would be to push NULL but reserve space
@@ -903,53 +905,15 @@ interpret_CONVERT_TYPE_EXACT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 static const unsigned char *
 interpret_EQUAL_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
-	unsigned int type, result;
-	const AZValue *lhs, *rhs;
+	AZValue result;
+	unsigned int code, type;
 	type = AZ_TYPE_FROM_INDEX(ip[1]);
 	CHECK_TYPE_EXACT(0, type);
 	CHECK_TYPE_EXACT(1, type);
-	if (AZ_TYPE_IS_PRIMITIVE (type)) {
-		lhs = azo_stack_value_bw(&intr->stack, 1);
-		rhs = azo_stack_value_bw(&intr->stack, 0);
-		switch (type) {
-		case AZ_TYPE_BOOLEAN:
-		case AZ_TYPE_INT32:
-		case AZ_TYPE_UINT32:
-			result = (lhs->uint32_v == rhs->uint32_v);
-			break;
-		case AZ_TYPE_INT8:
-		case AZ_TYPE_UINT8:
-			result = (lhs->uint8_v == rhs->uint8_v);
-			break;
-		case AZ_TYPE_INT16:
-		case AZ_TYPE_UINT16:
-			result = (lhs->uint16_v == rhs->uint16_v);
-			break;
-		case AZ_TYPE_INT64:
-		case AZ_TYPE_UINT64:
-		case AZ_TYPE_POINTER:
-			result = (lhs->uint64_v == rhs->uint64_v);
-			break;
-		case AZ_TYPE_FLOAT:
-			result = *((float *) lhs) == *((float *) rhs);
-			break;
-		case AZ_TYPE_DOUBLE:
-			result = *((double *) lhs) == *((double *) rhs);
-			break;
-		case AZ_TYPE_COMPLEX_FLOAT:
-			result = (*((float *) lhs) == *((float *) rhs)) && (*((float *) lhs + 1) == *((float *) rhs + 1));
-			break;
-		case AZ_TYPE_COMPLEX_DOUBLE:
-			result = (*((double *) lhs) == *((double *) rhs)) && (*((double *) lhs + 1) == *((double *) rhs + 1));
-			break;
-		}
-	} else if (type == AZ_TYPE_BLOCK) {
-		lhs = azo_stack_value_bw (&intr->stack, 1);
-		rhs = azo_stack_value_bw (&intr->stack, 0);
-		result = *((unsigned long long *) lhs) == *((unsigned long long *) rhs);
-	} else {
-		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
-	}
+	code = azo_compare_equal (azo_stack_impl_bw (&intr->stack, 1), (const AZValue *) azo_stack_value_bw (&intr->stack, 1),
+		azo_stack_impl_bw (&intr->stack, 0), (const AZValue *) azo_stack_value_bw (&intr->stack, 0),
+		&result);
+	if (code != AZO_COMPARE_OK) EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_BOOLEAN), &result);
 	return ip + 2;
@@ -958,55 +922,13 @@ interpret_EQUAL_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint
 static const unsigned char *
 interpret_EQUAL (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
-	unsigned int type, result;
-	const void *lhs, *rhs;
+	AZValue result;
+	unsigned int code;
 	CHECK_UNDERFLOW(2);
-	type = azo_stack_type_bw (&intr->stack, 0);
-	if (AZ_TYPE_IS_PRIMITIVE (type)) {
-		TEST_TYPE_EXACT(1, type);
-		lhs = azo_stack_value_bw (&intr->stack, 1);
-		rhs = azo_stack_value_bw (&intr->stack, 0);
-		switch (type) {
-		case AZ_TYPE_BOOLEAN:
-		case AZ_TYPE_INT32:
-		case AZ_TYPE_UINT32:
-			result = *((unsigned int *) lhs) == *((unsigned int *) rhs);
-			break;
-		case AZ_TYPE_INT8:
-		case AZ_TYPE_UINT8:
-			result = *((unsigned char *) lhs) == *((unsigned char *) rhs);
-			break;
-		case AZ_TYPE_INT16:
-		case AZ_TYPE_UINT16:
-			result = *((unsigned short *) lhs) == *((unsigned short *) rhs);
-			break;
-		case AZ_TYPE_INT64:
-		case AZ_TYPE_UINT64:
-		case AZ_TYPE_POINTER:
-			result = *((unsigned long long *) lhs) == *((unsigned long long *) rhs);
-			break;
-		case AZ_TYPE_FLOAT:
-			result = *((float *) lhs) == *((float *) rhs);
-			break;
-		case AZ_TYPE_DOUBLE:
-			result = *((double *) lhs) == *((double *) rhs);
-			break;
-		case AZ_TYPE_COMPLEX_FLOAT:
-			result = (*((float *) lhs) == *((float *) rhs)) && (*((float *) lhs + 1) == *((float *) rhs + 1));
-			break;
-		case AZ_TYPE_COMPLEX_DOUBLE:
-			result = (*((double *) lhs) == *((double *) rhs)) && (*((double *) lhs + 1) == *((double *) rhs + 1));
-			break;
-		}
-	} else if (type == AZ_TYPE_BLOCK) {
-		TEST_TYPE_IS(0, type);
-		TEST_TYPE_IS(1, type);
-		lhs = azo_stack_value_bw (&intr->stack, 1);
-		rhs = azo_stack_value_bw (&intr->stack, 0);
-		result = *((unsigned long long *) lhs) == *((unsigned long long *) rhs);
-	} else {
-		EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
-	}
+	code = azo_compare_equal (azo_stack_impl_bw (&intr->stack, 1), (const AZValue *) azo_stack_value_bw (&intr->stack, 1),
+		azo_stack_impl_bw (&intr->stack, 0), (const AZValue *) azo_stack_value_bw (&intr->stack, 0),
+		&result);
+	if (code != AZO_COMPARE_OK) EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	azo_stack_pop (&intr->stack, 2);
 	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_BOOLEAN), &result);
 	return ip + 1;

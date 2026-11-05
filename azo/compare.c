@@ -6,6 +6,14 @@
 * Copyright (C) Lauris Kaplinski 2016-2018
 */
 
+#include <math.h>
+#include <string.h>
+
+#include <az/az.h>
+#include <az/boxed-value.h>
+#include <az/class.h>
+#include <az/value.h>
+
 #include <azo/bytecode.h>
 
 #include <azo/compare.h>
@@ -13,298 +21,358 @@
 
 static const uint32_t false_value = 0;
 static const uint32_t true_value = 1;
-static const void *null_ptr = NULL;
 
-/* Compare whether stack(0) is equal to None */
-/* On exception the tested element is left in stack */
+/* Value families for comparison */
+enum {
+	AZO_FAMILY_BOOLEAN,
+	AZO_FAMILY_POINTER,
+	AZO_FAMILY_ARITHMETIC,
+	AZO_FAMILY_BLOCK,
+	AZO_FAMILY_VALUE
+};
+
+static unsigned int
+get_family (unsigned int type)
+{
+	if (type == AZ_TYPE_BOOLEAN) return AZO_FAMILY_BOOLEAN;
+	if (type == AZ_TYPE_POINTER) return AZO_FAMILY_POINTER;
+	if (AZ_TYPE_IS_ARITHMETIC (type)) return AZO_FAMILY_ARITHMETIC;
+	if (AZ_TYPE_IS_BLOCK (type)) return AZO_FAMILY_BLOCK;
+	return AZO_FAMILY_VALUE;
+}
+
+/* A value is null if it has no type, no value storage, or is a NULL pointer/block */
+/* Interfaces are block subtypes (blocks living inside another instance) and handled here as blocks */
+
+static unsigned int
+value_is_null (const AZImplementation *impl, const AZValue *val)
+{
+	unsigned int type;
+	/* NULL impl is the canonical NONE */
+	if (!impl) return 1;
+	type = AZ_IMPL_TYPE (impl);
+	if (!val) return 1;
+	if (type == AZ_TYPE_POINTER) return !val->pointer_v;
+	if (AZ_TYPE_IS_BLOCK (type)) return !val->block;
+	return 0;
+}
+
+/* Unbox boxed values and interfaces for transparent comparison
+ * Boxed value: the content is (box->klass->impl, &box->val)
+ * Boxed interface: the interface view (box->impl, box->inst) - the instance pointer is
+ * materialized into a block value so block comparison applies uniformly
+ * Returns the effective implementation, stores the effective value to effective
+ * (tmp provides storage for a materialized boxed interface value)
+ */
+
+static const AZImplementation *
+compare_unbox (const AZImplementation *impl, const AZValue *val, AZValue *tmp, const AZValue **effective)
+{
+	/* Boxes are storage containers, never typed NULL themselves */
+	if (impl == AZ_BOXED_VALUE_IMPL) {
+		const AZBoxedValue *box = (const AZBoxedValue *) val->block;
+		*effective = &box->val;
+		return &box->klass->impl;
+	}
+	if (impl == AZ_BOXED_INTERFACE_IMPL) {
+		const AZBoxedInterface *box = (const AZBoxedInterface *) val->block;
+		tmp->block = box->inst;
+		*effective = tmp;
+		return box->impl;
+	}
+	*effective = val;
+	return impl;
+}
+
+/* Arithmetic value classes */
+enum {
+	ARITH_SIGNED_INT,
+	ARITH_UNSIGNED_INT,
+	ARITH_REAL,
+	ARITH_COMPLEX
+};
+
+static unsigned int
+arith_class (unsigned int type)
+{
+	if (AZ_TYPE_IS_UNSIGNED (type)) return ARITH_UNSIGNED_INT;
+	if (AZ_TYPE_IS_INTEGRAL (type)) return ARITH_SIGNED_INT;
+	if ((type == AZ_TYPE_COMPLEX_FLOAT) || (type == AZ_TYPE_COMPLEX_DOUBLE)) return ARITH_COMPLEX;
+	return ARITH_REAL;
+}
+
+static int64_t
+get_signed (const AZValue *val, unsigned int type)
+{
+	switch (type) {
+	case AZ_TYPE_INT8: return val->int8_v;
+	case AZ_TYPE_INT16: return val->int16_v;
+	case AZ_TYPE_INT32: return val->int32_v;
+	default: return val->int64_v;
+	}
+}
+
+static uint64_t
+get_unsigned (const AZValue *val, unsigned int type)
+{
+	switch (type) {
+	case AZ_TYPE_UINT8: return val->uint8_v;
+	case AZ_TYPE_UINT16: return val->uint16_v;
+	case AZ_TYPE_UINT32: return val->uint32_v;
+	default: return val->uint64_v;
+	}
+}
+
+static double
+get_real (const AZValue *val, unsigned int type)
+{
+	return (type == AZ_TYPE_FLOAT) ? val->float_v : val->double_v;
+}
 
 static void
-compile_compare_eq_any_none (AZOCode *code, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
+get_complex (const AZValue *val, unsigned int type, double *r, double *i)
 {
-	unsigned int none_cmp_none, block_cmp_none, finished_1, finished_2;
-	/* null - null */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
-	none_cmp_none = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-	/* block - null */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IS_IMMEDIATE, 0, AZ_TYPE_BLOCK, expr);
-	block_cmp_none = azo_code_write_JMP32 (code, JMP_32_IF, 0, NULL);
-	/* pointer - null */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_POINTER, expr);
-	*invalid_type = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
-	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_POINTER, (const AZValue *) &null_ptr, expr);
-	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_POINTER, expr);
-	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
-	}
-	finished_1 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	/* Equal */
-	azo_code_update_JMP32 (code, none_cmp_none);
-	azo_code_write_POP (code, 1, expr);
-	if (comp_type == AZO_TERM_COMPARISON_E) {
-		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &true_value, expr);
+	if (type == AZ_TYPE_COMPLEX_FLOAT) {
+		*r = val->cfloat_v.r;
+		*i = val->cfloat_v.i;
 	} else {
-		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &false_value, expr);
-	}
-	finished_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	/* Not equal */
-	azo_code_update_JMP32 (code, block_cmp_none);
-	azo_code_write_POP (code, 1, expr);
-	if (comp_type == AZO_TERM_COMPARISON_E) {
-		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &false_value, expr);
-	} else {
-		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BOOLEAN, (const AZValue *) &true_value, expr);
-	}
-	azo_code_update_JMP32 (code, finished_1);
-	azo_code_update_JMP32 (code, finished_2);
-}
-
-static void
-compile_compare_eq_any_boolean (AZOCode *code, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
-{
-	unsigned int lhs_is_boolean;
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_BOOLEAN, expr);
-	lhs_is_boolean = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-	azo_code_write_POP (code, 2, expr);
-	*invalid_type = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	azo_code_update_JMP32 (code, lhs_is_boolean);
-	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_BOOLEAN, expr);
-	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
+		*r = val->cdouble_v.r;
+		*i = val->cdouble_v.i;
 	}
 }
 
-/* On exception the tested elements are left in stack */
+/* Double equality: NaN == NaN is true for now, -0.0 == +0.0 */
 
-static void
-compile_compare_eq_any_pointer (AZOCode *code, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
+static unsigned int
+dbl_eq (double lhs, double rhs)
 {
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_POINTER, expr);
-	*invalid_type = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
-	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_POINTER, expr);
-	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
-	}
+	return (lhs == rhs) || (isnan (lhs) && isnan (rhs));
 }
 
-/* On exception the tested element is left in stack */
+/* Exact integer/double equality (no precision loss for big integers) */
 
-static void
-compile_comparison_eq_any_const_pointer (AZOCode *code, const void *ptr, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
+static unsigned int
+eq_i64_dbl (int64_t i, double d)
 {
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_POINTER, expr);
-	*invalid_type = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
-	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_POINTER, (const AZValue *) ptr, expr);
-	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_POINTER, expr);
-	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
-	}
-}
-
-/* On exception the tested elements are left in stack */
-
-static void
-compile_compare_eq_any_block (AZOCode *code, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
-{
-	unsigned int rhs_is_subtype;
-
-	azo_code_write_TYPE_OF (code, 0, expr);
-	azo_code_write_TEST_TYPE (code, AZO_TC_TYPE_IS, 2, expr);
-	rhs_is_subtype = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-	azo_code_write_TYPE_OF (code, 0, expr);
-	azo_code_write_TEST_TYPE (code, AZO_TC_TYPE_IS, 1, expr);
-	*invalid_type = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
-	azo_code_update_JMP32 (code, rhs_is_subtype);
-	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_BLOCK, expr);
-	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
-	}
-}
-
-/* On exception the tested element is left in stack */
-
-static void
-compile_comparison_eq_any_const_block (AZOCode *code, unsigned int type, const void *block, unsigned int comp_type, unsigned int *invalid_type, const AZONode *expr)
-{
-	unsigned int is_subtype;
-	/* RHS is const block */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IS_IMMEDIATE, 0, type, expr);
-	is_subtype = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IS_SUPER_IMMEDIATE, 0, type, expr);
-	*invalid_type = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
-	azo_code_update_JMP32 (code, is_subtype);
-	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_BLOCK, (const AZValue *) block, expr);
-	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_BLOCK, expr);
-	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
-	}
-}
-
-/* Expects argument types to be checked */
-
-static void
-compile_comparison_eq_arithmetic_arithmetic (AZOCode *code, unsigned int comp_type, const AZONode *expr)
-{
-	unsigned int types_equal_1, types_equal_2, lhs_type_gt_rhs_type;
-	/* if LHS.type == RHS.type goto types_equal */
-	azo_code_write_TYPE_OF (code, 1, expr);
-	azo_code_write_TYPE_OF (code, 1, expr);
-	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_UINT32, expr);
-	types_equal_1 = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-	/* if LHS.type > RHS.type goto lhs_gt_rhs */
-	azo_code_write_TYPE_OF (code, 1, expr);
-	azo_code_write_TYPE_OF (code, 1, expr);
-	azo_code_write_COMPARE_TYPED (code, AZ_TYPE_UINT32, expr);
-	lhs_type_gt_rhs_type = azo_code_write_JMP32 (code, JMP_32_IF_POSITIVE, 0, expr);
-	/* Promote LHS and goto types_equal */
-	azo_code_write_TYPE_OF (code, 0, expr);
-	azo_code_write_PROMOTE (code, 2, expr);
-	types_equal_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	/* Promote RHS */
-	azo_code_update_JMP32 (code, lhs_type_gt_rhs_type);
-	azo_code_write_TYPE_OF (code, 1, expr);
-	azo_code_write_PROMOTE (code, 1, expr);
-	/* types_equal */
-	azo_code_update_JMP32 (code, types_equal_1);
-	azo_code_update_JMP32 (code, types_equal_2);
-	azo_code_write_ic (code, EQUAL, expr);
-	if (comp_type == AZO_TERM_COMPARISON_NE) {
-		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
-	}
+	if (isnan (d) || (d != floor (d))) return 0;
+	if ((d < -9223372036854775808.0) || (d >= 9223372036854775808.0)) return 0;
+	return i == (int64_t) d;
 }
 
 static unsigned int
-azo_compiler_compile_comparison_eq_any_any (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
+eq_u64_dbl (uint64_t u, double d)
 {
-	unsigned int rhs_is_none, lhs_is_none, invalid_type_cmp_none;
-	unsigned int rhs_is_boolean, invalid_type_cmp_boolean;
-	unsigned int rhs_is_pointer, invalid_type_cmp_pointer;
-	unsigned int rhs_is_block, invalid_type_cmp_block;
-	unsigned int lhs_type_lt_i8, lhs_type_gt_cdouble, rhs_type_lt_i8, rhs_type_gt_cdouble;
-	unsigned int finished_1, finished_2, finished_3, finished_4, finished_5;
-	AZOCode *code = &ctx->frame->code;
-
-	/* Stack: LHS RHS */
-	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
-
-	/* if (RHS.type == None) goto rhs_is_none */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
-	rhs_is_none = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-	/* if (LHS.type == None) goto lhs_is_none */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 1, AZ_TYPE_NONE, expr);
-	lhs_is_none = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-	/* if (RHS.type == Boolean) goto rhs_is_boolean */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_BOOLEAN, expr);
-	rhs_is_boolean = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-	/* if (RHS.type == Pointer) goto rhs_is_pointer */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_POINTER, expr);
-	rhs_is_pointer = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-	/* if (RHS.type == Block) goto rhs_is_block */
-	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IS_IMMEDIATE, 0, AZ_TYPE_BLOCK, expr);
-	rhs_is_block = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-
-	/* Test LHS is in range */
-	azo_code_compile_type_is_in_range (code, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
-	/* Test RHS is in range */
-	azo_code_compile_type_is_in_range (code, 0, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &rhs_type_lt_i8, &rhs_type_gt_cdouble);
-	/* Compare */
-	compile_comparison_eq_arithmetic_arithmetic (code, comp_type, expr);
-	finished_5 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-
-	/* lhs_is_none */
-	azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	azo_code_write_EXCHANGE (code, 1, expr);
-	/* rhs_is_none */
-	azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	azo_code_write_POP (code, 1, expr);
-	compile_compare_eq_any_none (code, comp_type, &invalid_type_cmp_none, expr);
-	finished_1 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-
-	/* rhs_is_boolean */
-	azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	compile_compare_eq_any_boolean (code, comp_type, &invalid_type_cmp_boolean, expr);
-	finished_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-
-	/* rhs_is_pointer */
-	azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	compile_compare_eq_any_pointer (code, comp_type, &invalid_type_cmp_pointer, expr);
-	finished_3 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-
-	/* rhs_is_block */
-	azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	compile_compare_eq_any_block (code, comp_type, &invalid_type_cmp_block, expr);
-	finished_4 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-
-	/* invalid_type */
-	azo_code_update_JMP32 (code, invalid_type_cmp_none);
-	azo_code_update_JMP32 (code, invalid_type_cmp_boolean);
-	azo_code_update_JMP32 (code, invalid_type_cmp_pointer);
-	azo_code_update_JMP32 (code, invalid_type_cmp_block);
-	azo_code_update_JMP32 (code, lhs_type_lt_i8);
-	azo_code_update_JMP32 (code, lhs_type_gt_cdouble);
-	azo_code_update_JMP32 (code, rhs_type_lt_i8);
-	azo_code_update_JMP32 (code, rhs_type_gt_cdouble);
-	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
-
-	/* finished */
-	azo_code_update_JMP32 (code, finished_1);
-	azo_code_update_JMP32 (code, finished_2);
-	azo_code_update_JMP32 (code, finished_3);
-	azo_code_update_JMP32 (code, finished_4);
-	azo_code_update_JMP32 (code, finished_5);
-
-	return 1;
+	if (isnan (d) || (d != floor (d))) return 0;
+	if ((d < 0.0) || (d >= 18446744073709551616.0)) return 0;
+	return u == (uint64_t) d;
 }
 
+/* Exact equality of a complex (re, im) and a real value */
 
 static unsigned int
-compile_comparison_any_const_eq (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
+eq_complex_real (double re, double im, unsigned int rclass, const AZValue *rval, unsigned int rtype)
 {
-	unsigned int invalid_type, finished;
-	AZOCode *code = &ctx->frame->code;
-	if (!rhs->value.impl) {
-		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-		compile_compare_eq_any_none (code, comp_type, &invalid_type, expr);
-		return 1;
-	} else if (AZ_PACKED_VALUE_TYPE(&rhs->value) == AZ_TYPE_POINTER) {
-		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-		compile_comparison_eq_any_const_pointer (code, rhs->value.v.pointer_v, comp_type, &invalid_type, expr);
-	} else if (AZ_IMPL_TYPE(rhs->value.impl) == AZ_TYPE_BLOCK) {
-		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-		compile_comparison_eq_any_const_block (code, AZ_IMPL_TYPE(rhs->value.impl), rhs->value.v.block, comp_type, &invalid_type, expr);
-	} else if (AZ_TYPE_IS_ARITHMETIC(AZ_PACKED_VALUE_TYPE(&rhs->value))) {
-		unsigned int lhs_type_lt_i8, lhs_type_gt_cdouble;
-		if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-		if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
-		azo_code_compile_type_is_in_range (code, 1, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_i8, &lhs_type_gt_cdouble);
-		compile_comparison_eq_arithmetic_arithmetic (code, comp_type, expr);
-		finished = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-		azo_code_update_JMP32 (code, lhs_type_lt_i8);
-		azo_code_update_JMP32 (code, lhs_type_gt_cdouble);
-		azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
-		azo_code_update_JMP32 (code, finished);
-		return 1;
-	} else {
-		fprintf (stderr, "compile_comparison_any_const_eq: invalid type %u\n", AZ_IMPL_TYPE(rhs->value.impl));
-		return 0;
+	if (im != 0.0) return 0;
+	switch (rclass) {
+	case ARITH_SIGNED_INT: return eq_i64_dbl (get_signed (rval, rtype), re);
+	case ARITH_UNSIGNED_INT: return eq_u64_dbl (get_unsigned (rval, rtype), re);
+	default: return dbl_eq (re, get_real (rval, rtype));
 	}
-	finished = azo_code_write_JMP32 (code, JMP_32, 0, expr);
-	azo_code_update_JMP32 (code, invalid_type);
-	azo_code_write_EXCEPTION (code, AZ_EXCEPTION_INVALID_TYPE, expr);
-	azo_code_update_JMP32 (code, finished);
-	return 1;
 }
+
+/* Exact mathematical value equality across the arithmetic family */
+
+static unsigned int
+arith_equal (unsigned int ltype, const AZValue *lval, unsigned int rtype, const AZValue *rval)
+{
+	unsigned int lclass = arith_class (ltype);
+	unsigned int rclass = arith_class (rtype);
+	if ((lclass == ARITH_COMPLEX) || (rclass == ARITH_COMPLEX)) {
+		if ((lclass == ARITH_COMPLEX) && (rclass == ARITH_COMPLEX)) {
+			double lr, li, rr, ri;
+			get_complex (lval, ltype, &lr, &li);
+			get_complex (rval, rtype, &rr, &ri);
+			return dbl_eq (lr, rr) && dbl_eq (li, ri);
+		} else if (lclass == ARITH_COMPLEX) {
+			double lr, li;
+			get_complex (lval, ltype, &lr, &li);
+			return eq_complex_real (lr, li, rclass, rval, rtype);
+		} else {
+			double rr, ri;
+			get_complex (rval, rtype, &rr, &ri);
+			return eq_complex_real (rr, ri, lclass, lval, ltype);
+		}
+	}
+	switch (lclass) {
+	case ARITH_SIGNED_INT: {
+		int64_t i = get_signed (lval, ltype);
+		if (rclass == ARITH_SIGNED_INT) return i == get_signed (rval, rtype);
+		if (rclass == ARITH_UNSIGNED_INT) {
+			int64_t r = (int64_t) get_unsigned (rval, rtype);
+			return (i >= 0) && ((uint64_t) i == (uint64_t) r);
+		}
+		return eq_i64_dbl (i, get_real (rval, rtype));
+	}
+	case ARITH_UNSIGNED_INT: {
+		uint64_t u = get_unsigned (lval, ltype);
+		if (rclass == ARITH_SIGNED_INT) {
+			int64_t r = get_signed (rval, rtype);
+			return (r >= 0) && (u == (uint64_t) r);
+		}
+		if (rclass == ARITH_UNSIGNED_INT) return u == get_unsigned (rval, rtype);
+		return eq_u64_dbl (u, get_real (rval, rtype));
+	}
+	default: {
+		double d = get_real (lval, ltype);
+		if (rclass == ARITH_SIGNED_INT) return eq_i64_dbl (get_signed (rval, rtype), d);
+		if (rclass == ARITH_UNSIGNED_INT) return eq_u64_dbl (get_unsigned (rval, rtype), d);
+		return dbl_eq (d, get_real (rval, rtype));
+	}
+	}
+}
+
+/* The sizes of arithmetic types for bitwise identity comparison */
+
+static unsigned int
+arith_size (unsigned int type)
+{
+	switch (type) {
+	case AZ_TYPE_INT8:
+	case AZ_TYPE_UINT8:
+		return 1;
+	case AZ_TYPE_INT16:
+	case AZ_TYPE_UINT16:
+		return 2;
+	case AZ_TYPE_INT32:
+	case AZ_TYPE_UINT32:
+	case AZ_TYPE_FLOAT:
+		return 4;
+	case AZ_TYPE_INT64:
+	case AZ_TYPE_UINT64:
+	case AZ_TYPE_DOUBLE:
+	case AZ_TYPE_COMPLEX_FLOAT:
+		return 8;
+	default: /* AZ_TYPE_COMPLEX_DOUBLE */
+		return 16;
+	}
+}
+
+unsigned int
+azo_compare_equal (const AZImplementation *lhs_impl, const AZValue *lhs, const AZImplementation *rhs_impl, const AZValue *rhs, AZValue *result)
+{
+	unsigned int lnull, rnull, lfamily, rfamily;
+	AZValue ltmp, rtmp;
+	const AZValue *lval = lhs, *rval = rhs;
+	result->boolean_v = 0;
+	/* Unbox storage containers (boxed value/interface) for transparent comparison */
+	if (lhs_impl && lhs) lhs_impl = compare_unbox (lhs_impl, lhs, &ltmp, &lval);
+	if (rhs_impl && rhs) rhs_impl = compare_unbox (rhs_impl, rhs, &rtmp, &rval);
+	lnull = value_is_null (lhs_impl, lval);
+	rnull = value_is_null (rhs_impl, rval);
+	if (lnull || rnull) {
+		/* All nulls form one equality class, null vs. non-null is a valid comparison */
+		result->boolean_v = lnull && rnull;
+		return AZO_COMPARE_OK;
+	}
+	lfamily = get_family (AZ_IMPL_TYPE (lhs_impl));
+	rfamily = get_family (AZ_IMPL_TYPE (rhs_impl));
+	if (lfamily != rfamily) return AZO_COMPARE_INVALID_TYPE;
+	switch (lfamily) {
+	case AZO_FAMILY_BOOLEAN:
+		result->boolean_v = ((lval->boolean_v != 0) == (rval->boolean_v != 0));
+		return AZO_COMPARE_OK;
+	case AZO_FAMILY_POINTER:
+		result->boolean_v = (lval->pointer_v == rval->pointer_v);
+		return AZO_COMPARE_OK;
+	case AZO_FAMILY_ARITHMETIC:
+		result->boolean_v = arith_equal (AZ_IMPL_TYPE (lhs_impl), lval, AZ_IMPL_TYPE (rhs_impl), rval);
+		return AZO_COMPARE_OK;
+	case AZO_FAMILY_BLOCK:
+		result->boolean_v = (lval->block == rval->block);
+		return AZO_COMPARE_OK;
+	case AZO_FAMILY_VALUE:
+		if (lhs_impl != rhs_impl) return AZO_COMPARE_DIFFERENT_TYPE;
+		result->boolean_v = !memcmp (lval, rval, AZ_CLASS_FROM_IMPL (lhs_impl)->instance_size);
+		return AZO_COMPARE_OK;
+	default:
+		return AZO_COMPARE_INVALID_TYPE;
+	}
+}
+
+unsigned int
+azo_compare_identical (const AZImplementation *lhs_impl, const AZValue *lhs, const AZImplementation *rhs_impl, const AZValue *rhs, AZValue *result)
+{
+	unsigned int lnull, rnull, type;
+	AZValue ltmp, rtmp;
+	const AZValue *lval = lhs, *rval = rhs;
+	result->boolean_v = 0;
+	/* Unbox storage containers (boxed value/interface) for transparent comparison */
+	if (lhs_impl && lhs) lhs_impl = compare_unbox (lhs_impl, lhs, &ltmp, &lval);
+	if (rhs_impl && rhs) rhs_impl = compare_unbox (rhs_impl, rhs, &rtmp, &rval);
+	lnull = value_is_null (lhs_impl, lval);
+	rnull = value_is_null (rhs_impl, rval);
+	if (lnull != rnull) {
+		/* Null vs. non-null is a valid comparison */
+		return AZO_COMPARE_OK;
+	}
+	if (lnull) {
+		/* Both null: identical only with the same implementation (untyped === untyped) */
+		if (lhs_impl == rhs_impl) {
+			result->boolean_v = 1;
+			return AZO_COMPARE_OK;
+		}
+		return AZO_COMPARE_DIFFERENT_TYPE;
+	}
+	/* Different implementations cannot be identical: for non-interfaces these are
+	 * different classes, for interfaces implementations of different classes -
+	 * cheap test before going to the type */
+	if (lhs_impl != rhs_impl) return AZO_COMPARE_DIFFERENT_TYPE;
+	/* Same implementation: same type and family */
+	type = AZ_IMPL_TYPE (lhs_impl);
+	switch (get_family (type)) {
+	case AZO_FAMILY_BOOLEAN:
+		result->boolean_v = ((lval->boolean_v != 0) == (rval->boolean_v != 0));
+		return AZO_COMPARE_OK;
+	case AZO_FAMILY_POINTER:
+		result->boolean_v = (lval->pointer_v == rval->pointer_v);
+		return AZO_COMPARE_OK;
+	case AZO_FAMILY_ARITHMETIC:
+		/* Bitwise: -0.0 !== +0.0, NaN === NaN (same bit pattern) */
+		result->boolean_v = !memcmp (lval, rval, arith_size (type));
+		return AZO_COMPARE_OK;
+	case AZO_FAMILY_BLOCK:
+		result->boolean_v = (lval->block == rval->block);
+		return AZO_COMPARE_OK;
+	case AZO_FAMILY_VALUE:
+		result->boolean_v = !memcmp (lval, rval, AZ_CLASS_FROM_IMPL (lhs_impl)->instance_size);
+		return AZO_COMPARE_OK;
+	default:
+		return AZO_COMPARE_INVALID_TYPE;
+	}
+}
+
+
+/* Equality comparison (== and !=)
+ * Statically known same primitive type: typed fast path (EQUAL_TYPED)
+ * Everything else: the full azo_compare_equal semantics (EQUAL) - null equality
+ * class, exact cross-type arithmetic value equality, blocks by pointer, value
+ * types by content, INVALID_TYPE on incomparable types */
 
 static unsigned int
 azo_compiler_compile_comparison_eq (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
 {
-	if (rhs->term.type == AZO_TERM_CONSTANT) {
-		return compile_comparison_any_const_eq (comp, ctx, lhs, rhs, expr, comp_type, src, reg);
-	} else if (lhs->term.type == AZO_TERM_CONSTANT) {
-		return compile_comparison_any_const_eq (comp, ctx, rhs, lhs, expr, comp_type, src, reg);
+	AZOCode *code = &ctx->frame->code;
+	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
+	if ((lhs->type == rhs->type) && AZ_TYPE_IS_PRIMITIVE (lhs->type)) {
+		azo_code_write_EQUAL_TYPED (code, lhs->type, expr);
 	} else {
-		return azo_compiler_compile_comparison_eq_any_any (comp, ctx, lhs, rhs, expr, comp_type, src, reg);
+		azo_code_write_ic (code, EQUAL, expr);
 	}
+	if (comp_type == AZO_TERM_COMPARISON_NE) {
+		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
+	}
+	return 1;
 }
 
 static unsigned int

@@ -196,12 +196,12 @@ enum {
 
 	/* Comparisons */
 	/* EQUAL TYPE(U8) */
-	/* Allowed types - primitives and block (block subtypes are tested as block) */
-	/* Do not remove compared elements */
+	/* Allowed types - primitives (boolean...pointer), both elements have to be of the given type */
+	/* Replaces the compared elements with the boolean result (azo_compare_equal semantics) */
 	AZO_TC_EQUAL_TYPED,
 	/* EQUAL */
-	/* Allowed types - primitives and block (block subtypes are tested as block) */
-	/* Do not remove compared elements */
+	/* Allowed types - all, full azo_compare_equal semantics (throws INVALID_TYPE on incomparable types) */
+	/* Replaces the compared elements with the boolean result */
 	EQUAL,
 	/* COMPARE TYPE(U8) */
 	/* Allowed types - integers and reals */
