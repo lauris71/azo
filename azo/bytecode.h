@@ -203,6 +203,10 @@ enum {
 	/* Allowed types - all, full azo_compare_equal semantics (throws INVALID_TYPE on incomparable types) */
 	/* Replaces the compared elements with the boolean result */
 	EQUAL,
+	/* IDENTICAL */
+	/* Allowed types - all, full azo_compare_identical semantics (implementation + value identity) */
+	/* Replaces the compared elements with the boolean result */
+	IDENTICAL,
 	/* COMPARE TYPE(U8) */
 	/* Allowed types - integers and reals */
 	/* Result is negative if stack(1) < stack(0) */

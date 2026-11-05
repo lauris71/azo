@@ -935,6 +935,24 @@ interpret_EQUAL (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *i
 }
 
 static const unsigned char *
+interpret_IDENTICAL (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
+{
+	AZValue result;
+	unsigned int code;
+	CHECK_UNDERFLOW(2);
+	/* Identity is defined for all operand combinations: different implementations
+	 * (AZO_COMPARE_DIFFERENT_TYPE) evaluate to false, only an internal family
+	 * error (unreachable) throws */
+	code = azo_compare_identical (azo_stack_impl_bw (&intr->stack, 1), (const AZValue *) azo_stack_value_bw (&intr->stack, 1),
+		azo_stack_impl_bw (&intr->stack, 0), (const AZValue *) azo_stack_value_bw (&intr->stack, 0),
+		&result);
+	if (code == AZO_COMPARE_INVALID_TYPE) EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
+	azo_stack_pop (&intr->stack, 2);
+	azo_stack_push_value (&intr->stack, (AZImplementation *) az_type_get_class (AZ_TYPE_BOOLEAN), &result);
+	return ip + 1;
+}
+
+static const unsigned char *
 interpret_COMPARE_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	unsigned int type;
@@ -1985,6 +2003,9 @@ switch (*ip) {
 			break;
 		case EQUAL:
 			ip = interpret_EQUAL (intr, ictx, ip);
+			break;
+		case IDENTICAL:
+			ip = interpret_IDENTICAL (intr, ictx, ip);
 			break;
 		case AZO_TC_COMPARE_TYPED:
 			ip = interpret_COMPARE_TYPED (intr, ictx, ip);

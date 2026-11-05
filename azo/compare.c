@@ -375,6 +375,23 @@ azo_compiler_compile_comparison_eq (AZOCompiler *comp, AZOCompilerContext *ctx, 
 	return 1;
 }
 
+/* Identity comparison (=== and !==): always the full azo_compare_identical
+ * semantics (implementation + value identity) - no typed variant needed because
+ * there are no costly non-matching type arithmetic comparisons */
+
+static unsigned int
+azo_compiler_compile_comparison_identical (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, unsigned int comp_type, AZOSource *src, unsigned int reg)
+{
+	AZOCode *code = &ctx->frame->code;
+	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
+	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
+	azo_code_write_ic (code, IDENTICAL, expr);
+	if (comp_type == AZO_TERM_COMPARISON_NOT_IDENTICAL) {
+		azo_code_write_ic (code, AZO_TC_LOGICAL_NOT, expr);
+	}
+	return 1;
+}
+
 static unsigned int
 azo_compiler_compile_comparison_lg_any_any (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *lhs, const AZONode *rhs, const AZONode *expr, AZOSource *src, unsigned int reg)
 {
@@ -583,9 +600,7 @@ azo_compiler_compile_comparison (AZOCompiler *comp, AZOCompilerContext *ctx, con
 	if ((expr->term.subtype == AZO_TERM_COMPARISON_E) || (expr->term.subtype == AZO_TERM_COMPARISON_NE)) {
 		return azo_compiler_compile_comparison_eq (comp, ctx, lhs, rhs, expr, expr->term.subtype, src, reg);
 	} else if ((expr->term.subtype == AZO_TERM_COMPARISON_IDENTICAL) || (expr->term.subtype == AZO_TERM_COMPARISON_NOT_IDENTICAL)) {
-		/* fixme: implement identity comparison (=== !==) */
-		fprintf (stderr, "azo_compiler_compile_comparison: identity comparison is not implemented\n");
-		return 0;
+		return azo_compiler_compile_comparison_identical (comp, ctx, lhs, rhs, expr, expr->term.subtype, src, reg);
 	} else {
 #if 0
 		if ((lhs->term.type != EXPRESSION_CONSTANT) && (rhs->term.type == EXPRESSION_CONSTANT)) {
