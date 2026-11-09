@@ -25,6 +25,12 @@ extern "C" {
 /* The maximum number of errors logged into the parser error list */
 #define AZO_PARSER_MAX_ERRORS 20
 
+/* The maximum number of function arguments - the run-time signature (AZFunctionSignature32)
+ * has 32 argument slots, so source argument lists may not exceed this. Call sites that
+ * may inject an extra 'this' argument (member calls) are limited to AZO_FUNCTION_MAX_ARGS - 1
+ * source arguments */
+#define AZO_FUNCTION_MAX_ARGS 32
+
 struct _AZOParserError {
 	/* Error code (AZO_PARSER_ERROR_*) */
 	unsigned int code;

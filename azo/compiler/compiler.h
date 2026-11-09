@@ -12,6 +12,8 @@ typedef struct _AZOCompilerContext AZOCompilerContext;
 
 #include <stdint.h>
 
+#include <az/signature.h>
+
 #include <azo/context.h>
 #include <azo/compiler/frame.h>
 #include <azo/compiler/resolver.h>
@@ -153,10 +155,10 @@ azo_compiler_mode_calc (unsigned int mode_flags)
  */
 struct _AZOCompilerContext {
 	/**
-	 * @brief General context
+	 * @brief Return and argument types
 	 * 
 	 */
-	unsigned int ret_type;
+	AZFunctionSignature *signature;
 	/* The current frame */
 	AZOFrame *frame;
 
@@ -272,11 +274,10 @@ AZOProgram *azo_compiler_compile (AZOCompiler *comp, AZOCompilerContext *ctx, AZ
  * @param comp The compiler instance 
  * @param parent The parent frame (or NULL for root).
  * @param capture_this Whether to capture 'this' in this frame.
- * @param n_args The number of arguments.
- * @param ret_type The return type.
+ * @param signature The frame signature (interned, not owned).
  * @return AZOFrame* The new function frame.
  */
-AZOFrame *azo_compiler_new_frame(AZOCompiler *comp, AZOFrame *parent, unsigned int capture_this, unsigned int n_args, unsigned int ret_type);
+AZOFrame *azo_compiler_new_frame(AZOCompiler *comp, AZOFrame *parent, unsigned int capture_this, const AZFunctionSignature *signature);
 
 unsigned int azo_compiler_compile_expression (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr, AZOSource *src);
 

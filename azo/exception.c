@@ -227,7 +227,7 @@ azo_exception_get_throw_function (void)
         exception_throw_signature.ret_type = AZ_TYPE_NONE;
         exception_throw_signature.n_args = 1;
         exception_throw_signature.arg_types[0] = azo_exception_get_type();
-        az_function_value_setup(&exception_throw_fval, &exception_throw_signature.signature, exception_throw_invoke);
+        az_function_value_setup(&exception_throw_fval, (AZFunctionSignature *) &exception_throw_signature, exception_throw_invoke);
         initialized = 1;
     }
     AZ_TYPES_UNLOCK();

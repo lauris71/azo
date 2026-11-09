@@ -17,6 +17,8 @@
  * Member reference (.) binds tighter than function call/array access, so a parse at
  * AZO_PRECEDENCE_FUNCTION consumes a member reference path and stops at the first ( */
 AZOOperator azo_operators[] = {
+	/* Structural (varargs declaration), not an expression operator */
+	{ AZO_OPERATOR_ELLIPSIS, "...", 0, { 0, 0 }, 0 },
 	{ AZO_OPERATOR_DOT, ".", 2, { AZO_PRECEDENCE_MEMBER, AZO_PRECEDENCE_MEMBER }, 0 },
 	{ AZO_OPERATOR_ARROW, "->", 2, { AZO_PRECEDENCE_MEMBER, AZO_PRECEDENCE_MEMBER }, 0 },
 	/* Structural (lambda), not an expression operator */

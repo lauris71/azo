@@ -25,11 +25,11 @@ optimize_text(AZOContext *ctx, const char *text, AZOParser *parser, AZOSource **
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, ctx, *src);
 	AZOCompilerContext comp_ctx = {
-		.ret_type = AZ_TYPE_NONE,
+		.signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
-	comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+	comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, comp_ctx.signature);
 	int result = azo_compiler_resolve_program(&comp, &comp_ctx, tree);
 	if (!result) {
 		AZOOptimizer opt;
@@ -137,8 +137,14 @@ test_program(AZOContext *ctx, const char *text,
 	AZONode *tree = azo_parser_parse(&parser);
 	if (print_tree) azo_node_print_info(tree, stderr, src, 0);
 
+    AZFunctionSignature32 sig = {0};
+    sig.ret_type = ret_type;
+    sig.n_args = n_args;
+    for (unsigned int i = 0; i < n_args; ++i) {
+        sig.arg_types[i] = AZ_IMPL_TYPE(arg_impls[i]);
+    }
 	AZOCompilerContext comp_ctx = {
-		.ret_type = AZ_TYPE_INT32,
+		.signature = az_function_signature_new(sig.ret_type, sig.n_args, sig.arg_types),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
@@ -146,7 +152,7 @@ test_program(AZOContext *ctx, const char *text,
 	azo_compiler_setup(&comp, ctx, src);
 	comp.debug = 1;
 
-	AZOFrame *frame = azo_compiler_new_frame(&comp, NULL, 0, 1, ret_type);
+	AZOFrame *frame = azo_compiler_new_frame(&comp, NULL, 0, comp_ctx.signature);
 	for (unsigned int i = 0; i < n_args; ++i) {
 		AZString *str = az_string_new((const uint8_t *) arg_names[i]);
 		azo_frame_declare_variable(frame, str, AZ_IMPL_TYPE(arg_impls[i]), 0);
@@ -165,7 +171,7 @@ test_program(AZOContext *ctx, const char *text,
 	AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
 	comp_ctx = (AZOCompilerContext) {
-		.ret_type = AZ_TYPE_INT32,
+		.signature = az_function_signature_new(sig.ret_type, sig.n_args, sig.arg_types),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
@@ -180,7 +186,7 @@ test_program(AZOContext *ctx, const char *text,
 	}
 
 	comp_ctx = (AZOCompilerContext) {
-		.ret_type = AZ_TYPE_INT32,
+		.signature = az_function_signature_new(sig.ret_type, sig.n_args, sig.arg_types),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};

@@ -24,6 +24,7 @@ static const char *azo_errors[] = {
 	"Invalid type expression (expected NAME[.NAME...] resolvable from globals)",
 	"Weak variable requires static or shared",
 	"Too many errors",
+	"Too many function arguments",
     /* Resolver */
 	"Variable already defined",
 	"Variable is not defined"

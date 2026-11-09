@@ -12,6 +12,7 @@ typedef struct _AZONode AZONode;
 typedef struct _AZOFrame AZOFrame;
 
 #include <az/packed-value.h>
+#include <az/signature.h>
 
 #include <azo/code.h>
 #include <azo/compiler/scope.h>
@@ -33,20 +34,15 @@ struct _AZOFrame {
 	 */
 	AZOFrame *parent;
 	/**
-	 * @brief Return type of this code block
-	 * 
-	 * NULL for void block.
+	 * @brief The signature of this code block (argument and return types)
+	 *
+	 * Interned and permanent; ret_type AZ_TYPE_NONE for void block.
 	 */
-	unsigned int ret_type;
+	const AZFunctionSignature *signature;
 	unsigned int ret_is_last;
 
 	unsigned int this_is_captured;
-	
-	/**
-	 * @brief The number of arguments (i.e. reserved variable positions)
-	 * 
-	 */
-	unsigned int n_args;
+
 	/* Current scope */
 	AZOScope *scope;
 	/*
@@ -66,19 +62,18 @@ struct _AZOFrame {
 	AZOCode code;
 };
 
-void azo_frame_init(AZOFrame *frame, AZOFrame *parent, unsigned int capture_this, unsigned int n_args, unsigned int ret_type, unsigned int debug);
+void azo_frame_init(AZOFrame *frame, AZOFrame *parent, unsigned int capture_this, const AZFunctionSignature *signature, unsigned int debug);
 void azo_frame_finalize(AZOFrame *frame);
 /**
  * @brief Create a new frame
- * 
+ *
  * @param parent The parent frame (NULL for root)
  * @param capture_this Whether to capture the 'this' reference
- * @param n_args Number of arguments for this code block
- * @param ret_type Return type of the code block (AZ_TYPE_NONE for void)
+ * @param signature The signature of this code block (interned, not owned)
  * @param debug Debug flag (non-zero to enable debugging)
  * @return Pointer to the newly created frame, or NULL on failure
  */
-AZOFrame *azo_frame_new (AZOFrame *parent, unsigned int capture_this, unsigned int n_args, unsigned int ret_type, unsigned int debug);
+AZOFrame *azo_frame_new (AZOFrame *parent, unsigned int capture_this, const AZFunctionSignature *signature, unsigned int debug);
 void azo_frame_delete (AZOFrame *frame);
 void azo_frame_delete_tree (AZOFrame *frame);
 

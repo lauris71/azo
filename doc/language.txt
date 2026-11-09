@@ -480,7 +480,14 @@ Arguments_definition:
 
 Argument_definition:
   Type NAME
+  Type... NAME
   NAME
+
+# Varargs (Type... NAME) declare a variadic parameter - it has to be the last
+# argument of the lambda and needs an explicit type (use any... for heterogeneous
+# arguments). Inside the body the parameter is a read-only slice of the argument
+# stack, not a true list: it supports .length, indexing and iteration but cannot
+# be assigned/stored/returned (materialize explicitly, e.g. list(args))
 
 Function_call:
   Expression Arguments

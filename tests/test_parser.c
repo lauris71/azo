@@ -66,6 +66,50 @@ test_parser(void)
         azo_parser_release(&parser);
         az_object_unref((AZObject *) src);
     }
+    /* Function argument lists are limited to AZO_FUNCTION_MAX_ARGS (32 signature slots) */
+    {
+        static char text[4096];
+        char params[2048], call_args[2048];
+        params[0] = 0;
+        call_args[0] = 0;
+        for (int i = 0; i < 32; i++) {
+            sprintf(params + strlen(params), "%sint32 a%d", (i) ? ", " : "", i);
+            sprintf(call_args + strlen(call_args), "%s%d", (i) ? ", " : "", i + 1);
+        }
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree;
+        /* 32 lambda arguments parse */
+        sprintf(text, "f = (%s) int32 => { return a31; };", params);
+        tree = parse_text(text, &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+        /* 33 lambda arguments are a parse error */
+        sprintf(text, "f = (%s, int32 a32) int32 => { return a32; };", params);
+        tree = parse_text(text, &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT(1, parser.n_errors);
+        TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_TOO_MANY_ARGUMENTS, parser.errors[0].code);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+        /* 32 call arguments parse */
+        sprintf(text, "f(%s);", call_args);
+        tree = parse_text(text, &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+        /* 33 call arguments are a parse error */
+        sprintf(text, "f(%s, 33);", call_args);
+        tree = parse_text(text, &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT(1, parser.n_errors);
+        TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_TOO_MANY_ARGUMENTS, parser.errors[0].code);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
     /* Recovery: garbage sentence is replaced by INVALID node, parsing continues */
     {
         AZOParser parser;
@@ -646,6 +690,71 @@ test_parser(void)
         TEST_ASSERT_EQUAL_INT32(42, nodes[8]->value.v.int32_v);
         TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
         free_parse(&parser, src, tree);
+    }
+    /* Lambda: variadic argument */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("f = (string a, float... args) => a;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *nodes[24];
+        unsigned int n = azo_node_flatten(tree, nodes, 24);
+        /* PROGRAM -> ASSIGN(f, FUNCTION(EMPTY, LIST(DECL(string a), DECL_VARARG(float... args)), return a)) */
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_FUNCTION, nodes[3]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LAMBDA, nodes[3]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_LIST, nodes[5]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_GENERIC, nodes[6]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION, nodes[9]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION_VARARG, nodes[9]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Lambda: variadic argument with 'any' element type */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("f = (any... args) => args;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZONode *nodes[16];
+        unsigned int n = azo_node_flatten(tree, nodes, 16);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION, nodes[6]->term.type);
+        TEST_ASSERT_EQUAL_UINT(AZO_TERM_ARGUMENT_DECLARATION_VARARG, nodes[6]->term.subtype);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        free_parse(&parser, src, tree);
+    }
+    /* Lambda: untyped variadic argument is an error */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("f = (args...) => args;", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT(parser.n_errors >= 1);
+        TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SYNTAX, parser.errors[0].code);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
+    /* Lambda: variadic argument has to be the last one */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("f = (float... args, int32 a) => a;", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT(parser.n_errors >= 1);
+        TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SYNTAX, parser.errors[0].code);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
+    /* Lambda: variadic first argument followed by another is an error */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("f = (float... a, float... b) => a;", &parser, &src);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT(parser.n_errors >= 1);
+        TEST_ASSERT_EQUAL_UINT(AZO_PARSER_ERROR_SYNTAX, parser.errors[0].code);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
     }
     /* Lambda: empty args with return type */
     {

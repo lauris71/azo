@@ -63,13 +63,13 @@ aosora_compiled_function_class_init (AZOCompiledFunctionClass *klass)
 	/* Implementation */
 	klass->object_class.shutdown = compiled_function_shutdown;
 	klass->function_impl.signature = compiled_function_signature;
-	klass->function_impl.invoke = compiled_function_invoke;
+	klass->function_impl.invoke_vals = compiled_function_invoke;
 }
 
 static void
 aosora_compiled_function_finalize (AZOCompiledFunctionClass *klass, AZOCompiledFunction *cfunc)
 {
-	az_function_signature_delete(cfunc->signature);
+	/* The signature is interned (not owned) */
 }
 
 static void
@@ -132,7 +132,8 @@ azo_compiled_function_new(AZOProgram *prog)
 
 	cfunc->prog = prog;
 	azo_program_ref(prog);
-	cfunc->signature = az_function_signature_new_any(AZ_TYPE_NONE, prog->ret_type, prog->n_args);
+	/* The signature is interned and shared with the program */
+	cfunc->signature = prog->signature;
 
 	azo_datablock_init(&cfunc->static_data, prog->n_captures + prog->n_static);
 	return cfunc;

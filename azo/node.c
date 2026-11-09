@@ -381,6 +381,7 @@ azo_node_print (AZONode *expr, FILE *ofs)
 		if (expr->children->term.type != AZO_TERM_EMPTY) {
 			azo_node_print (expr->children, ofs);
 		}
+		if (expr->term.subtype == AZO_TERM_ARGUMENT_DECLARATION_VARARG) fprintf (ofs, "...");
 		azo_node_print (expr->children->next, ofs);
 		break;
 	case AZO_TERM_FUNCTION:

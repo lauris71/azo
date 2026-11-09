@@ -1014,13 +1014,38 @@ azo_parser_parse_parenthesized_expression (AZOParser *parser, AZOToken *token, u
 	 * expression or a lambda argument is decided by the following token */
 	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
 	if (result) return result;
-	if ((token->type == AZO_TOKEN_COMMA) || ((token->type == AZO_TOKEN_WORD) && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE))) {
+	/* A variadic argument - the ellipsis follows the element type (Type... NAME) */
+	unsigned int first_is_vararg = 0;
+	if (AZO_TOKEN_IS_OPERATOR (token) && (AZO_TOKEN_OPERATOR_CODE (token) == AZO_OPERATOR_ELLIPSIS)) {
+		first_is_vararg = 1;
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	}
+	if (first_is_vararg || (token->type == AZO_TOKEN_COMMA) || ((token->type == AZO_TOKEN_WORD) && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE))) {
 		/* Lambda argument list */
 		AZONode *first, *decl, *list;
 		unsigned int any_typed = 0, any_untyped = 0;
 		/* The first expression becomes the first argument */
 		first = parser_detach_last (parser);
-		if (token->type == AZO_TOKEN_COMMA) {
+		if (first_is_vararg) {
+			/* Typed variadic argument - the expression is the element type, the token is the argument name */
+			if ((token->type != AZO_TOKEN_WORD) || (azo_token_get_keyword (token, parser->src) != AZO_KEYWORD_NONE)) {
+				/* Varargs need an explicit type (use any... for heterogeneous arguments) */
+				azo_node_free_tree (first);
+				return AZO_PARSER_ERROR_SYNTAX;
+			}
+			AZONode *name = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
+			decl = azo_node_new_with_children (AZO_TERM_ARGUMENT_DECLARATION, AZO_TERM_ARGUMENT_DECLARATION_VARARG, first->term.start, token->end, 2, first, name);
+			any_typed = 1;
+			if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) {
+				azo_node_free_tree (decl);
+				return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+			}
+			if (token->type == AZO_TOKEN_COMMA) {
+				/* A variadic argument has to be the last one */
+				azo_node_free_tree (decl);
+				return AZO_PARSER_ERROR_SYNTAX;
+			}
+		} else if (token->type == AZO_TOKEN_COMMA) {
 			/* Untyped argument */
 			decl = azo_node_new_with_children (AZO_TERM_ARGUMENT_DECLARATION, AZO_TERM_GENERIC, first->term.start, first->term.end, 2,
 				azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, first->term.start, first->term.start), first);
@@ -1657,6 +1682,15 @@ parse_list (AZOParser *parser, AZOToken *token)
 		azo_node_free_tree (expr);
 		return error;
 	}
+	/* Argument lists have to fit the run-time signature (AZO_FUNCTION_MAX_ARGS slots) */
+	unsigned int n_args = 0;
+	for (AZONode *a = expr->children; a; a = a->next) n_args += 1;
+	if (n_args > AZO_FUNCTION_MAX_ARGS) {
+		parser_pop (parser);
+		parser_detach_last (parser);
+		azo_node_free_tree (expr);
+		return AZO_PARSER_ERROR_TOO_MANY_ARGUMENTS;
+	}
 	expr->term.end = token->end;
 	azo_tokenizer_get_next_token (&parser->tokenizer, token);
 	parser_pop (parser);
@@ -1688,8 +1722,9 @@ parse_function_call (AZOParser *parser, AZOToken *token)
 
 /*
  * Parse a single argument definition
- *   Type NAME    (typed)
- *   NAME         (untyped)
+ *   Type NAME      (typed)
+ *   Type... NAME   (typed variadic - has to be the last argument)
+ *   NAME           (untyped)
  *
  * has_type is set to 1 if the argument has an explicit type, 0 otherwise
  * (the typedness is needed by the lambda rule: arguments are either all
@@ -1700,12 +1735,18 @@ static unsigned int
 parse_argument_definition (AZOParser *parser, AZOToken *token, unsigned int *has_type)
 {
 	AZONode *left, *right, *decl;
-	unsigned int result, start;
+	unsigned int result, start, is_vararg;
 	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
 	start = token->start;
 	result = azo_parser_parse_expression (parser, token, AZO_PRECEDENCE_COMMA);
 	if (result) return result;
 	if (token->type == AZO_TOKEN_EOF) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	/* Variadic argument - the ellipsis follows the element type */
+	is_vararg = 0;
+	if (AZO_TOKEN_IS_OPERATOR (token) && (AZO_TOKEN_OPERATOR_CODE (token) == AZO_OPERATOR_ELLIPSIS)) {
+		is_vararg = 1;
+		if (!azo_tokenizer_get_next_token (&parser->tokenizer, token)) return AZO_PARSER_ERROR_UNEXPECTED_EOF;
+	}
 	if ((token->type == AZO_TOKEN_WORD) && (azo_token_get_keyword (token, parser->src) == AZO_KEYWORD_NONE)) {
 		AZONode *name = azo_node_new_reference (AZO_TERM_REFERENCE_VARIABLE, parser->src, token);
 		parser_append (parser, name);
@@ -1719,11 +1760,22 @@ parse_argument_definition (AZOParser *parser, AZOToken *token, unsigned int *has
 		}
 		*has_type = 1;
 	} else {
+		if (is_vararg) {
+			/* Varargs need an explicit type (use any... for heterogeneous arguments) */
+			right = parser_detach_last (parser);
+			azo_node_free_tree (right);
+			return AZO_PARSER_ERROR_SYNTAX;
+		}
 		left = azo_node_new (AZO_TERM_EMPTY, AZO_TERM_GENERIC, start, start);
 		right = parser_detach_last (parser);
 		*has_type = 0;
 	}
-	decl = azo_node_new_with_children (AZO_TERM_ARGUMENT_DECLARATION, AZO_TERM_GENERIC, start, token->start, 2, left, right);
+	decl = azo_node_new_with_children (AZO_TERM_ARGUMENT_DECLARATION, (is_vararg) ? AZO_TERM_ARGUMENT_DECLARATION_VARARG : AZO_TERM_GENERIC, start, token->start, 2, left, right);
+	if (is_vararg && (token->type == AZO_TOKEN_COMMA)) {
+		/* A variadic argument has to be the last one */
+		azo_node_free_tree (decl);
+		return AZO_PARSER_ERROR_SYNTAX;
+	}
 	parser_append (parser, decl);
 	return AZO_ERROR_NONE;
 }
@@ -1798,6 +1850,14 @@ parse_lambda (AZOParser *parser, AZOToken *token, unsigned int left_precedence, 
 		return AZO_PARSER_ERROR_SYNTAX;
 	}
 	AZONode *args = parser_detach_last (parser);
+	/* The argument list has to fit the run-time signature (a member 'this' is one of the declared arguments) */
+	unsigned int n_args = 0;
+	for (AZONode *a = args->children; a; a = a->next) n_args += 1;
+	if (n_args > AZO_FUNCTION_MAX_ARGS) {
+		azo_node_free (type);
+		azo_node_free_tree (args);
+		return AZO_PARSER_ERROR_TOO_MANY_ARGUMENTS;
+	}
 	/* => */
 	if (!AZO_TOKEN_IS_OPERATOR (token) || (AZO_TOKEN_OPERATOR_CODE (token) != AZO_OPERATOR_LAMBDA)) {
 		azo_node_free (type);

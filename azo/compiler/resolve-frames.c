@@ -18,6 +18,7 @@
 
 #include <azo/compiler/compiler.h>
 #include <azo/node.h>
+#include <azo/parser.h>
 #include <azo/keyword.h>
 #include <azo/exception.h>
 #include <azo/compiler/resolver.h>
@@ -189,7 +190,7 @@ azo_compiler_resolve_frame(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node
 	rctx->print_tree = 0;
 	if (result) return result;
 
-	if (rctx->frame->ret_type && !rctx->frame->ret_is_last) {
+	if (rctx->frame->signature->ret_type && !rctx->frame->ret_is_last) {
 		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Missing return statement\n");
 		return 1;
 	}
@@ -453,8 +454,9 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 		if (result) return result;
 	}
 
+	AZFunctionSignature32 sig = {0};
+	sig.ret_type = ret_type->type;
 	/* Argument list */
-	unsigned int n_args = 0;
 	for (AZONode *decl = args->children; decl; decl = decl->next) {
 		if (decl->term.type != AZO_TERM_ARGUMENT_DECLARATION) {
 			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, decl->term.start, decl->term.end, "Invalid expression type %u/%u in signature\n", decl->term.type, decl->term.subtype);
@@ -473,26 +475,30 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Invalid expression type %u/%u in signature\n", name->term.type, name->term.subtype);
 			return 1;
 		}
-		n_args += 1;
+		if (sig.n_args >= AZO_FUNCTION_MAX_ARGS) {
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, decl->term.start, decl->term.end, "Too many function arguments (maximum %u)\n", AZO_FUNCTION_MAX_ARGS);
+			return 1;
+		}
+		sig.arg_types[sig.n_args++] = type->type;
 	}
 
 	AZOResolveCtx fctx = *rctx;
-	fctx.ret_type = ret_type->type;
+	fctx.signature = az_function_signature_new(sig.ret_type, sig.n_args, sig.arg_types);
 	fctx.print_tree = 0;
 
 	unsigned int frame_idx;
 	if (func->term.flags & AZO_TERM_FLAG_STATIC) {
 		frame_idx = comp->n_frames;
-		fctx.frame = azo_compiler_new_frame (comp, rctx->frame, 0, n_args, ret_type->type);
+		fctx.frame = azo_compiler_new_frame (comp, rctx->frame, 0, fctx.signature);
 		fctx.this_variant = AZO_COMPILER_NO_THIS;
 	} else {
 		/* Capture 'this'' it exists in parent frame */
 		if (rctx->this_variant == AZO_COMPILER_NO_THIS) {
 			frame_idx = comp->n_frames;
-			fctx.frame = azo_compiler_new_frame (comp, rctx->frame, 0, n_args, ret_type->type);
+			fctx.frame = azo_compiler_new_frame (comp, rctx->frame, 0, fctx.signature);
 		} else {
 			frame_idx = comp->n_frames;
-			fctx.frame = azo_compiler_new_frame (comp, rctx->frame, 1, n_args, ret_type->type);
+			fctx.frame = azo_compiler_new_frame (comp, rctx->frame, 1, fctx.signature);
 			fctx.this_variant = AZO_COMPILER_THIS_IS_CAPTURE;
 			fctx.this_capture_pos = 0;
 		}
@@ -563,6 +569,14 @@ resolve_function_call (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 			default:
 				azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, ref->term.start, ref->term.end, "Invalid reference subtype %u\n", ref->term.subtype);
 				return 1;
+		}
+		/* Member calls may retry the lookup with 'this' prepended, so the source
+		 * argument list has to leave one signature slot for it */
+		unsigned int n_args = 0;
+		for (AZONode *a = args->children; a; a = a->next) n_args += 1;
+		if (n_args > AZO_FUNCTION_MAX_ARGS - 1) {
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, args->term.start, args->term.end, "Too many arguments in member call (maximum %u with 'this')\n", AZO_FUNCTION_MAX_ARGS - 1);
+			return 1;
 		}
 		/* FUNCTION(REF(BASE,NAME),ARGS) -> FUNCTION(BASE,NAME,ARGS) */
 		AZONode *base = ref->children;
@@ -708,8 +722,8 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 		if (val->term.type == AZO_TERM_CONSTANT) {
 			// fixme: Optimizer stuff
 			// fixme: Have to check is assignable
-			if (!az_type_is_a (val->type, rctx->frame->ret_type)) {
-				if (az_value_convert_in_place (&val->value.impl, &val->value.v, rctx->frame->ret_type, AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
+			if (!az_type_is_a (val->type, rctx->frame->signature->ret_type)) {
+				if (az_value_convert_in_place (&val->value.impl, &val->value.v, rctx->frame->signature->ret_type, AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
 					azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, val->term.start, val->term.end, "Return value is wrong type\n");
 					result = 1;
 				} else {
@@ -718,7 +732,7 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 			}
 		}
 	} else {
-		if (rctx->frame->ret_type != AZ_TYPE_NONE) {
+		if (rctx->frame->signature->ret_type != AZ_TYPE_NONE) {
 			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, term->term.start, term->term.end, "Must return a value\n");
 			result = 1;
 		}

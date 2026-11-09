@@ -56,22 +56,28 @@ test_program_with_this(AZOContext *ctx, const char *text, const AZImplementation
 	azo_compiler_setup(&comp, globals, src);
     comp.debug = 1;
 
+    AZFunctionSignature32 sig = {0};
+    sig.ret_type = ret_type;
+    sig.n_args = n_args;
+    for (unsigned int i = 0; i < n_args; i++) {
+        sig.arg_types[i] = AZ_IMPL_TYPE(arg_impls[i]);
+    }
 	AZOCompilerContext comp_ctx = {
-		.ret_type = ret_type,
+		.signature = az_function_signature_new(sig.ret_type, sig.n_args, sig.arg_types),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
 	if (!this_impl) {
-		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
+		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, comp_ctx.signature);
 		comp_ctx.this_variant = AZO_COMPILER_NO_THIS;
 	} else if (!this_inst) {
-		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
+		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, comp_ctx.signature);
 		/* This is argument 0 */
 		AZOVariable *var = azo_frame_declare_this(comp_ctx.frame, AZ_IMPL_TYPE(this_impl));
 		comp_ctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
 		comp_ctx.this_var_pos = var->pos;
 	} else {
-		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
+		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, comp_ctx.signature);
 		comp_ctx.this_variant = AZO_COMPILER_THIS_IS_SHARED;
 		comp_ctx.this_static_pos = azo_frame_append(comp_ctx.frame, this_impl, this_inst);
 	}
@@ -347,6 +353,49 @@ test_function(void)
         TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_UINT32(AZ_IMPL_TYPE(ret_impl), AZ_TYPE_INT32);
         TEST_ASSERT_EQUAL_INT32(1003, ret_val.int32_v);
+    }
+    /* A function with 32 arguments (the signature maximum) compiles and runs */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static char src[4096];
+        char params[2048], call_args[2048];
+        params[0] = 0;
+        call_args[0] = 0;
+        for (int i = 0; i < 32; i++) {
+            sprintf(params + strlen(params), "%sint32 a%d", (i) ? ", " : "", i);
+            sprintf(call_args + strlen(call_args), "%s%d", (i) ? ", " : "", i + 1);
+        }
+        sprintf(src, "any func = (%s) int32 => {return a31;};\nreturn func(%s);\n", params, call_args);
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_INT32(32, ret_val.int32_v);
+    }
+    /* A member call with 31 arguments ('this' fills the last signature slot) compiles and runs */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static char src[4096];
+        char params[2048], call_args[2048];
+        params[0] = 0;
+        call_args[0] = 0;
+        for (int i = 0; i < 31; i++) {
+            sprintf(params + strlen(params), "%sint32 a%d", (i) ? ", " : "", i);
+            sprintf(call_args + strlen(call_args), "%s%d", (i) ? ", " : "", i + 1);
+        }
+        sprintf(src,
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj.prop = (TestObject t, %s) int32 => {return a30;};\n"
+            "return tobj.prop(%s);\n", params, call_args);
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_INT32(31, ret_val.int32_v);
+        /* A member call with 32 arguments does not compile ('this' + 32 would overflow the signature) */
+        sprintf(src,
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj.prop = (TestObject t, int32 a) int32 => {return a;};\n"
+            "tobj.prop(%s, 32);\n", call_args);
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) != 0);
     }
     /* Attribute functions */
     /* Calling missing attribute throws NULL_DEREFERENCE */

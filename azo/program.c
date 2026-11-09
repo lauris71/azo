@@ -59,8 +59,7 @@ azo_program_new(AZOContext *ctx, AZOFrame *frame, AZONode *tree, AZOSource *src)
 	prog->tcode = code->bc;
 	prog->tcode_length = code->bc_len;
 
-	prog->n_args = frame->n_args;
-	prog->ret_type = frame->ret_type;
+	prog->signature = frame->signature;
 	prog->n_captures = frame->n_captures;
 	prog->n_static = frame->n_static;
 	prog->n_const = code->data_len;
@@ -100,18 +99,16 @@ azo_program_print_bytecode (AZOProgram *prog)
 }
 
 AZOProgram *
-azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
-	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[],
-	const uint8_t *code, unsigned int code_len)
+azo_program_compile(AZOContext *globals, AZOSource *src,
+	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type,unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[])
 {
-	AZOSource *src = azo_source_new_duplicate(name, code, code_len);
 	AZOParser parser;
 	azo_parser_setup (&parser, src);
-	AZONode *expr = azo_parser_parse (&parser);
-	//azo_node_print_info(expr, stderr, src, 0);
+	AZONode *root = azo_parser_parse (&parser);
+	//azo_node_print_info(root, stderr, src, 0);
 
 	AZOCompilerContext comp_ctx = {
-		.ret_type = ret_type,
+		.signature = az_function_signature_new(ret_type, n_args, arg_types),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
@@ -120,16 +117,16 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 	comp.debug = 1;
 
 	if (!this_impl) {
-		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
+		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, comp_ctx.signature);
 		comp_ctx.this_variant = AZO_COMPILER_NO_THIS;
 	} else if (!this_inst) {
-		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
+		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, comp_ctx.signature);
 		/* This is argument 0 */
 		AZOVariable *var = azo_frame_declare_this(comp_ctx.frame, AZ_IMPL_TYPE(this_impl));
 		comp_ctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
 		comp_ctx.this_var_pos = var->pos;
 	} else {
-		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, n_args, ret_type);
+		comp_ctx.frame = azo_compiler_new_frame(&comp, NULL, 0, comp_ctx.signature);
 		comp_ctx.this_variant = AZO_COMPILER_THIS_IS_SHARED;
 		comp_ctx.this_static_pos = azo_frame_append(comp_ctx.frame, this_impl, this_inst);
 	}
@@ -139,17 +136,17 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 		}
 		// fixme: fail
 	}
-	int result = azo_compiler_resolve_program(&comp, &comp_ctx, expr);
+	int result = azo_compiler_resolve_program(&comp, &comp_ctx, root);
 	if (result != 0) {
 		azo_parser_release (&parser);
 		azo_source_unref(src);
 		azo_compiler_release(&comp);
 		return NULL;
 	}
-	//azo_node_print_info(expr, stderr, src, 0);
+	//azo_node_print_info(root, stderr, src, 0);
 	AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
-	result = azo_compiler_optimize_program(&opt, &comp_ctx, expr, AZO_OPTIMIZER_FLAG_ALL);
+	result = azo_compiler_optimize_program(&opt, &comp_ctx, root, AZO_OPTIMIZER_FLAG_ALL);
 	azo_optimizer_release(&opt);
 	if (result != 0) {
 		azo_parser_release (&parser);
@@ -158,10 +155,21 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 		return NULL;
 	}
 
-	AZOProgram *prog = azo_compiler_compile (&comp, &comp_ctx, expr, src);
+	AZOProgram *prog = azo_compiler_compile (&comp, &comp_ctx, root, src);
 	azo_parser_release (&parser);
 	azo_source_unref(src);
 	azo_compiler_release(&comp);
+	return prog;
+}
+
+AZOProgram *
+azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
+	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[],
+	const uint8_t *code, unsigned int code_len)
+{
+	AZOSource *src = azo_source_new_duplicate(name, code, code_len);
+	AZOProgram *prog = azo_program_compile(globals, src, this_impl, this_inst, ret_type, n_args, arg_names, arg_types);
+	azo_source_unref(src);
 	return prog;
 }
 
@@ -186,7 +194,7 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 	} else {
 		azo_interpreter_run_frame(intr, &ictx);
 	}
-	if (prog->ret_type) {
+	if (prog->signature->ret_type) {
 		*ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
 	} else {
 		*ret_impl = NULL;

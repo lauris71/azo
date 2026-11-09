@@ -429,8 +429,10 @@ interpret_THROW (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *i
 	if (!intr->ctx->az_ctx.exc.type) {
 		AZString *msg = NULL;
 		if (msg_type == AZ_TYPE_STRING) msg = (AZString *) azo_stack_instance_bw (&intr->stack, 1);
-		AZPackedValue payload = { azo_stack_impl_bw (&intr->stack, 0), 0, *azo_stack_value_bw (&intr->stack, 0) };
+		AZPackedValue payload = {0};
+		az_packed_value_set_autobox(&payload, azo_stack_impl_bw(&intr->stack, 0), azo_stack_instance_bw(&intr->stack, 0));
 		azo_context_set_exception_value (intr->ctx, type, msg, &payload, ip);
+		az_packed_value_clear(&payload);
 	}
 	azo_stack_pop (&intr->stack, 2);
 	if (!(intr->flags & AZO_INTR_FLAG_NO_THROW)) return NULL;
@@ -577,7 +579,7 @@ interpret_STORE_VALUE(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsig
 	memcpy (&loc, ip + 1, 4);
 	unsigned int flags = ip[5];
 	CHECK_UNDERFLOW(1);
-	if (azo_datablock_set_from_val(ictx->shared_data, loc, azo_stack_impl_bw(&intr->stack, 0), azo_stack_value_bw(&intr->stack, 0), flags) != AZ_OK) {
+	if (azo_datablock_set(ictx->shared_data, loc, azo_stack_impl_bw(&intr->stack, 0), azo_stack_instance_bw(&intr->stack, 0), flags) != AZ_OK) {
 		EXCEPTION_THROW(AZO_EXCEPTION_NOT_WRITABLE);
 	}
 	azo_stack_pop (&intr->stack, 1);
@@ -601,7 +603,7 @@ interpret_STORE_CAPTURE(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uns
 	memcpy (&loc, ip + 1, 4);
 	unsigned int flags = ip[5];
 	CHECK_UNDERFLOW(1);
-	if (azo_datablock_set_from_val(ictx->static_data, loc, azo_stack_impl_bw(&intr->stack, 0), azo_stack_value_bw(&intr->stack, 0), flags) != AZ_OK) {
+	if (azo_datablock_set(ictx->static_data, loc, azo_stack_impl_bw(&intr->stack, 0), azo_stack_instance_bw(&intr->stack, 0), flags) != AZ_OK) {
 		EXCEPTION_THROW(AZO_EXCEPTION_NOT_WRITABLE);
 	}
 	azo_stack_pop (&intr->stack, 1);
@@ -1446,7 +1448,7 @@ static const unsigned char *
 interpret_RETURN_VALUE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	CHECK_UNDERFLOW(1);
-	intr->vals[0].impl = az_value_copy_autobox(azo_stack_impl_bw(&intr->stack, 0), &intr->vals[0].v.value, azo_stack_value_bw(&intr->stack, 0), 64);
+	intr->vals[0].impl = az_value_set_from_inst_autobox(azo_stack_impl_bw(&intr->stack, 0), &intr->vals[0].v.value, 64, azo_stack_instance_bw(&intr->stack, 0));
 	azo_stack_pop(&intr->stack, 1);
 	return NULL;
 }

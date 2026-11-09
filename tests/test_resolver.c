@@ -27,9 +27,9 @@ resolve_text(AZOContext *globals, const char *text, AZOParser *parser, AZOSource
     AZOCompiler comp;
     azo_compiler_setup(&comp, globals, *src);
     AZOResolveCtx rctx = {
-        .ret_type = AZ_TYPE_NONE
+        .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
     };
-    rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+    rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
     rctx.this_variant = AZO_COMPILER_NO_THIS;
     int result = azo_compiler_resolve_program(&comp, &rctx, *tree);
     azo_compiler_release(&comp);
@@ -62,9 +62,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);
         AZONode *nodes[16];
@@ -93,9 +93,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_INT32, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_INT32);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
         azo_compiler_release(&comp);
@@ -111,9 +111,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new_va(AZ_TYPE_INT32, 1, AZ_TYPE_INT32),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_INT32);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         AZOVariable *var = azo_frame_declare_this(rctx.frame, AZ_TYPE_INT32);
         rctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
         rctx.this_var_pos = var->pos;
@@ -132,9 +132,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);
         azo_compiler_release(&comp);
@@ -150,9 +150,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_INT32),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         azo_frame_declare_this(rctx.frame, AZ_TYPE_INT32);
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -169,9 +169,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_INT32),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         azo_frame_declare_this(rctx.frame, AZ_TYPE_INT32);
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);
@@ -189,9 +189,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_INT32),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         azo_frame_declare_this(rctx.frame, AZ_TYPE_INT32);
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);
@@ -220,9 +220,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_ACTIVE_OBJECT),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         AZString *str = az_string_new((const uint8_t *) "a");
         AZOVariable *var = azo_frame_declare_variable(rctx.frame, str, AZ_TYPE_ACTIVE_OBJECT, 0);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
@@ -255,9 +255,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_INT32),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);
@@ -273,9 +273,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_INT32),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -291,9 +291,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_INT32),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -309,9 +309,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_INT32),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -327,9 +327,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);
@@ -345,9 +345,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -363,9 +363,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -381,9 +381,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);
@@ -399,9 +399,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -417,9 +417,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -435,9 +435,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(!result);
@@ -453,9 +453,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new_va(AZ_TYPE_NONE, 1, AZ_TYPE_INT32),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 1, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -471,9 +471,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -489,9 +489,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);
@@ -507,9 +507,9 @@ test_resolver(void)
         AZOCompiler comp;
         azo_compiler_setup(&comp, globals, src);
         AZOResolveCtx rctx = {
-            .ret_type = AZ_TYPE_NONE
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
         };
-        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_NONE);
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
         rctx.this_variant = AZO_COMPILER_NO_THIS;
         int result = azo_compiler_resolve_program(&comp, &rctx, tree);
         TEST_ASSERT(result);

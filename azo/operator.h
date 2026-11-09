@@ -14,6 +14,9 @@ extern "C" {
 typedef struct _AZOOperator AZOOperator;
 
 enum {
+	/* Structural (varargs declaration), not an expression operator - has to be
+	 * before DOT so the tokenizer matches "..." before "." */
+	AZO_OPERATOR_ELLIPSIS,
 	AZO_OPERATOR_DOT,
 	AZO_OPERATOR_ARROW,
 	AZO_OPERATOR_LAMBDA,

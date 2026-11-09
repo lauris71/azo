@@ -29,7 +29,7 @@ extern "C" {
 
 struct _AZOCompiledFunction {
 	AZObject object;
-	AZFunctionSignature *signature;
+	const AZFunctionSignature *signature;
 	AZOContext *ctx;
 	AZONode *root;
 	/* Captures and static */

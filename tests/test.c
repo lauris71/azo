@@ -73,7 +73,7 @@ test_program_noargs(AZOContext *ctx, const char *text, const unsigned int ret_ty
 	azo_node_print_info(tree, stderr, src, 0);
 
 	AZOCompilerContext comp_ctx = {
-		.ret_type = AZ_TYPE_INT32,
+		.signature = az_function_signature_new(AZ_TYPE_INT32, 0, NULL),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
@@ -81,7 +81,7 @@ test_program_noargs(AZOContext *ctx, const char *text, const unsigned int ret_ty
 	azo_compiler_setup(&comp, globals, src);
 	comp.debug = 1;
 
-	AZOFrame *frame = azo_compiler_new_frame(&comp, NULL, 0, 0, AZ_TYPE_INT32);
+	AZOFrame *frame = azo_compiler_new_frame(&comp, NULL, 0, comp_ctx.signature);
 
     comp_ctx.frame = frame;
 	int result = azo_compiler_resolve_program(&comp, &comp_ctx, tree);
@@ -95,7 +95,7 @@ test_program_noargs(AZOContext *ctx, const char *text, const unsigned int ret_ty
 	AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
 	comp_ctx = (AZOCompilerContext) {
-		.ret_type = AZ_TYPE_INT32,
+		.signature = az_function_signature_new(AZ_TYPE_INT32, 0, NULL),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
@@ -110,7 +110,7 @@ test_program_noargs(AZOContext *ctx, const char *text, const unsigned int ret_ty
 	}
 
 	comp_ctx = (AZOCompilerContext) {
-		.ret_type = AZ_TYPE_INT32,
+		.signature = az_function_signature_new(AZ_TYPE_INT32, 0, NULL),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};

@@ -92,13 +92,13 @@ azo_compiler_release(AZOCompiler *compiler)
 }
 
 AZOFrame *
-azo_compiler_new_frame(AZOCompiler *comp, AZOFrame *parent, unsigned int capture_this, unsigned int n_args, unsigned int ret_type)
+azo_compiler_new_frame(AZOCompiler *comp, AZOFrame *parent, unsigned int capture_this, const AZFunctionSignature *signature)
 {
 	if (comp->n_frames >= comp->n_frames_allocated) {
 		comp->n_frames_allocated += 8;
 		comp->frames = realloc(comp->frames, comp->n_frames_allocated * sizeof(AZOFrame *));
 	}
-	AZOFrame *frame = azo_frame_new (parent, capture_this, n_args, ret_type, comp->debug);
+	AZOFrame *frame = azo_frame_new (parent, capture_this, signature, comp->debug);
 	frame->parent = parent;
 	comp->frames[comp->n_frames++] = frame;
 	return frame;
@@ -358,7 +358,7 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 		if (!azo_compiler_compile_expression (comp, ctx, left, src)) return 0;
 		/* Normalize the array reference to a list interface value unless it is statically
 		 * known to be one - or a concrete value array, which the opcode handles raw */
-		if (!az_type_is_a (left->type, AZ_TYPE_LIST) && !az_type_is_a (left->type, AZ_TYPE_VALUE_ARRAY)) {
+		if (!left->type || (!az_type_is_a (left->type, AZ_TYPE_LIST) && !az_type_is_a (left->type, AZ_TYPE_VALUE_ARRAY))) {
 			azo_code_write_ic_u32 (&ctx->frame->code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_LIST, left);
 		}
 		if (!azo_compiler_compile_expression (comp, ctx, right, src)) return 0;
@@ -500,7 +500,7 @@ static unsigned int
 compile_call_property_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *name, const AZONode *list,
 	unsigned int n_args, unsigned int *not_property, unsigned int *finished, AZOSource *src)
 {
-	unsigned int not_exact_sig, not_member_sig;
+	unsigned int not_exact_sig, not_member_sig, not_prop;
 	AZOCode *code = &ctx->frame->code;
 
 	/* [inst, name, arg1...] */
@@ -551,6 +551,32 @@ compile_call_property_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const 
 	/* [retval] */
 	*finished = azo_code_write_JMP32 (code, JMP_32, *finished, name);
 
+#if 1
+	/* Plain property */
+	azo_code_update_JMP32 (code, not_member_sig);
+	/* [inst, name, inst, arg1..., null] */
+	azo_code_write_POP (code, 1, name);
+	/* [inst, name, inst, arg1...] */
+	azo_code_write_DUPLICATE(code, n_args + 2, name);
+	azo_code_write_DUPLICATE(code, n_args + 2, name);
+	/* [inst, name, inst, arg1..., inst, name] */
+	azo_code_write_GET_PROPERTY(code, name);
+	/* [inst, name, inst, arg1..., value|null] */
+	azo_code_compile_type_is_immediate(code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_prop, NULL, name);
+	/* [inst, name, inst, arg1..., value] */
+	azo_code_write_ROLL(code, n_args + 1, name);
+	/* [inst, name, value, inst, arg1... */
+	azo_code_write_ic_u8(code, AZO_TC_INVOKE_MEMBER, n_args + 1, name);
+	/* [inst, name, retval] */
+	azo_code_write_REMOVE(code, 1, 2, name);
+	/* [retval] */
+	*finished = azo_code_write_JMP32 (code, JMP_32, *finished, name);
+	azo_code_update_JMP32(code, not_prop);
+	/* [inst, name, inst, arg1..., null] */
+	azo_code_write_REMOVE(code, n_args + 1, 1, name);
+	/* [inst, name, arg1..., null] */
+	*not_property = azo_code_write_JMP32 (code, JMP_32, 0, name);
+#else
 	/* Plain property */
 	azo_code_update_JMP32 (code, not_member_sig);
 	/* [inst, name, inst, arg1..., null] */
@@ -572,6 +598,7 @@ compile_call_property_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const 
 	azo_code_write_REMOVE(code, 1, 2, name);
 	/* [retval] */
 	*finished = azo_code_write_JMP32 (code, JMP_32, *finished, name);
+#endif
 	return 1;
 }
 
@@ -607,7 +634,7 @@ compile_call_attribute (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 	//azo_compiler_write_DEBUG_STACK(comp, ctx, name);
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, inst);
 	/* [inst, name, arg1..., inst] */
-	if (!az_type_is_a(inst->type, AZ_TYPE_ATTRIBUTE_DICT)) {
+	if (!inst->type || !az_type_is_a(inst->type, AZ_TYPE_ATTRIBUTE_DICT)) {
 		azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_ATTRIBUTE_DICT, inst);
 	}
 	/* [inst, name, arg1..., adict] */
@@ -684,7 +711,7 @@ compile_call_plain (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *f
 	AZOCode *code = &ctx->frame->code;
 	if (!azo_compiler_compile_expression(comp, ctx, func, src)) return 0;
 	/* [func] */
-	if (!az_type_is_a (func->type, AZ_TYPE_FUNCTION)) {
+	if (!func->type || !az_type_is_a (func->type, AZ_TYPE_FUNCTION)) {
 		azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, func);
 	}
 	unsigned int n_args = 0;
@@ -830,17 +857,23 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	args = type->next;
 	body = args->next;
 
+	AZFunctionSignature32 sig = {0};
 	/* Return type */
 	assert (type->term.type == AZO_TERM_TYPE);
-	unsigned int ret_type = type->type;
+	sig.ret_type = type->type;
+	/* Argument types */
+	for (AZONode *arg = args->next; arg; arg = arg->next) {
+		/* Children are AZO_TERM_ARGUMENT_DECLARATION, first grandchild is either CONSTANT or TYPE, in both cases node->type is correct type  */
+		AZONode *type = arg->children;
+		sig.arg_types[sig.n_args++] = type->type;
+	}
 
 	/* Compile function body in it's own resolved frame */
 	assert(node->frame_idx < comp->n_frames);
-
 	AZOFrame *func_frame = comp->frames[node->frame_idx];
 
 	AZOCompilerContext func_ctx = *ctx;
-	func_ctx.ret_type = ret_type;
+	func_ctx.signature = az_function_signature_new(sig.ret_type, sig.n_args, sig.arg_types);
 	func_ctx.frame = func_frame;
 	
 	prog = azo_compiler_compile(comp, &func_ctx, body, src);
@@ -1045,7 +1078,7 @@ compile_array_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONo
 	azo_compiler_compile_expression (comp, ctx, array_ref, src);
 	/* Normalize the array reference to a list interface value unless it is statically
 	 * known to be one (GET_INTERFACE throws INVALID_TYPE otherwise) */
-	if (!az_type_is_a (array_ref->type, AZ_TYPE_LIST)) {
+	if (!array_ref->type || !az_type_is_a (array_ref->type, AZ_TYPE_LIST)) {
 		azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_LIST, array_ref);
 	}
 	/* Array */

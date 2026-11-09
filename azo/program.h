@@ -13,6 +13,7 @@ typedef struct _AZOProgramClass AZOProgramClass;
 #define AZO_TYPE_PROGRAM azo_program_get_type()
 
 #include <az/value.h>
+#include <az/signature.h>
 
 #include <azo/datablock.h>
 #include <azo/code.h>
@@ -31,8 +32,8 @@ struct _AZOProgram {
 	AZReference reference;
 	AZOContext *ctx;
 
-	unsigned int n_args;
-	unsigned int ret_type;
+	/* Argument and return types (interned, not owned) */
+	const AZFunctionSignature *signature;
 	unsigned int n_captures;
 	unsigned int n_static;
 	unsigned int n_const;
@@ -70,6 +71,8 @@ AZOProgram *azo_program_new(AZOContext *ctx, AZOFrame *frame, AZONode *tree, AZO
 
 void azo_program_print_bytecode (AZOProgram *program);
 
+AZOProgram *azo_program_compile(AZOContext *ctx, AZOSource *src,
+	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[]);
 AZOProgram *azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,
 	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[],
 	const uint8_t *code, unsigned int code_len);

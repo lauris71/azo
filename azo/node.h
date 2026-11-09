@@ -230,6 +230,12 @@ enum {
 	AZO_TERM_BLOCK_DEFER
 };
 
+/* Argument declaration subtypes (AZO_TERM_GENERIC is a plain argument) */
+enum {
+	/* Variadic argument (Type... NAME) - has to be the last argument, children: [type, name] */
+	AZO_TERM_ARGUMENT_DECLARATION_VARARG = 1
+};
+
 /**
  * @brief Reference subtypes
  */
