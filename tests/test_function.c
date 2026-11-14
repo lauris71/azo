@@ -56,14 +56,12 @@ test_program_with_this(AZOContext *ctx, const char *text, const AZImplementation
 	azo_compiler_setup(&comp, globals, src);
     comp.debug = 1;
 
-    AZFunctionSignature32 sig = {0};
-    sig.ret_type = ret_type;
-    sig.n_args = n_args;
+    unsigned int arg_types[32];
     for (unsigned int i = 0; i < n_args; i++) {
-        sig.arg_types[i] = AZ_IMPL_TYPE(arg_impls[i]);
+        arg_types[i] = AZ_IMPL_TYPE(arg_impls[i]);
     }
 	AZOCompilerContext comp_ctx = {
-		.signature = az_function_signature_new(sig.ret_type, sig.n_args, sig.arg_types),
+		.signature = az_function_signature_new(ret_type, n_args, arg_types),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
@@ -622,8 +620,8 @@ struct _TestObjectClass {
 static void test_object_class_init (TestObjectClass *klass);
 static void test_object_finalize(const TestObjectClass *klass, TestObject *tobj);
 
-static AZFunctionSignature *sig_i32 = NULL;
-static AZFunctionSignature *sig_tobj_i32 = NULL;
+static const AZFunctionSignature *sig_i32 = NULL;
+static const AZFunctionSignature *sig_tobj_i32 = NULL;
 
 /* Properties */
 enum {

@@ -190,7 +190,7 @@ azo_compiler_resolve_frame(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node
 	rctx->print_tree = 0;
 	if (result) return result;
 
-	if (rctx->frame->signature->ret_type && !rctx->frame->ret_is_last) {
+	if (AZ_SIGNATURE_RET_TYPE(rctx->frame->signature) && !rctx->frame->ret_is_last) {
 		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Missing return statement\n");
 		return 1;
 	}
@@ -440,22 +440,23 @@ static unsigned int
 resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 {
 	unsigned int result = 0;
-	AZONode *ret_type = func->children;
-	AZONode *args = ret_type->next;
+	AZONode *ret = func->children;
+	AZONode *args = ret->next;
 	AZONode *body = args->next;
 
 	/* Return type */
-	if (ret_type->term.type == AZO_TERM_EMPTY) {
+	if (ret->term.type == AZO_TERM_EMPTY) {
 		/* Replace void with type none */
-		ret_type->term.type = AZO_TERM_TYPE;
-		ret_type->type = AZ_TYPE_NONE;
+		ret->term.type = AZO_TERM_TYPE;
+		ret->type = AZ_TYPE_NONE;
 	} else {
-		result = azo_compiler_resolve_type_expression(comp, rctx, 0, ret_type);
+		result = azo_compiler_resolve_type_expression(comp, rctx, 0, ret);
 		if (result) return result;
 	}
 
-	AZFunctionSignature32 sig = {0};
-	sig.ret_type = ret_type->type;
+	unsigned int ret_type = ret->type;
+	unsigned int n_args = 0;
+	unsigned int arg_types[32];
 	/* Argument list */
 	for (AZONode *decl = args->children; decl; decl = decl->next) {
 		if (decl->term.type != AZO_TERM_ARGUMENT_DECLARATION) {
@@ -475,15 +476,15 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Invalid expression type %u/%u in signature\n", name->term.type, name->term.subtype);
 			return 1;
 		}
-		if (sig.n_args >= AZO_FUNCTION_MAX_ARGS) {
+		if (n_args >= AZO_FUNCTION_MAX_ARGS) {
 			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, decl->term.start, decl->term.end, "Too many function arguments (maximum %u)\n", AZO_FUNCTION_MAX_ARGS);
 			return 1;
 		}
-		sig.arg_types[sig.n_args++] = type->type;
+		arg_types[n_args++] = type->type;
 	}
 
 	AZOResolveCtx fctx = *rctx;
-	fctx.signature = az_function_signature_new(sig.ret_type, sig.n_args, sig.arg_types);
+	fctx.signature = az_function_signature_new(ret_type, n_args, arg_types);
 	fctx.print_tree = 0;
 
 	unsigned int frame_idx;
@@ -722,8 +723,8 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 		if (val->term.type == AZO_TERM_CONSTANT) {
 			// fixme: Optimizer stuff
 			// fixme: Have to check is assignable
-			if (!az_type_is_a (val->type, rctx->frame->signature->ret_type)) {
-				if (az_value_convert_in_place (&val->value.impl, &val->value.v, rctx->frame->signature->ret_type, AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
+			if (!az_type_is_a (val->type, AZ_SIGNATURE_RET_TYPE(rctx->frame->signature))) {
+				if (az_value_convert_in_place (&val->value.impl, &val->value.v, AZ_SIGNATURE_RET_TYPE(rctx->frame->signature), AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
 					azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, val->term.start, val->term.end, "Return value is wrong type\n");
 					result = 1;
 				} else {
@@ -732,7 +733,7 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 			}
 		}
 	} else {
-		if (rctx->frame->signature->ret_type != AZ_TYPE_NONE) {
+		if (AZ_SIGNATURE_RET_TYPE(rctx->frame->signature) != AZ_TYPE_NONE) {
 			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, term->term.start, term->term.end, "Must return a value\n");
 			result = 1;
 		}
@@ -987,11 +988,6 @@ azo_compiler_resolve_cast (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr
 	AZONode *type = expr->children;
 	AZONode *val = type->next;
 	unsigned int result;
-	if (expr->term.subtype != AZO_TERM_CAST_CONVERT) {
-		/* fixme: implement checked class/interface conversion (as) */
-		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, expr->term.start, expr->term.end, "Only primitive conversion casts are implemented\n");
-		return 1;
-	}
 	result = azo_compiler_resolve_node (comp, rctx, type);
 	if (result) return result;
 	if (type->term.type != AZO_TERM_CONSTANT) {
@@ -1004,7 +1000,6 @@ azo_compiler_resolve_cast (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr
 	}
 	type->term.type = AZO_TERM_TYPE;
 	type->type = AZ_IMPL_TYPE((AZImplementation *) type->value.v.block);
-
 	result = azo_compiler_resolve_node (comp, rctx, val);
 	if (result) return result;
 	/* The cast yields the target type */

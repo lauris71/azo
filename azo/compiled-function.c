@@ -116,7 +116,7 @@ compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, cons
 
 	azo_context_clear_exception((AZOContext *) ctx);
 
-	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, &cfunc->static_data, cfunc->signature->n_args, arg_impls, arg_vals, ret_impl, &ret_val->value, 64);
+	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, &cfunc->static_data, AZ_SIGNATURE_N_ARGS(cfunc->signature), arg_impls, arg_vals, ret_impl, &ret_val->value, 64);
 
 	az_object_unref ((AZObject *) cfunc);
 

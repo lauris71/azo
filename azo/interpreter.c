@@ -905,6 +905,42 @@ interpret_CONVERT_TYPE_EXACT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, con
 }
 
 static const unsigned char *
+interpret_CAST (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
+{
+	uint32_t to_type;
+	memcpy(&to_type, ip + 1, 4);
+	CHECK_UNDERFLOW(1);
+	unsigned int from_type = azo_stack_type_bw(&intr->stack, 0);
+	if (!from_type) {
+		/* null -> typed null */
+		if (!AZ_TYPE_IS_BLOCK(to_type)) {
+			EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
+		}
+		azo_stack_pop (&intr->stack, 1);
+		azo_stack_push_instance(&intr->stack, AZ_IMPL_FROM_TYPE(to_type), NULL);
+		return ip + 5;
+	}
+	if (az_type_is_a(from_type, to_type)) {
+		/* Supertype, nop */
+		return ip + 5;
+	}
+	if (AZ_TYPE_IS_INTERFACE(to_type)) {
+		const AZImplementation *impl = azo_stack_impl_bw(&intr->stack, 0);
+		void *inst = azo_stack_instance_bw(&intr->stack, 0);
+		void *if_inst;
+		const AZImplementation *if_impl = az_instance_get_interface_autobox(impl, inst, to_type, &if_inst);
+		if (!if_impl) {
+			EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
+		}
+		azo_stack_pop (&intr->stack, 1);
+		azo_stack_push_instance(&intr->stack, if_impl, if_inst);
+		return ip + 5;
+	}
+	EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
+	return ip + 5;
+}
+
+static const unsigned char *
 interpret_EQUAL_TYPED (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ip)
 {
 	AZValue result;
@@ -1407,23 +1443,27 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 	const AZFunctionImplementation *func_impl = (const AZFunctionImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, pos), azo_stack_instance_bw (&intr->stack, pos), AZ_TYPE_FUNCTION, (void **) &func_inst);
 	if (!func_impl) EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	const AZFunctionSignature *sig = az_function_get_signature (func_impl, func_inst);
-	if (sig->n_args != pos) {
-		if ((*ip != AZO_TC_INVOKE_MEMBER) || (pos != (sig->n_args + 1))) {
+	unsigned int sig_n_args = AZ_SIGNATURE_N_ARGS(sig);
+	if (sig_n_args != pos) {
+		if ((*ip != AZO_TC_INVOKE_MEMBER) || (pos != (sig_n_args + 1))) {
 			EXCEPTION_THROW(AZ_EXCEPTION_SIGNATURE_MISMATCH);
 		}
 		/* The special case - compiler assigned this value but the function does not expect it */
-		fprintf(stderr, "Function expects %u arguments, got %u\n", sig->n_args, pos);
+		fprintf(stderr, "Function expects %u arguments, got %u\n", sig_n_args, pos);
 	}
-	for (unsigned int i = 0; i < sig->n_args; i++) {
-		if (!azo_stack_convert_bw (&intr->stack, sig->n_args - 1 - i, sig->arg_types[i])) {
+	for (unsigned int i = 0; i < sig_n_args; i++) {
+		if (!azo_stack_convert_bw (&intr->stack, sig_n_args - 1 - i, AZ_SIGNATURE_ARG_TYPE(sig, i))) {
+			uint8_t *str = az_instance_to_string_new(AZ_IMPL_FROM_TYPE(AZ_TYPE_FUNCTION_SIGNATURE), (void *) sig);
+			fprintf(stderr, "%s\n", str);
+			free(str);
 			EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 		}
 	}
 	unsigned int prev = azo_interpreter_push_frame(intr, pos);
 	AZPackedValue64 ret_val = {0};
-	az_function_invoke (func_impl, func_inst,
-		azo_stack_impls_bw(&intr->stack, sig->n_args - 1),
-		(const AZValue **)azo_stack_values_bw (&intr->stack, sig->n_args - 1),
+	az_function_invoke_vals (func_impl, func_inst,
+		azo_stack_impls_bw(&intr->stack, sig_n_args - 1),
+		(const AZValue **)azo_stack_values_bw (&intr->stack, sig_n_args - 1),
 		&ret_val.impl, &ret_val.v, &intr->ctx->az_ctx);
 	unsigned int new_prev = azo_interpreter_pop_frame(intr, ictx);
 	assert(new_prev == prev);
@@ -1669,13 +1709,13 @@ interpret_GET_FUNCTION (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uin
 	unsigned int n_args = ip[1];
 	CHECK_TYPE_EXACT(n_args, AZ_TYPE_STRING);
 	CHECK_UNDERFLOW(n_args + 2);
-	AZFunctionSignature32 sig;
-	sig.n_args = n_args;
-	sig.ret_type = AZ_TYPE_ANY;
+	unsigned int arg_types[32];
 	for (unsigned int i = 0; i < n_args; i++) {
 		if (i >= 32) break;
-		sig.arg_types[i] = azo_stack_type_bw (&intr->stack, n_args - 1 - i);
+		arg_types[i] = azo_stack_type_bw (&intr->stack, n_args - 1 - i);
 	}
+	/* fixme: Whether to ignore return type or not should depend on calling context */
+	const AZFunctionSignature *sig = az_function_signature_new(AZ_TYPE_NONE, n_args, arg_types);
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, n_args);
 	const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, n_args + 1);
 	if (!impl) {
@@ -1684,7 +1724,7 @@ interpret_GET_FUNCTION (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uin
 	const AZClass *def_class;
 	const AZImplementation *sub_impl;
 	void *sub_inst;
-	int idx = az_class_lookup_function(AZ_CLASS_FROM_IMPL(impl), impl, azo_stack_instance_bw (&intr->stack, n_args + 1), key, (AZFunctionSignature *) &sig, &def_class, &sub_impl, &sub_inst);
+	int idx = az_class_lookup_function(AZ_CLASS_FROM_IMPL(impl), impl, azo_stack_instance_bw (&intr->stack, n_args + 1), key, sig, &def_class, &sub_impl, &sub_inst);
 	if (idx >= 0) {
 		AZPackedValue64 val;
 		if (az_instance_get_property_by_id(def_class, AZ_CLASS_FROM_IMPL(sub_impl), sub_impl, sub_inst, idx, &val.impl, &val.v.value, 64) == AZ_OK) {
@@ -1791,20 +1831,19 @@ interpret_GET_STATIC_PROPERTY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, co
 static const unsigned char *
 interpret_GET_STATIC_FUNCTION (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
-	AZFunctionSignature32 sig;
 	unsigned int n_args = ip[1];
 	CHECK_TYPE_EXACT(n_args + 1, AZ_TYPE_CLASS);
 	CHECK_TYPE_EXACT(n_args, AZ_TYPE_STRING);
 	AZClass *klass = (AZClass *) azo_stack_instance_bw (&intr->stack, n_args + 1);
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, n_args);
-	sig.n_args = n_args;
-	sig.ret_type = AZ_TYPE_ANY;
+	unsigned int arg_types[32];
 	for (unsigned int i = 0; i < n_args; i++) {
 		if (i >= 32) break;
-		sig.arg_types[i] = azo_stack_type_bw (&intr->stack, n_args - 1 - i);
+		arg_types[i] = azo_stack_type_bw (&intr->stack, n_args - 1 - i);
 	}
+	const AZFunctionSignature *sig = az_function_signature_new(AZ_TYPE_ANY, n_args, arg_types);
 	const AZClass *def_class;
-	int idx = az_class_lookup_function(klass, NULL, NULL, key, (AZFunctionSignature *) &sig, &def_class, NULL, NULL);
+	int idx = az_class_lookup_function(klass, NULL, NULL, key, sig, &def_class, NULL, NULL);
 	if (idx >= 0) {
 		AZPackedValue64 val;
 		if (az_instance_get_property_by_id(def_class, klass, NULL, NULL, idx, &val.impl, &val.v.value, 64) == AZ_OK) {
@@ -1997,6 +2036,9 @@ switch (*ip) {
 			break;
 		case AZO_TC_CONVERT_TYPE_EXACT:
 			ip = interpret_CONVERT_TYPE_EXACT (intr, ictx, ip);
+			break;
+		case AZO_TC_CAST:
+			ip = interpret_CAST (intr, ictx, ip);
 			break;
 
 		/* Comparisons */

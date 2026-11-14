@@ -857,23 +857,24 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	args = type->next;
 	body = args->next;
 
-	AZFunctionSignature32 sig = {0};
 	/* Return type */
 	assert (type->term.type == AZO_TERM_TYPE);
-	sig.ret_type = type->type;
+	unsigned int ret_type = type->type;
+	unsigned int n_args = 0;
+	unsigned int arg_types[32];
 	/* Argument types */
-	for (AZONode *arg = args->next; arg; arg = arg->next) {
+	for (AZONode *arg = args->children; arg; arg = arg->next) {
 		/* Children are AZO_TERM_ARGUMENT_DECLARATION, first grandchild is either CONSTANT or TYPE, in both cases node->type is correct type  */
 		AZONode *type = arg->children;
-		sig.arg_types[sig.n_args++] = type->type;
+		assert(type->type != 0);
+		arg_types[n_args++] = type->type;
 	}
-
 	/* Compile function body in it's own resolved frame */
 	assert(node->frame_idx < comp->n_frames);
 	AZOFrame *func_frame = comp->frames[node->frame_idx];
 
 	AZOCompilerContext func_ctx = *ctx;
-	func_ctx.signature = az_function_signature_new(sig.ret_type, sig.n_args, sig.arg_types);
+	func_ctx.signature = az_function_signature_new(ret_type, n_args, arg_types);
 	func_ctx.frame = func_frame;
 	
 	prog = azo_compiler_compile(comp, &func_ctx, body, src);
@@ -958,16 +959,15 @@ compile_cast (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, A
 	AZONode *type = node->children;
 	AZONode *val = type->next;
 
-	if (node->term.subtype != AZO_TERM_CAST_CONVERT) {
-		/* fixme: implement checked class/interface conversion (as) */
-		fprintf (stderr, "compile_cast: only primitive conversion casts are implemented\n");
-		return 0;
-	}
 	if (!azo_compiler_compile_expression (comp, ctx, val, src)) return 0;
-	if (node->term.flags & AZO_TERM_FLAG_EXACT) {
-		azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_CONVERT_TYPE_EXACT, type->type, node);
+	if (node->term.subtype == AZO_TERM_CAST_CONVERT) {
+		if (node->term.flags & AZO_TERM_FLAG_EXACT) {
+			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_CONVERT_TYPE_EXACT, type->type, node);
+		} else {
+			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_CONVERT_TYPE, type->type, node);
+		}
 	} else {
-		azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_CONVERT_TYPE, type->type, node);
+		azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_CAST, type->type, node);
 	}
 	return 1;
 }

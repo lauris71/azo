@@ -193,6 +193,10 @@ enum {
 	/* Convert the topmost element in stack to specified type, throwing
 	 * CHANGE_OF_PRECISION if the conversion rounds (exact cast qualifier) */
 	AZO_TC_CONVERT_TYPE_EXACT,
+	/* CAST TYPE(U32) */
+	/* Cast the topmost element to specified type without conversion */
+	/* Casts are: null -> typed null, type -> supertype, type -> interface*/
+	AZO_TC_CAST,
 
 	/* Comparisons */
 	/* EQUAL TYPE(U8) */

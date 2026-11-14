@@ -194,7 +194,7 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 	} else {
 		azo_interpreter_run_frame(intr, &ictx);
 	}
-	if (prog->signature->ret_type) {
+	if (AZ_SIGNATURE_RET_TYPE(prog->signature)) {
 		*ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
 	} else {
 		*ret_impl = NULL;

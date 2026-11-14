@@ -158,7 +158,7 @@ struct _AZOCompilerContext {
 	 * @brief Return and argument types
 	 * 
 	 */
-	AZFunctionSignature *signature;
+	const AZFunctionSignature *signature;
 	/* The current frame */
 	AZOFrame *frame;
 
