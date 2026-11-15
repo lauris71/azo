@@ -133,6 +133,14 @@ azo_datablock_print(AZODataBlock *block, FILE *ofs)
         AZODataBlockEntry *entry = &block->entries[i];
         fprintf(ofs, "Entry %u (%s %u): ", i, (entry->flags & AZO_DATABLOCK_FLAG_FINAL) ? "final" : "mutable", entry->flags);
         if (entry->impl) {
+            if (entry->flags & AZO_DATABLOCK_FLAG_WEAK) {
+                uint8_t c[256];
+                AZActiveObject *obj = az_weak_reference_acquire(&entry->weak_ref);
+                az_instance_to_string(entry->impl, obj, c, sizeof(c));
+                if (obj) az_object_unref((AZObject *) obj);
+                fprintf(ofs, "%s\n", c);
+                continue;
+            }
             uint8_t c[256];
             az_instance_to_string(entry->impl, az_value_get_inst(entry->impl, &entry->val), c, sizeof(c));
             fprintf(ofs, "%s\n", c);

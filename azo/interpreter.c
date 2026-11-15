@@ -568,7 +568,14 @@ interpret_PUSH_VALUE(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsign
 	uint32_t loc;
 	memcpy (&loc, ip + 1, 4);
 	TEST_OVERFLOW(1);
-	azo_stack_push_value (&intr->stack, ictx->shared_data->entries[loc].impl, &ictx->shared_data->entries[loc].val);
+	AZODataBlockEntry *entry = &ictx->shared_data->entries[loc];
+	if (entry->flags & AZO_DATABLOCK_FLAG_WEAK) {
+		AZActiveObject *obj = az_weak_reference_acquire(&entry->weak_ref);
+		azo_stack_push_instance(&intr->stack,  entry->impl, obj);
+		if (obj) az_object_unref((AZObject *) obj);
+	} else {
+		azo_stack_push_value (&intr->stack, entry->impl, &entry->val);
+	}
 	return ip + 5;
 }
 
@@ -592,7 +599,14 @@ interpret_PUSH_CAPTURE(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsi
 	uint32_t loc;
 	memcpy (&loc, ip + 1, 4);
 	TEST_OVERFLOW(1);
-	azo_stack_push_value (&intr->stack, ictx->static_data->entries[loc].impl, &ictx->static_data->entries[loc].val);
+	AZODataBlockEntry *entry = &ictx->static_data->entries[loc];
+	if (entry->flags & AZO_DATABLOCK_FLAG_WEAK) {
+		AZActiveObject *obj = az_weak_reference_acquire(&entry->weak_ref);
+		azo_stack_push_instance(&intr->stack, entry->impl, obj);
+		if (obj) az_object_unref((AZObject *) obj);
+	} else {
+		azo_stack_push_value (&intr->stack, entry->impl, &entry->val);
+	}
 	return ip + 5;
 }
 
