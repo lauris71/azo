@@ -673,17 +673,22 @@ compile_call_property_or_attribute (AZOCompiler *comp, AZOCompilerContext *ctx, 
 static unsigned int
 compile_function_call_member (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
+	AZOCode *code = &ctx->frame->code;
 	AZONode *base = node->children;
 	AZONode *name = base->next;
 	AZONode *list = name->next;
-	if (!azo_compiler_compile_expression (comp, ctx, base, src)) return 0;
-	compile_PUSH_VALUE_const_string (comp, ctx, name->value.v.string, name);
-	/* [inst, name] */
+	/* We have to compile arguments before anything else is pushed to stack su member blocks get correct this value */
 	unsigned int n_args = 0;
 	for (const AZONode *child = list->children; child; child = child->next) {
 		azo_compiler_compile_expression (comp, ctx, child, src);
 		n_args += 1;
 	}
+	/* [arg1...] */
+	if (!azo_compiler_compile_expression (comp, ctx, base, src)) return 0;
+	compile_PUSH_VALUE_const_string (comp, ctx, name->value.v.string, name);
+	/* [arg1..., inst, name] */
+	azo_code_write_ROLL(code, n_args + 1, node);
+	azo_code_write_ROLL(code, n_args + 1, node);
 	/* [inst, name, arg1...] */
 	switch (node->term.subtype) {
 		case AZO_TERM_FUNCTION_CALL_PROPERTY:
@@ -709,13 +714,8 @@ static unsigned int
 compile_call_plain (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *func, const AZONode *list, AZOSource *src)
 {
 	AZOCode *code = &ctx->frame->code;
-	if (!azo_compiler_compile_expression(comp, ctx, func, src)) return 0;
-	/* [func] */
-	if (!func->type || !az_type_is_a (func->type, AZ_TYPE_FUNCTION)) {
-		azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, func);
-	}
+	/* We have to compile arguments before anything else is pushed to stack su member blocks get correct this value */
 	unsigned int n_args = 0;
-	/* [func, this] */
 	for (AZONode *child = list->children; child; child = child->next) {
 		azo_compiler_compile_expression (comp, ctx, child, src);
 		n_args += 1;
@@ -724,7 +724,14 @@ compile_call_plain (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *f
 			return 1;
 		}
 	}
-	/* [func, this, arg1...] */
+	/* [arg1...] */
+	if (!azo_compiler_compile_expression(comp, ctx, func, src)) return 0;
+	/* [arg1..., func] */
+	if (!func->type || !az_type_is_a (func->type, AZ_TYPE_FUNCTION)) {
+		azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, func);
+	}
+	azo_code_write_ROLL(code, n_args, func);
+	/* [func, arg1...] */
 	azo_code_write_ic_u8 (code, AZO_TC_INVOKE, n_args, func);
 	/* [retval] */
 	return 0;

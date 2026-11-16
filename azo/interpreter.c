@@ -119,6 +119,7 @@ intr_trace_push (AZOInterpreter *intr, AZOInterpreterCtx *ictx, unsigned int ip)
 static const uint8_t *
 intr_unwind (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 {
+	assert(intr->ctx->az_ctx.exc.type);
 	unsigned int frame_base = intr->frames[intr->n_frames - 1];
 	while (intr->stack.length > frame_base) {
 		const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, 0);
@@ -148,7 +149,7 @@ intr_unwind (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 			unsigned int found = 0;
 			for (unsigned int i = 0; i < n_handles; i++) {
 				const AZOCatchHandle *handle = (const AZOCatchHandle *) azo_stack_instance_bw (&intr->stack, i);
-				if ((handle->type && (intr->ctx->az_ctx.exc.type == handle->type)) || (intr->ctx->az_ctx.exc.mask & handle->mask)) {
+				if ((intr->ctx->az_ctx.exc.type == handle->type) || (intr->ctx->az_ctx.exc.mask & handle->mask)) {
 					catch_ip = handle->ip;
 					found = 1;
 					break;

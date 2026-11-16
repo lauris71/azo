@@ -43,7 +43,7 @@ Block:
 # Qualified block: a block with optional static context and/or computation mode
 # qualifiers (fixed order: static, finite, saturate|wrap).
 #   static   - the body is evaluated in static context (this == NONE)
-#   finite   - throws NON_FINITE on the first non-finite result
+#   finite   - throws NON_FINITE on the first non-finite result of finite arguments
 #   saturate - clamps integer overflow and narrowing
 #   wrap     - wraps integer overflow / truncates narrowing
 # static (context) and the modes (computation) are orthogonal and combine freely:

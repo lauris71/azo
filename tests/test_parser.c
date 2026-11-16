@@ -1642,6 +1642,21 @@ test_parser(void)
         azo_parser_release(&parser);
         az_object_unref((AZObject *) src);
     }
+    /* Member block as function argument */
+    {
+        static const char *text = ""
+        "frame.setChild(new TextBox (frame) {\n"
+            "setText (\"Welcome\");\n"
+        "});";
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text(text, &parser, &src);
+        //azo_node_print_info(tree, stderr, src, 0);
+        if (tree) azo_node_free_tree(tree);
+        TEST_ASSERT_EQUAL_UINT(0, parser.n_errors);
+        azo_parser_release(&parser);
+        az_object_unref((AZObject *) src);
+    }
     /* Exception declaration (category): KEYWORD(EXCEPTION) [name] */
     {
         AZOParser parser;

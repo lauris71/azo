@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include <arikkei/arikkei-strlib.h>
 #include <az/az.h>
 #include <az/object.h>
 #include <az/extend.h>
@@ -22,6 +23,15 @@
 #include "unity/unity.h"
 #include "test.h"
 
+/*
+ * A test object with the following properties:
+ * - new(string): TestObject (static)
+ * - build(string): TestObject (static)
+ * - text: string
+ * - onPrint1: function (int32) int32
+ * - onPrint2: function (any, int32) int32
+ * - prop: any
+ */
 typedef struct _TestObject TestObject;
 typedef struct _TestObjectClass TestObjectClass;
 
@@ -191,6 +201,22 @@ test_function(void)
         TEST_ASSERT(test_program_with_this(globals, function_src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
         TEST_ASSERT_EQUAL_INT(128, ret_val.int32_v);
+    }
+    /* Unresolved function name fails compile-time */
+    {
+        static const char *src =
+            "wat.print(42);\n";
+        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) != 0);
+    }
+    /* Unresolved function name in this context fails run-time */
+    {
+        static const char *src =
+            "wat.print(42);\n";
+        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NULL_DEREFERENCE, globals->az_ctx.exc.type);
     }
     /* Capturing lambda */
     {
@@ -394,6 +420,23 @@ test_function(void)
             "tobj.prop = (TestObject t, int32 a) int32 => {return a;};\n"
             "tobj.prop(%s, 32);\n", call_args);
         TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) != 0);
+    }
+    /* Member block as function argument creates local 'this' context */
+    {
+        print_tree = 0;
+        static const char *src =
+            "bofs.print(new TestObject(\"Hello\") {\n"
+            "  text = \"Welcome\";\n"
+            "});\n";
+		az_buffer_output_stream_reset(bostream);
+        TestObject *tobj = (TestObject *) az_object_new(TYPE_TESTOBJ);
+        TEST_ASSERT(test_program_with_this(globals, src, AZ_IMPL_FROM_TYPE(TYPE_TESTOBJ), tobj, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_NONE, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(NULL, ret_impl);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        char *str = strndup((const char *) bostream->buffer, bostream->pos);
+        fprintf(stderr, "Output: %s\n", str);
+        TEST_ASSERT_EQUAL_STRING("Welcome", str);
+        free(str);
     }
     /* Attribute functions */
     /* Calling missing attribute throws NULL_DEREFERENCE */
@@ -650,6 +693,14 @@ test_object_get_type (void)
 	return type;
 }
 
+static unsigned int
+test_object_to_string(const AZImplementation *impl, void *inst, uint8_t *d, unsigned int d_len)
+{
+    TestObject *tobj = (TestObject *) inst;
+    if (!tobj->text) return arikkei_strncpy(d, d_len, (const uint8_t *) "null");
+    return arikkei_strncpy(d, d_len, tobj->text->str);
+}
+
 static void
 test_object_finalize(const TestObjectClass *klass, TestObject *tobj)
 {
@@ -704,4 +755,5 @@ test_object_class_init (TestObjectClass *klass)
 	az_class_define_static_method_native_va((AZClass *) klass, FUNC_OBJ_INT, (const unsigned char *) "func", (void (*)()) test_object_func_obj_str, AZ_TYPE_INT32, 2, TYPE_TESTOBJ, AZ_TYPE_STRING);
     az_class_define_property_packed((AZClass *) klass, PROP_ANY, (const uint8_t *) "prop", AZ_TYPE_ANY, 0, AZ_FIELD_INSTANCE, AZ_FIELD_WRITE_PACKED, ARIKKEI_OFFSET(TestObject, prop));
     az_class_define_property_value((AZClass *) klass, PROP_TEXT, (const uint8_t *) "text", AZ_TYPE_STRING, 0, AZ_FIELD_INSTANCE, AZ_FIELD_WRITE_VALUE, ARIKKEI_OFFSET(TestObject, text));
+    ((AZClass *) klass)->to_string = test_object_to_string;
 }
