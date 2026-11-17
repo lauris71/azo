@@ -438,6 +438,41 @@ test_function(void)
         TEST_ASSERT_EQUAL_STRING("Welcome", str);
         free(str);
     }
+    /* Member block with locals in argument position: surrounding values are not clobbered */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj.prop = (int32 a, any obj, int32 b) int32 => {return a * 100 + b;};\n"
+            "return tobj.prop(1, new TestObject(\"x\") { int32 q = 5; bofs.printLn(q); }, 2);\n";
+	az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_INT32(102, ret_val.int32_v);
+        char *str = strndup((const char *) bostream->buffer, bostream->pos);
+        TEST_ASSERT_EQUAL_STRING("5\n", str);
+        free(str);
+    }
+    /* try/catch inside a member block inside an expression: the exception reaches the binding slot */
+    {
+        print_tree = 0;
+        print_bytecode = 0;
+        static const char *src =
+            "TestObject tobj = new TestObject(\"Hello\");\n"
+            "tobj.prop = (int32 a, any obj, int32 b) int32 => {return a * 100 + b;};\n"
+            "return tobj.prop(1, new TestObject(\"x\") { try { throw IntegerOverflow(\"boom\", 7); } catch (e : IntegerOverflow) { bofs.printLn((int32) e.type); } }, 2);\n";
+	az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_NONE, globals->az_ctx.exc.type);
+        TEST_ASSERT_EQUAL_INT32(102, ret_val.int32_v);
+        char *str = strndup((const char *) bostream->buffer, bostream->pos);
+        fprintf(stderr, "Output: %s\n", str);
+        char expected[16];
+        sprintf(expected, "%d\n", AZO_EXCEPTION_INTEGER_OVERFLOW);
+        TEST_ASSERT_EQUAL_STRING(expected, str);
+        free(str);
+    }
     /* Attribute functions */
     /* Calling missing attribute throws NULL_DEREFERENCE */
     {

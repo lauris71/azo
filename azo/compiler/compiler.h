@@ -200,6 +200,10 @@ struct _AZOCompilerContext {
 
 	/* Flow control: AZO_FLOW_* bits allowed at the current point */
 	unsigned int flow_flags;
+	/* Per-sentence return tracking (resolve): set when the last resolved
+	 * sentence returns unconditionally; reset for each new sentence and on
+	 * paths that may not execute (loop bodies, if without else) */
+	unsigned int ret_is_last;
 	/* Pointers to the current cycle's break/continue jump-location chains
 	 * (chained through the jump operands, 0 = end of chain); compile_cycle
 	 * owns the chain heads and patches them at the end */

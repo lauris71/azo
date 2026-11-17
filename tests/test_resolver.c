@@ -83,6 +83,43 @@ test_resolver(void)
         azo_compiler_release(&comp);
         free_parse(&parser, src, tree);
     }
+    /* Frame tracks the maximum number of variable slots */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("int32 a = 1;", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(!result);
+        TEST_ASSERT_EQUAL_UINT(1, rctx.frame->max_n_locals);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
+    /* max_n_locals is the high-water mark: sibling scopes reuse positions */
+    {
+        AZOParser parser;
+        AZOSource *src;
+        AZONode *tree = parse_text("int32 a = 1;\n{ int32 b = 2; int32 c = 3; }\n{ int32 d = 4; }\nwhile (a < 10) { int32 e = a; a = e + 1; }\n", &parser, &src);
+        TEST_ASSERT_NOT_NULL(tree);
+        AZOCompiler comp;
+        azo_compiler_setup(&comp, globals, src);
+        AZOResolveCtx rctx = {
+            .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
+        };
+        rctx.frame = azo_compiler_new_frame(&comp, NULL, 0, rctx.signature);
+        int result = azo_compiler_resolve_program(&comp, &rctx, tree);
+        TEST_ASSERT(!result);
+        /* a=0; first block b=1,c=2 (max 3); second block reuses d=1; loop body reuses e=1 */
+        TEST_ASSERT_EQUAL_UINT(3, rctx.frame->max_n_locals);
+        azo_compiler_release(&comp);
+        free_parse(&parser, src, tree);
+    }
     /* 'this' in static program fails */
     {
         AZOParser parser;

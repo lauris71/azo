@@ -163,7 +163,7 @@ resolve_select (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 unsigned int
 resolve_sentence (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
-	rctx->frame->ret_is_last = 0;
+	rctx->ret_is_last = 0;
 	return azo_compiler_resolve_node(comp, rctx, node);
 }
 
@@ -190,7 +190,7 @@ azo_compiler_resolve_frame(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node
 	rctx->print_tree = 0;
 	if (result) return result;
 
-	if (AZ_SIGNATURE_RET_TYPE(rctx->frame->signature) && !rctx->frame->ret_is_last) {
+	if (AZ_SIGNATURE_RET_TYPE(rctx->frame->signature) && !rctx->ret_is_last) {
 		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, node->term.start, node->term.end, "Missing return statement\n");
 		return 1;
 	}
@@ -225,7 +225,7 @@ resolve_for (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	rctx->flow_flags = flow_flags;
 	azo_frame_pop_scope (rctx->frame);
 	/* The body may not execute at all */
-	rctx->frame->ret_is_last = 0;
+	rctx->ret_is_last = 0;
 	return result;
 }
 
@@ -253,7 +253,7 @@ resolve_while (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	rctx->flow_flags = flow_flags;
 	azo_frame_pop_scope (rctx->frame);
 	/* The body may not execute at all */
-	rctx->frame->ret_is_last = 0;
+	rctx->ret_is_last = 0;
 	return result;
 }
 
@@ -281,7 +281,7 @@ resolve_do (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	if (resolve_check_boolean (comp, rctx, test)) result = 1;
 	azo_frame_pop_scope (rctx->frame);
 	/* Do not analyze loop paths */
-	rctx->frame->ret_is_last = 0;
+	rctx->ret_is_last = 0;
 	return result;
 }
 
@@ -306,18 +306,18 @@ resolve_if (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	azo_frame_push_scope (rctx->frame);
 	lresult = azo_compiler_resolve_node (comp, rctx, if_true);
 	if (lresult) result = 1;
-	unsigned int true_returns = rctx->frame->ret_is_last;
+	unsigned int true_returns = rctx->ret_is_last;
 	azo_frame_pop_scope (rctx->frame);
 	if (if_false) {
 		azo_frame_push_scope (rctx->frame);
 		lresult = azo_compiler_resolve_node (comp, rctx, if_false);
 		if (lresult) result = 1;
 		/* The if statement returns only if both branches return */
-		rctx->frame->ret_is_last = true_returns && rctx->frame->ret_is_last;
+		rctx->ret_is_last = true_returns && rctx->ret_is_last;
 		azo_frame_pop_scope (rctx->frame);
 	} else {
 		/* There is a path that does not execute if_true */
-		rctx->frame->ret_is_last = 0;
+		rctx->ret_is_last = 0;
 	}
 	return result;
 }
@@ -738,7 +738,7 @@ resolve_return (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *term)
 			result = 1;
 		}
 	}
-	rctx->frame->ret_is_last = 1;
+	rctx->ret_is_last = 1;
 	return result;
 }
 
@@ -1053,12 +1053,17 @@ resolve_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	}
 	/* Create new scope */
 	azo_frame_push_scope(lctx.frame);
+	/* The scope's first variable position - the block-end CLEAR_FRAME releases
+	 * everything the scope (and its descendants) reserved */
+	node->var_idx = lctx.frame->scope->next_var_pos;
 	/* Both mode and defer block need to reserve a stack position (either to saved state or defer handle) */
 	if ((node->term.flags & AZO_TERM_FLAG_MODE_MASK) || node->term.subtype == AZO_TERM_BLOCK_DEFER) {
 		azo_frame_reserve_pos (lctx.frame);
 	}
 	/* Block children are sentences (per-sentence return tracking) */
 	result = resolve_sentences(comp, &lctx, node->children);
+	/* Return tracking propagates to the enclosing sentence sequence */
+	rctx->ret_is_last = lctx.ret_is_last;
 	azo_frame_pop_scope(lctx.frame);
 	return result;
 }
@@ -1100,6 +1105,8 @@ resolve_member_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	}
 	/* The block child creates the scope */
 	result = azo_compiler_resolve_node(comp, &lctx, block);
+	/* Return tracking propagates to the enclosing sentence sequence */
+	rctx->ret_is_last = lctx.ret_is_last;
 	if (lctx.print_tree) azo_node_print_info(node, stderr, comp->src, 0);
 	azo_frame_pop_scope(lctx.frame);
 	return result;
@@ -1222,6 +1229,8 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 			lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
 			lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
 			result = resolve_children (comp, &lctx, node);
+			/* Return tracking propagates (nested member blocks may return) */
+			rctx->ret_is_last = lctx.ret_is_last;
 			if (result) return result;
 			/* The mode expression yields the operand value/type */
 			if (node->children) node->type = node->children->type;

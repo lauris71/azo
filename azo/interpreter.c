@@ -155,14 +155,18 @@ intr_unwind (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 					break;
 				}
 			}
-			/* The placeholder slot sits directly below the run (flags were
-			 * already restored from flags handles encountered during the walk) */
+			/* The sentinel sits directly below the run and carries the binding position */
+			unsigned int bind_pos = *((const uint32_t *) azo_stack_value_bw (&intr->stack, n_handles));
 			azo_stack_pop (&intr->stack, n_handles + 1);
 			if (found) {
 				AZOException *exc = azo_exception_new (intr->ctx);
 				AZValue val;
 				val.reference = (AZReference *) exc;
+				/* The exception is stored into the reserved binding slot (locals are
+				 * reserved frame slots, so it cannot be pushed at a dynamic position) */
 				azo_stack_push_value_transfer (&intr->stack, AZ_IMPL_FROM_TYPE (azo_exception_get_type ()), &val);
+				azo_stack_exchange (&intr->stack, frame_base + bind_pos);
+				azo_stack_pop (&intr->stack, 1);
 				return ictx->tcode + catch_ip;
 			}
 		} else {
@@ -699,6 +703,21 @@ interpret_EXCHANGE_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const u
 	CHECK((intr->frames[intr->n_frames - 1] + pos) < intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
 	azo_stack_exchange (&intr->stack, intr->frames[intr->n_frames - 1] + pos);
 	return ip + 5;
+}
+
+static const unsigned char *
+interpret_CLEAR_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	unsigned int pos, count;
+	memcpy (&pos, ip + 1, 4);
+	memcpy (&count, ip + 5, 4);
+	unsigned int first = intr->frames[intr->n_frames - 1] + pos;
+	CHECK((first + count) <= intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
+	for (unsigned int i = first; i < first + count; i++) {
+		az_value_clear (intr->stack.impls[i], azo_stack_value (&intr->stack, i));
+		intr->stack.impls[i] = NULL;
+	}
+	return ip + 9;
 }
 
 /* Instance-aware "implements" test: the static type relation first, then
@@ -1998,6 +2017,9 @@ switch (*ip) {
 			break;
 		case AZO_TC_EXCHANGE_FRAME:
 			ip = interpret_EXCHANGE_FRAME (intr, ictx, ip);
+			break;
+		case AZO_TC_CLEAR_FRAME:
+			ip = interpret_CLEAR_FRAME (intr, ictx, ip);
 			break;
 		case AZO_TC_PUSH_FLAGS:
 			ip = interpret_PUSH_FLAGS (intr, ictx, ip);

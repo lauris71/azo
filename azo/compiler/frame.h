@@ -39,9 +39,14 @@ struct _AZOFrame {
 	 * Interned and permanent; ret_type AZ_TYPE_NONE for void block.
 	 */
 	const AZFunctionSignature *signature;
-	unsigned int ret_is_last;
 
 	unsigned int this_is_captured;
+
+	/* High-water mark of allocated variable positions - the total frame
+	 * variable area (arguments + locals + hidden 'this' slots + reserved
+	 * positions); sibling scopes reuse positions, so this is the maximum
+	 * of simultaneously live variables, not their total count */
+	unsigned int max_n_locals;
 
 	/* Current scope */
 	AZOScope *scope;

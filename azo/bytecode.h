@@ -107,12 +107,19 @@ enum {
 	AZO_TC_ROLL,
 	/**
 	 * @brief Exchanges frame-relative element with the top of stack
-	 * 
+	 *
 	 * [...; ..., val1, ..., val2]
 	 * EXCHANGE_FRAME U32:POS
 	 * [...; ..., val2, ..., val1]
 	 */
 	AZO_TC_EXCHANGE_FRAME,
+	/**
+	 * @brief Clears frame-relative slots (sets them to none)
+	 *
+	 * Used at scope exit to release the scope's reserved local slots.
+	 * CLEAR_FRAME U32:POS U32:COUNT
+	 */
+	AZO_TC_CLEAR_FRAME,
 	/**
 	 * @brief Pushes the current interpreter flags onto the data stack as a uint32
 	 * 

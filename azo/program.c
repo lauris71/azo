@@ -60,6 +60,7 @@ azo_program_new(AZOContext *ctx, AZOFrame *frame, AZONode *tree, AZOSource *src)
 	prog->tcode_length = code->bc_len;
 
 	prog->signature = frame->signature;
+	prog->n_locals = frame->max_n_locals;
 	prog->n_captures = frame->n_captures;
 	prog->n_static = frame->n_static;
 	prog->n_const = code->data_len;
@@ -187,6 +188,11 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 		.debug = &prog->debug
 	};
 	azo_intepreter_push_values (intr, arg_impls, arg_vals, n_args);
+	/* Pre-allocate the locals region (all local/reserved slots are addressed by
+	 * frame position and have to exist before any code runs) */
+	for (unsigned int i = n_args; i < prog->n_locals; i++) {
+		azo_stack_push_value (&intr->stack, NULL, NULL);
+	}
 	if (0 && prog->debug.n_terms) {
 		AZODebugger *debugger = azo_debugger_new(intr);
 		azo_debugger_run(debugger, prog);

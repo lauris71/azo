@@ -34,6 +34,9 @@ struct _AZOProgram {
 
 	/* Argument and return types (interned, not owned) */
 	const AZFunctionSignature *signature;
+	/* Total frame variable area (arguments + locals + reserved slots);
+	 * the locals region [n_args, n_locals) is pre-allocated (null-filled) at frame entry */
+	unsigned int n_locals;
 	unsigned int n_captures;
 	unsigned int n_static;
 	unsigned int n_const;

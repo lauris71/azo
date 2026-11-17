@@ -1327,7 +1327,7 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 			return 1;
 		}
 	}
-	/* Local (or unknown) - value stays on stack */
+	/* Local: the value is stored into the reserved frame slot */
 	if (value) {
 		if (!azo_compiler_compile_expression (comp, ctx, value, src)) return 0;
 		compile_assign_check(comp, ctx, value, type);
@@ -1336,7 +1336,9 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 		azo_code_write_PUSH_EMPTY (code, type, node);
 		//azo_compiler_write_PUSH_EMPTY (comp, type);
 	}
-	ctx->n_stack += 1;
+	/* [value] -> slot, [old] is discarded */
+	azo_code_write_ic_u32 (code, AZO_TC_EXCHANGE_FRAME, name->var_idx, node);
+	azo_code_write_POP (code, 1, node);
 	return 1;
 }
 
@@ -1443,9 +1445,11 @@ compile_try (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZ
 			}
 		}
 	}
-	/* Push a placeholder slot (the exception lands here), then the handles in
-	 * reverse declaration order; flags are restored from flags handles during unwind */
-	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_NONE, NULL, node);
+	/* Push the sentinel (binding position, read by the unwind to deliver the
+	 * exception into the reserved binding slot), then the handles in reverse
+	 * declaration order; flags are restored from flags handles during unwind */
+	uint32_t bind_pos = node->var_idx;
+	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_UINT32, (const AZValue *) &bind_pos, node);
 	ctx->n_stack += 1;
 	for (unsigned int i = n_handles; i-- > 0; ) {
 		hdidx[i] = azo_code_write_instance (code, AZ_IMPL_FROM_TYPE (azo_catch_handle_get_type ()), &handles[i]);
@@ -1469,10 +1473,10 @@ compile_try (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZ
 		for (unsigned int i = 0; i < n_handles; i++) {
 			if (hclause[i] == ci) ((AZOCatchHandle *) &code->data[hdidx[i]].v)->ip = catch_ip;
 		}
-		ctx->n_stack = base + 1;
+		/* The exception is delivered into the binding slot, not pushed */
+		ctx->n_stack = base;
 		result = compile_block (comp, ctx, clause->children->next->next, src);
 		if (!result) goto cleanup;
-		azo_code_write_POP (code, 1, clause);
 		ctx->n_stack = base;
 		to_end[n_jumps++] = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
 	}
@@ -1538,6 +1542,10 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 		if (lctx.n_stack > ctx->n_stack) {
 			azo_code_write_REWIND(code, lctx.n_stack - ctx->n_stack, node);
 		}
+		/* Release the scope's reserved local slots */
+		if (ctx->frame->max_n_locals > node->var_idx) {
+			azo_code_write_CLEAR_FRAME (code, node->var_idx, ctx->frame->max_n_locals - node->var_idx, node);
+		}
 		compile_mode_flags_leave (comp, ctx, node);
 		ctx->n_stack -= 1;
 		return result;
@@ -1550,6 +1558,10 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 		/* Pop everything the block added to the data stack */
 		if (lctx.n_stack > ctx->n_stack) {
 			azo_code_write_REWIND(code, lctx.n_stack - ctx->n_stack, node);
+		}
+		/* Release the scope's reserved local slots */
+		if (ctx->frame->max_n_locals > node->var_idx) {
+			azo_code_write_CLEAR_FRAME (code, node->var_idx, ctx->frame->max_n_locals - node->var_idx, node);
 		}
 		unsigned int len = code->bc_len - blk_start;
 		azo_code_update_JMP32 (code, to_end);
@@ -1566,6 +1578,10 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 		/* Pop everything the block added to the data stack */
 		if (lctx.n_stack > ctx->n_stack) {
 			azo_code_write_REWIND(code, lctx.n_stack - ctx->n_stack, node);
+		}
+		/* Release the scope's reserved local slots */
+		if (ctx->frame->max_n_locals > node->var_idx) {
+			azo_code_write_CLEAR_FRAME (code, node->var_idx, ctx->frame->max_n_locals - node->var_idx, node);
 		}
 		return result;
 	}
@@ -1604,7 +1620,10 @@ compile_member_block_ex(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 		lctx.this_variant = AZO_COMPILER_THIS_IS_STACK;
 		lctx.this_var_pos = node->var_idx;
 		if (!azo_compiler_compile_expression(comp, ctx, this_node, src)) return 0;
-		lctx.n_stack += 1;
+		/* Store the object into its reserved frame slot (valid inside expressions,
+		 * where the stack top is above the frame variables) */
+		azo_code_write_ic_u32 (code, AZO_TC_EXCHANGE_FRAME, node->var_idx, node);
+		azo_code_write_POP (code, 1, node);
 	}
 	/* The block child manages its own scope/stack */
 	if (!compile_block(comp, &lctx, block, src)) return 0;
@@ -1614,12 +1633,9 @@ compile_member_block_ex(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 			azo_code_write_POP (code, lctx.n_stack - ctx->n_stack, node);
 		}
 	} else {
-		/* Expression: yield the head value */
-		if (this_is_variable) {
-			/* The head was not evaluated onto stack - push it */
-			if (!compile_this(comp, &lctx, node, src)) return 0;
-		}
-		/* Otherwise the evaluated head is on stack top - the result */
+		/* Expression: yield the head value (from its slot for an evaluated head,
+		 * the variable itself otherwise) */
+		if (!compile_this(comp, &lctx, node, src)) return 0;
 	}
 	return 1;
 }

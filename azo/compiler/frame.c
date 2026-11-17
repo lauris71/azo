@@ -80,10 +80,20 @@ azo_frame_pop_scope (AZOFrame *frame)
 	azo_scope_delete (scope);
 }
 
+/* Allocate the next variable position, tracking the high-water mark */
+
+static unsigned int
+frame_alloc_pos (AZOFrame *frame)
+{
+	unsigned int pos = frame->scope->next_var_pos++;
+	if (frame->scope->next_var_pos > frame->max_n_locals) frame->max_n_locals = frame->scope->next_var_pos;
+	return pos;
+}
+
 void
 azo_frame_reserve_pos (AZOFrame *frame)
 {
-	frame->scope->next_var_pos++;
+	frame_alloc_pos (frame);
 }
 
 AZOVariable *
@@ -178,7 +188,7 @@ azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, 
 	} else if (flags & AZO_VARIABLE_FLAG_SHARED) {
 		pos = frame->n_shared++;
 	} else {
-		pos = frame->scope->next_var_pos++;
+		pos = frame_alloc_pos (frame);
 	}
 	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, name, pos);
 	frame->scope->variables->var.flags = flags;
@@ -189,7 +199,8 @@ azo_frame_declare_variable (AZOFrame *frame, AZString *name, unsigned int type, 
 AZOVariable *
 azo_frame_declare_this(AZOFrame *frame, unsigned int type)
 {
-	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, azo_keyword_str(AZO_KEYWORD_THIS), frame->scope->next_var_pos++);
+	unsigned int pos = frame_alloc_pos (frame);
+	frame->scope->variables = azo_var_list_prepend(frame->scope->variables, azo_keyword_str(AZO_KEYWORD_THIS), pos);
 	frame->scope->variables->var.type = type;
 	return &frame->scope->variables->var;
 }
