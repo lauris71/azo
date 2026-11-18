@@ -74,6 +74,15 @@ AZOProgram *azo_program_new(AZOContext *ctx, AZOFrame *frame, AZONode *tree, AZO
 
 void azo_program_print_bytecode (AZOProgram *program);
 
+/**
+ * @brief Compile a program from source
+ *
+ * If this_impl is given without this_inst, the program is compiled as a member
+ * function: 'this' is reserved as (unnamed) argument 0 and included in the
+ * program's signature, so it has to be interpreted with this + n_args argument
+ * values. If this_inst is also given, 'this' is bound as a shared constant and
+ * is not part of the signature.
+ */
 AZOProgram *azo_program_compile(AZOContext *ctx, AZOSource *src,
 	const AZImplementation *this_impl, void *this_inst, unsigned int ret_type, unsigned int n_args, AZString *arg_names[], const unsigned int arg_types[]);
 AZOProgram *azo_program_compile_from_text(AZOContext *ctx, const uint8_t *name,

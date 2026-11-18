@@ -673,22 +673,17 @@ compile_call_property_or_attribute (AZOCompiler *comp, AZOCompilerContext *ctx, 
 static unsigned int
 compile_function_call_member (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZOSource *src)
 {
-	AZOCode *code = &ctx->frame->code;
 	AZONode *base = node->children;
 	AZONode *name = base->next;
 	AZONode *list = name->next;
-	/* We have to compile arguments before anything else is pushed to stack su member blocks get correct this value */
+	if (!azo_compiler_compile_expression (comp, ctx, base, src)) return 0;
+	compile_PUSH_VALUE_const_string (comp, ctx, name->value.v.string, name);
+	/* [inst, name] */
 	unsigned int n_args = 0;
 	for (const AZONode *child = list->children; child; child = child->next) {
 		azo_compiler_compile_expression (comp, ctx, child, src);
 		n_args += 1;
 	}
-	/* [arg1...] */
-	if (!azo_compiler_compile_expression (comp, ctx, base, src)) return 0;
-	compile_PUSH_VALUE_const_string (comp, ctx, name->value.v.string, name);
-	/* [arg1..., inst, name] */
-	azo_code_write_ROLL(code, n_args + 1, node);
-	azo_code_write_ROLL(code, n_args + 1, node);
 	/* [inst, name, arg1...] */
 	switch (node->term.subtype) {
 		case AZO_TERM_FUNCTION_CALL_PROPERTY:

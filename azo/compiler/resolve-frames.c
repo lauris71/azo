@@ -818,8 +818,9 @@ resolve_exception_declaration (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *
  * Try_statement:
  *   KEYWORD(TRY): BLOCK, CATCH, [CATCH ...]
  *
- * Sibling scopes: the try scope reserves sentinel + one catch-handle position per
- * filter alternative (catch-all counts as one); each catch scope reserves 1 position
+ * Sibling scopes: the try scope reserves 1 position - the sentinel, which carries
+ * the binding position at runtime (the sentinel value and catch handles are pushed
+ * dynamically, so they need no frame positions); each catch scope reserves 1 position
  * (the binding), which lands exactly on the sentinel position. The sentinel position
  * is stored in the try node's var_idx. Filter references are baked into constants:
  * category -> UINT64 mask bit, exception type -> UINT32 code.
@@ -830,22 +831,14 @@ resolve_try (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
 	unsigned int result = 0;
 	AZONode *body = node->children;
-	/* The try scope holds the flags word and catch-handle positions */
+	/* The try scope reserves the sentinel position (the catch binding slot) */
 	azo_frame_push_scope (rctx->frame);
 	unsigned int flags_pos = rctx->frame->scope->next_var_pos;
-	unsigned int n_positions = 1;
-	for (AZONode *clause = body->next; clause; clause = clause->next) {
-		AZONode *filters = clause->children->next;
-		unsigned int n = 0;
-		for (AZONode *f = filters->children; f; f = f->next) n++;
-		n_positions += (n) ? n : 1;
-	}
-	for (unsigned int i = 0; i < n_positions; i++) azo_frame_reserve_pos (rctx->frame);
+	azo_frame_reserve_pos (rctx->frame);
 	node->var_idx = flags_pos;
-	/* Protected body (own block scope; locals follow the sentinel + handles on
-	 * the stack; catch bindings are not visible here) */
+	/* Protected body (own block scope; catch bindings are not visible here) */
 	if (azo_compiler_resolve_node (comp, rctx, body)) result = 1;
-	/* The reservations' numeric values are all we need - pop the try scope so
+	/* The reservation's numeric value is all we need - pop the try scope so
 	 * catch scopes become siblings starting from the enclosing position */
 	azo_frame_pop_scope (rctx->frame);
 	/* Catch clauses */
@@ -1056,10 +1049,6 @@ resolve_block(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 	/* The scope's first variable position - the block-end CLEAR_FRAME releases
 	 * everything the scope (and its descendants) reserved */
 	node->var_idx = lctx.frame->scope->next_var_pos;
-	/* Both mode and defer block need to reserve a stack position (either to saved state or defer handle) */
-	if ((node->term.flags & AZO_TERM_FLAG_MODE_MASK) || node->term.subtype == AZO_TERM_BLOCK_DEFER) {
-		azo_frame_reserve_pos (lctx.frame);
-	}
 	/* Block children are sentences (per-sentence return tracking) */
 	result = resolve_sentences(comp, &lctx, node->children);
 	/* Return tracking propagates to the enclosing sentence sequence */

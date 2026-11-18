@@ -668,7 +668,7 @@ test_resolver(void)
         TEST_ASSERT(result);
         if (tree) free_parse(&parser, src, tree);
     }
-    /* Try/catch stack layout: body locals after sentinel+handles, catch locals after the binding */
+    /* Try/catch frame layout: body locals after the sentinel, catch locals after the binding */
     {
         AZOParser parser;
         AZOSource *src;
@@ -677,11 +677,11 @@ test_resolver(void)
         TEST_ASSERT(!result);
         AZONode *try_node = tree->children;
         unsigned int sentinel = try_node->var_idx;
-        /* 2 filter alternatives + sentinel = 3 reserved positions; body local follows them */
+        /* Only the sentinel is reserved (handles are pushed dynamically); body local follows it */
         AZONode *body = try_node->children;
         AZONode *a_var = body->children->children->next->children;
         TEST_ASSERT_EQUAL_UINT(AZO_TERM_VARIABLE, a_var->term.type);
-        TEST_ASSERT_EQUAL_UINT(sentinel + 3, a_var->var_idx);
+        TEST_ASSERT_EQUAL_UINT(sentinel + 1, a_var->var_idx);
         /* Catch binding at the sentinel position, catch local right after it */
         AZONode *clause = try_node->children->next;
         AZONode *binding = clause->children;
