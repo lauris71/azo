@@ -195,7 +195,7 @@ test_program(AZOContext *ctx, const char *text,
     if (print_code) azo_program_print_bytecode(prog);
     azo_interpreter_init(ctx->intr);
     azo_context_clear_exception(ctx);
-	azo_program_interpret(prog, ctx->intr, &static_data, n_args, arg_impls, arg_vals, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
+	azo_program_interpret_vals(prog, ctx->intr, &static_data, n_args, arg_impls, arg_vals, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
     azo_program_unref(prog);
     az_object_unref((AZObject *) src);
     return 0;

@@ -178,7 +178,7 @@ azo_program_compile_from_text(AZOContext *globals, const uint8_t *name,
 }
 
 void
-azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *static_data, unsigned int n_args, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
+azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *static_data, unsigned int n_args, AZStoreElement args[], AZValue data[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
 {
 	unsigned int prev_frame = azo_interpreter_push_frame (intr, 0);
 
@@ -190,7 +190,7 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 		.shared_data = &prog->shared_data,
 		.debug = &prog->debug
 	};
-	azo_intepreter_push_values (intr, arg_impls, arg_vals, n_args);
+	azo_intepreter_push_elements (intr, n_args, args, data);
 	/* The program signature is the final truth about the argument region (it
 	 * includes 'this' for member programs); the caller has to match it exactly */
 	assert (n_args == (unsigned int) AZ_SIGNATURE_N_ARGS (prog->signature));
@@ -200,9 +200,7 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 		azo_stack_push_value (&intr->stack, NULL, NULL);
 	}
 	/* The pushed arguments + reserved slots make up the whole frame variable area */
-	assert (intr->stack.length == intr->frames[prev_frame] + prog->n_locals);
-	/* Pushed arguments + reserved slots make up the whole frame variable area */
-	assert (intr->stack.length == intr->frames[prev_frame] + prog->n_locals);
+	assert (intr->stack.length == intr->frames[prev_frame].elem_base + prog->n_locals);
 	if (0 && prog->debug.n_terms) {
 		AZODebugger *debugger = azo_debugger_new(intr);
 		azo_debugger_run(debugger, prog);
@@ -217,4 +215,26 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 	}
 	unsigned int new_prev = azo_interpreter_pop_frame(intr, &ictx);
 	assert(new_prev == prev_frame);
+}
+
+void
+azo_program_interpret_vals(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *static_data, unsigned int n_args, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size)
+{
+	/* Translate the impls/vals arrays to store elements (data pointers are
+	 * emulated in the whole address space, so the data buffer is NULL) */
+	AZStoreElement args[255];
+	for (unsigned int i = 0; i < n_args; i++) {
+		args[i].impl = arg_impls[i];
+		if (arg_impls[i]) {
+			AZClass *klass = AZ_CLASS_FROM_IMPL (arg_impls[i]);
+			if (AZ_CLASS_IS_BLOCK (klass)) {
+				args[i].block = arg_vals[i]->block;
+			} else if (klass->instance_size <= 8) {
+				memcpy (args[i].val, arg_vals[i], klass->instance_size);
+			} else {
+				args[i].val_idx = (uintptr_t) arg_vals[i] >> 4;
+			}
+		}
+	}
+	azo_program_interpret (prog, intr, static_data, n_args, args, NULL, ret_impl, ret_val, ret_size);
 }

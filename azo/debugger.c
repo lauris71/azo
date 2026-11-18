@@ -81,9 +81,9 @@ print_stack (AZODebugger *debugger)
     AZOStack *stack = &debugger->intr->stack;
 	for (unsigned int i = 0; i < intr->n_frames; i++) {
 		unsigned int frame = intr->n_frames - 1 - i;
-        unsigned int start = intr->frames[frame];
-		unsigned int end = (frame == (intr->n_frames - 1)) ? stack->length : intr->frames[frame + 1];
-		if (end > intr->frames[frame]) {
+        unsigned int start = intr->frames[frame].elem_base;
+		unsigned int end = (frame == (intr->n_frames - 1)) ? stack->length : intr->frames[frame + 1].elem_base;
+		if (end > start) {
 			azo_debugger_printf("Frame %u (%u - %u)\n", frame, start, end - 1);
 		} else {
 			azo_debugger_printf("Frame %u EMPTY\n", frame);

@@ -120,7 +120,7 @@ test_program_noargs(AZOContext *ctx, const char *text, const unsigned int ret_ty
     if (!prog) return 1;
     azo_program_print_bytecode(prog);
     azo_interpreter_init(ctx->intr);
-	azo_program_interpret(prog, ctx->intr, &static_data, 0, NULL, NULL, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
+	azo_program_interpret_vals(prog, ctx->intr, &static_data, 0, NULL, NULL, ret_impl, ret_val, AZ_VALUE_MAX_SIZE);
     azo_program_unref(prog);
     az_object_unref((AZObject *) src);
     return 0;
@@ -532,7 +532,7 @@ run_program(const char *source)
         (const uint8_t *) source, strlen(source));
     AZPackedValue ret_val;
     azo_interpreter_init(ctx->intr);
-    azo_program_interpret(prog, ctx->intr, &static_data, 0, NULL, NULL, &ret_val.impl, &ret_val.v, AZ_PACKED_VALUE_MAX_SIZE);
+    azo_program_interpret_vals(prog, ctx->intr, &static_data, 0, NULL, NULL, &ret_val.impl, &ret_val.v, AZ_PACKED_VALUE_MAX_SIZE);
     int32_t result = ret_val.v.int32_v;
     az_packed_value_clear(&ret_val);
     azo_program_unref(prog);

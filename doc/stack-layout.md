@@ -1,111 +1,88 @@
-# Stack layout variants:
+# Stack layout
 
 ## Prerequisites
 
-For each type, stack has to store both implementation and instance. The implementation provides runtime type information
+For each type, the stack has to store both implementation and instance. The implementation provides runtime type information
 for the cases where the type is not known at compile time.
-For non-interface types we can use 32-bit typecode - but getting the implementation/class from typecode involves mutex locking.
-Also, the stack representation should be the same as argument representation for AZFunction invoke method to avoid copying arguments around.
+The stack representation should be the same as the argument representation for the AZFunction `invoke` method to avoid copying arguments around.
 
-Also - the vast majority of stack elements are small primitives and block pointers. Complex double is the only primitive that does not fit
-into 8 bytes (and is not commonly used). Other commonly used large value types are 3 and 4-component float vectors (12-16 bytes) and matrices (36, 48 or 64 bytes)
+Most stack elements are small primitives and block pointers. Complex double is the only primitive that does not fit
+into 8 bytes (and is not commonly used). Other large value types are 3 and 4-component float vectors (12-16 bytes) and matrices (36, 48 or 64 bytes).
 
-## The current layout
- - array of `const AZImplementation *`
- - array of `AZValue *`
- - data block
+## The implemented design (az value store)
 
-Each stack entry takes it's `value_size` bytes (rounded up to 16-byte boundary) from the datablock. The array of values points to the corresponding location in the data block.
-Whenever (value_size % 16) differs between elements, intra-stack operations (remove, roll) must shift the following entries to adjust the value size (but
-shifting is very rare because most value types fit into 16 bytes)
+The stack is an array of `AZStoreElement` plus a data buffer of 16-byte granularity (az/value-store.h):
 
-One stack entry takes 32+ bytes (8 bytes impl pointer, 8 bytes val pointer, min 16 bytes data entry)
+```c
+struct _AZOStack {
+	unsigned int size;         /* element capacity */
+	unsigned int length;       /* element count */
+	AZStoreElement *elements;
+	unsigned int data_size;    /* data buffer capacity in 16-byte units */
+	unsigned int data_pos;     /* data high-water mark in 16-byte units */
+	AZValue *data;             /* 16-byte aligned data buffer */
+};
+```
 
-Drawbacks
- - for block types we need two pointer dereferences (value->data->instance)
- - 32 bytes per int is wasteful
- - determining whether a type is value or block from the implementation takes one pointer dereference
+Each `AZStoreElement` is 16 bytes: `{ const AZImplementation *impl; union { uint8_t val[8]; uint64_t val_idx; ... } }`
 
-## An alternative
+- `impl == NULL` - empty element (reserved local slot, untyped null)
+- block classes - `val` holds the instance pointer directly (references are ref'd)
+- values up to 8 bytes - inline in `val`
+- larger values - `val_idx` indexes the data buffer in 16-byte units (`ceil(size / 16)` slots)
 
- - array of `const AZImplementation *`
- - array of `void *` (pointers to instances)
- - data block
+**The stack never holds boxed values**: `push_value`/`push_instance`/`push_value_transfer`/`store_transfer`
+transparently unbox boxed values (the content is always a plain value and is stored inline or in the data
+buffer; the box is released on transfer). Boxed *interfaces* are lifecycle guards and are kept as-is.
 
-Value-type entries would take their ìnstance_size` (the same as value-size), rounded to 16-byte boundary, from the datablock. Block-type entries do not take any room from the data block. Instance pointer points to:
- - for value types - the instance inside datablock
- - block types - directly to the instance in heap
+### Datablock management (lazy storage)
 
-One stack entry takes min 16 bytes (block types), 16 + value_size for value types
+- **Append-only**: pushing a large value appends at `data_pos`. Mid-buffer holes are never scanned or reused.
+- **Pop contraction**: popping frees the element's data slots; the high-water mark is lowered only across freed slots that touch it (`val_idx + blocks == data_pos`). Push/pop being LIFO, this reclaims the common case exactly.
+- **Element operations never move data**: exchange is a plain 16-byte element swap, remove/roll are element-array memmoves. Transient holes below the high-water mark are reclaimed at frame rewind.
+- **Slot store reuses storage**: overwriting a slot with a same-size-or-smaller large value reuses its `val_idx` (the common case for reassignment); otherwise a fresh slot is appended.
+- **Frame rewind**: interpreter frames record `{elem_base, data_base}`; popping a frame hard-resets both, reclaiming all temporaries and transient holes of the frame in O(1).
+- **Growth**: elements and data are reallocated with doubling. Because data slots are referenced by index, no pointer fixup is needed on realloc (this is the point of `val_idx` being an index).
 
-Pluses
- - this removes the double dereferences of block types.
+### Conversion
 
-Drawbacks
- - small values still take 32 bytes
- - still needs shifting if the value size differs (and shifting occurs often because block types now have datablock size 0)
+Conversion happens into a 16-byte scratch and the result is stored back into the same element. The only storage-allocating
+result is complex double (everything else fits inline or is a block pointer; there is no automatic conversion of custom structs),
+so slot storage is never grown in place and no mid-buffer shifting ever occurs.
 
-Or we can make the minimum datablock allocation 16 bytes - then it is almost exactly as the current variant, only saves one dereference
+### Invoke ABI
 
-## More complex alternative
+Arguments are passed to `AZFunctionImplementation.invoke` as a pointer into the stack's element array plus the data buffer
+(zero-copy); callees receive fully materialized argument slots. The old `invoke_vals` (impls/vals arrays) front-end remains for
+transitional callers and translates via pointer emulation (`val_idx = ptr >> 4`, `data = NULL`).
 
- - array of `const AZImplementation *`
- - array of value/pointer unions
- - data block
+## Properties vs the alternatives
 
-The unions could contain:
- - a pointer to instance for block types
- - small value (up to 8 bytes) for value types
- - pointer to data block for large values
+- 16 bytes per stack element (vs 32+ in the old layout); one dereference less for block instances
+- no intra-stack data shifting at all (exchange/roll/remove are O(elements))
+- value/block distinction still needs one impl dereference (inherent to the store format)
 
-Plus: Most stack elements take exactly 16 bytes, only large values take more
+## Considered alternatives (not implemented)
 
-Drawbacks
- - determining value size from implementation takes one pointer dereference (but we need dereference anyways to determine block/value)
- - more complex (value may be either a pointer or inline data)
- - still needs shifting, but shifting is relatively rare (only for value types > 8 bytes)
-
-### More complex alternative
-
-Datablock will not hold elements sequentially but holds a free list and allows malloc/free like access
-
-Drawback: complex to implement for pure function calls
-
-### Even more complex alternative
-
- - an array of types
- - an array of unions of (small value / pointer)
-
-Layout
-- For final value types, the union holds the value inline (up to 8 bytes)
-- For final block types and objects, the union holds pointer to instance
-- For large values it holds pointer to the value in datablock
-- For non-final types it holds pointer to {Implementation, value} struct in datablock
-
-This (almost) copies the native calling convention of az
-
-Pluses
-- block/value/object/interface/final are typecode flags, determined directly from typecode (no dereference)
-- small primitives, final blocks and objects will take only 12 bytes
-
-Drawbacks
-- non-final block types will take 28 bytes
-- complex to implement
-
-### One more alternative
+### The previous layout
 
  - array of `const AZImplementation *`
  - array of `AZValue *`
+ - data block
 
-But values use boxing - i.e. large values are allocated from heap (or from specialized pool)
+Each stack entry took its `value_size` bytes (rounded up to 16) from the datablock, the value array pointed into it.
+32+ bytes per element and intra-stack operations had to shift the data tail when value sizes differed.
 
-Plus: easy to implement
+### Union of small value / pointer per element, typecodes only
 
-Drawbacks
- - allocating boxed values from heap is not optimal in the middle of calculations
- - Still 24 bytes for stack entry
+Like the store format, but non-final types hold a pointer to `{Implementation, value}` in the datablock and block/value/final
+is read from typecode flags (saves the impl dereference). More complex; can be revisited if the impl dereference shows up in profiles.
 
-Or custom variant of this - do not use full AZValue but only 8-byte union. But then it needs custom BoxedValue type (the standard
-one does not allow boxing anything <= 16 bytes)
-Or relax the 16-byte boxing rule
-Also for small boxes we can use pooled allocations
+### Free-list datablock
+
+Malloc/free style datablock instead of high-water allocation. Much more complex for no measured need (frame rewind already
+reclaims everything transient in O(1)).
+
+### Boxed values for everything
+
+All large values allocated from heap (or a pool). Simple, but per-value heap allocation in the middle of calculations is not acceptable.

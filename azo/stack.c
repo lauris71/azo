@@ -6,14 +6,13 @@
 * Copyright (C) Lauris Kaplinski 2018
 */
 
-#define COMPACT
-
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <arikkei/arikkei-strlib.h>
 
+#include <az/boxed-value.h>
 #include <az/extend.h>
 
 #include <azo/stack.h>
@@ -22,27 +21,9 @@ static void stack_class_init (AZOStackClass *klass);
 static void stack_init (AZOStackClass *klass, AZOStack *stack);
 static void stack_finalize (AZOStackClass *klass, AZOStack *stack);
 
-static void stack_ensure_size (AZOStack *stack, unsigned int n_entries, unsigned int data_size);
-
-#define STACK_MIN_SIZE 16
-#define STACK_MIN_MASK (STACK_MIN_SIZE - 1)
-#define STACK_ELEMENT_SIZE(s,p) (unsigned int) (stack->values[(p) + 1].ptr - stack->values[p].ptr)
-
-static inline unsigned int
-STACK_VALUE_SIZE(AZClass *klass)
-{
-	return (klass && AZ_CLASS_VALUE_SIZE(klass)) ? (AZ_CLASS_ELEMENT_SIZE(klass) + STACK_MIN_MASK) & ~STACK_MIN_MASK : STACK_MIN_SIZE;
-
-}
-
-static inline unsigned int
-STACK_IMPL_VALUE_SIZE(const AZImplementation *impl)
-{
-	if (!impl) return STACK_MIN_SIZE;
-	const AZClass *klass = AZ_CLASS_FROM_IMPL(impl);
-	return (AZ_CLASS_VALUE_SIZE(klass)) ? (AZ_CLASS_ELEMENT_SIZE(klass) + STACK_MIN_MASK) & ~STACK_MIN_MASK : STACK_MIN_SIZE;
-}
-
+static void stack_ensure_size (AZOStack *stack, unsigned int n_entries, unsigned int n_data);
+/* Clear element, returning the number of freed data slots (its val_idx remains valid) */
+unsigned int azo_stack_clear (AZOStack *stack, unsigned int pos);
 static unsigned int stack_type = 0;
 static AZOStackClass *stack_class = NULL;
 
@@ -66,113 +47,170 @@ stack_class_init (AZOStackClass *klass)
 static void
 stack_init (AZOStackClass *klass, AZOStack *stack)
 {
-	stack->data_size = 4096;
-	stack->data = (unsigned char *) malloc (stack->data_size);
 	stack->size = 256;
-	stack->impls = (const AZImplementation **) malloc (stack->size * sizeof (AZImplementation *));
-	stack->values = (AZStackEntry *) malloc (stack->size * sizeof (AZStackEntry));
-	stack->values[0].ptr = stack->data;
+	stack->elements = (AZStoreElement *) malloc (stack->size * sizeof (AZStoreElement));
+	stack->data_size = 256;
+	stack->data = (AZValue *) malloc (stack->data_size * sizeof (AZValue));
 }
 
 static void
 stack_finalize (AZOStackClass *klass, AZOStack *stack)
 {
-	unsigned int i;
-	for (i = 0; i < stack->length; i++) {
-		if (azo_stack_impl (stack, i)) az_value_clear (azo_stack_impl (stack, i), azo_stack_value (stack, i));
+	for (unsigned int i = 0; i < stack->length; i++) {
+		azo_stack_clear (stack, i);
 	}
-	free ((void *) stack->impls);
-	free (stack->values);
+	free (stack->elements);
 	free (stack->data);
 }
 
 static void
-stack_ensure_size (AZOStack *stack, unsigned int n_entries, unsigned int data_size)
+stack_ensure_size (AZOStack *stack, unsigned int n_entries, unsigned int n_data)
 {
-	assert ((data_size & (STACK_MIN_SIZE - 1)) == 0);
-	if ((stack->length + n_entries + 1) >= stack->size) {
+	if ((stack->length + n_entries) > stack->size) {
 		stack->size = stack->size << 1;
-		if ((stack->length + n_entries + 1) >= stack->size) stack->size = stack->length + n_entries + 1;
-		stack->impls = (const AZImplementation **) realloc ((void *) stack->impls, stack->size * sizeof (AZImplementation *));
-		stack->values = (AZStackEntry *) realloc (stack->values, stack->size * sizeof (AZStackEntry));
+		if ((stack->length + n_entries) > stack->size) stack->size = stack->length + n_entries;
+		stack->elements = (AZStoreElement *) realloc (stack->elements, stack->size * sizeof (AZStoreElement));
 	}
-	if ((stack->values[stack->length].ptr + data_size) >= (stack->data + stack->data_size)) {
+	if ((stack->data_pos + n_data) > stack->data_size) {
 		stack->data_size = stack->data_size << 1;
-		if ((stack->values[stack->length].ptr + data_size) >= (stack->data + stack->data_size)) stack->data_size = stack->data_size + data_size;
-		unsigned char *old_data = stack->data;
-		stack->data = (unsigned char *) realloc (stack->data, stack->data_size);
-		/* If the block moved, readjust all value pointers */
-		if (stack->data != old_data) {
-			ptrdiff_t delta = stack->data - old_data;
-			for (unsigned int i = 0; i <= stack->length; i++) {
-				stack->values[i].ptr += delta;
-			}
-		}
+		if ((stack->data_pos + n_data) > stack->data_size) stack->data_size = stack->data_pos + n_data;
+		/* Data slots are referenced by index so no pointer fixup is needed */
+		stack->data = (AZValue *) realloc (stack->data, stack->data_size * sizeof (AZValue));
 	}
 }
+
+/* Clear element, returning the number of freed data slots (its val_idx remains valid) */
+unsigned int
+azo_stack_clear (AZOStack *stack, unsigned int idx)
+{
+	AZStoreElement *el = &stack->elements[idx];
+	if (!el->impl) return 0;
+	AZClass *klass = AZ_CLASS_FROM_IMPL (el->impl);
+	if (AZ_IMPL_IS_REFERENCE (el->impl)) {
+		/* fixme: az_value_store_clear_at does not guard NULL references */
+		if (el->reference) az_reference_unref ((AZReferenceClass *) el->impl, el->reference);
+		el->impl = NULL;
+		return 0;
+	}
+	el->impl = NULL;
+	if (AZ_CLASS_IS_BLOCK (klass) || (klass->instance_size <= 8)) return 0;
+	return (klass->instance_size + 15) / 16;
+}
+
+/* Unbox boxed values: the stack never holds boxed values (the content is always a
+ * plain value and stored as such). Boxed interfaces are lifecycle guards and kept */
+static const AZImplementation *
+stack_unbox (const AZImplementation *impl, void **inst)
+{
+	if (impl == &AZBoxedValueKlass.klass.impl) {
+		AZBoxedValue *boxed = (AZBoxedValue *) *inst;
+		*inst = &boxed->val;
+		return &boxed->klass->impl;
+	}
+	return impl;
+}
+
+/* Set element, copying the instance (references are ref'd, large values appended at data_pos)
+ * The caller has to ensure capacity (stack_ensure_size) beforehand */
 
 static void
-stack_ensure_element_size (AZOStack *stack, unsigned int pos, unsigned int size)
+stack_set (AZOStack *stack, unsigned int idx, const AZImplementation *impl, void *inst)
 {
-	if ((stack->values[pos + 1].ptr - stack->values[pos].ptr) < size) {
-		unsigned int shift, i;
-		shift = size - (unsigned int) (stack->values[pos + 1].ptr - stack->values[pos].ptr);
-		stack_ensure_size (stack, 0, shift);
-		memcpy (stack->values[pos + 1].ptr + shift, stack->values[pos + 1].ptr, stack->values[stack->length].ptr - stack->values[pos + 1].ptr);
-		for (i = pos + 1; i <= stack->length; i++) stack->values[i].ptr += shift;
-	}
-}
-
-void
-azo_stack_pop (AZOStack *stack, unsigned int n_data)
-{
-	unsigned int i;
-	arikkei_return_if_fail (n_data <= stack->length);
-	for (i = 0; i < n_data; i++) {
-		stack->length -= 1;
-		az_value_clear (azo_stack_impl (stack, stack->length), azo_stack_value (stack, stack->length));
-	}
-}
-
-void
-azo_stack_remove (AZOStack *stack, unsigned int first, unsigned int n_data)
-{
-	arikkei_return_if_fail ((first + n_data) <= stack->length);
-	for (unsigned int i = 0; i < n_data; i++) {
-		az_value_clear (azo_stack_impl (stack, first + i), azo_stack_value (stack, first + i));
-	}
-	if ((first + n_data) < stack->length) {
-		unsigned int n_tail = stack->length - (first + n_data);
-		unsigned char *start;
-		if (first > 0) {
-			start = stack->values[first - 1].ptr + STACK_IMPL_VALUE_SIZE(stack->impls[first - 1]);
+	AZStoreElement *el = &stack->elements[idx];
+	el->impl = impl;
+	if (impl) {
+		AZClass *klass = AZ_CLASS_FROM_IMPL (impl);
+		if (AZ_CLASS_IS_BLOCK (klass)) {
+			el->block = inst;
+			/* fixme: az_value_store_set refs unconditionally, crashing on typed nulls */
+			if (inst && AZ_CLASS_IS_REFERENCE (klass)) az_reference_ref ((AZReference *) inst);
+		} else if (klass->instance_size <= 8) {
+			memcpy (el->val, inst, klass->instance_size);
 		} else {
-			start = stack->data;
-		}
-		unsigned char *mid = stack->values[first + n_data].ptr;
-		unsigned char *end = stack->values[stack->length].ptr;
-		memmove(start, mid, end - mid);
-		for (unsigned int i = 0; i <= n_tail; i++) {
-			stack->impls[first + i] = stack->impls[first + n_data + i];
-			stack->values[first + i].ptr = stack->values[first + n_data + i].ptr - (mid - start);
+			el->val_idx = stack->data_pos;
+			memcpy (stack->data + stack->data_pos, inst, klass->instance_size);
+			stack->data_pos += (klass->instance_size + 15) / 16;
 		}
 	}
-	stack->length -= n_data;
+}
+
+/* Set element, transferring ownership of the instance (large values appended at data_pos)
+ * The caller has to ensure capacity (stack_ensure_size) beforehand */
+static void
+stack_transfer_in (AZOStack *stack, unsigned int idx, const AZImplementation *impl, void *inst)
+{
+	AZStoreElement *el = &stack->elements[idx];
+	/* Boxed values are unboxed and the box released (transfer) */
+	AZBoxedValue *box = NULL;
+	if (impl && (AZ_CLASS_FROM_IMPL (impl) == (AZClass *) &AZBoxedValueKlass)) {
+		box = (AZBoxedValue *) inst;
+		impl = &box->klass->impl;
+		inst = &box->val;
+	}
+	el->impl = impl;
+	if (impl) {
+		AZClass *klass = AZ_CLASS_FROM_IMPL (impl);
+		if (AZ_CLASS_IS_BLOCK (klass)) {
+			el->block = inst;
+		} else if (klass->instance_size <= 8) {
+			memcpy (el->val, inst, klass->instance_size);
+		} else {
+			el->val_idx = stack->data_pos;
+			memcpy (stack->data + stack->data_pos, inst, klass->instance_size);
+			stack->data_pos += (klass->instance_size + 15) / 16;
+		}
+	}
+}
+
+void
+azo_stack_pop (AZOStack *stack, unsigned int n_values)
+{
+	arikkei_return_if_fail (n_values <= stack->length);
+	for (unsigned int i = 0; i < n_values; i++) {
+		stack->length -= 1;
+		/* Only freed slots are contracted (the val_idx of a cleared element remains valid) */
+		unsigned int freed = azo_stack_clear (stack, stack->length);
+		if (freed && ((stack->elements[stack->length].val_idx + freed) == stack->data_pos)) {
+			stack->data_pos = stack->elements[stack->length].val_idx;
+		}
+	}
+}
+
+void
+azo_stack_remove (AZOStack *stack, unsigned int first, unsigned int n_values)
+{
+	arikkei_return_if_fail ((first + n_values) <= stack->length);
+	if ((first + n_values) == stack->length) {
+		/* Removing from the top is a pop (contracts freed data slots) */
+		azo_stack_pop (stack, n_values);
+		return;
+	}
+	for (unsigned int i = 0; i < n_values; i++) {
+		azo_stack_clear (stack, first + i);
+	}
+	memmove (&stack->elements[first], &stack->elements[first + n_values], (stack->length - first - n_values) * sizeof (AZStoreElement));
+	stack->length -= n_values;
+	/* The data area is not compacted (transient holes are reclaimed at frame rewind) */
 }
 
 void
 azo_stack_push_value_default (AZOStack *stack, const AZImplementation *impl)
 {
-	unsigned int size;
-	stack->impls[stack->length] = impl;
+	unsigned int blocks = az_value_store_block_size (impl);
+	stack_ensure_size (stack, 1, blocks);
+	AZStoreElement *el = &stack->elements[stack->length];
+	el->impl = impl;
 	if (impl) {
-		size = STACK_IMPL_VALUE_SIZE(impl);
-		stack_ensure_size (stack, 1, size);
-		az_value_init (impl, azo_stack_value (stack, stack->length));
-		stack->values[stack->length + 1].ptr = stack->values[stack->length].ptr + size;
-	} else {
-		stack_ensure_size (stack, 1, STACK_MIN_SIZE);
-		stack->values[stack->length + 1].ptr = stack->values[stack->length].ptr + STACK_MIN_SIZE;
+		AZClass *klass = AZ_CLASS_FROM_IMPL (impl);
+		if (AZ_CLASS_IS_BLOCK (klass)) {
+			el->block = NULL;
+		} else if (klass->instance_size <= 8) {
+			az_value_init (impl, (AZValue *) el->val);
+		} else {
+			el->val_idx = stack->data_pos;
+			az_value_init (impl, stack->data + stack->data_pos);
+			stack->data_pos += blocks;
+		}
 	}
 	stack->length += 1;
 }
@@ -180,145 +218,129 @@ azo_stack_push_value_default (AZOStack *stack, const AZImplementation *impl)
 void
 azo_stack_push_value (AZOStack *stack, const AZImplementation *impl, const void *value)
 {
-	unsigned int size;
-	stack->impls[stack->length] = impl;
-	if (impl) {
-		size = STACK_IMPL_VALUE_SIZE(impl);
-		stack_ensure_size (stack, 1, size);
-		az_value_copy (impl, azo_stack_value (stack, stack->length), value);
-		stack->values[stack->length + 1].ptr = stack->values[stack->length].ptr + size;
-	} else {
-		stack_ensure_size (stack, 1, STACK_MIN_SIZE);
-		stack->values[stack->length + 1].ptr = stack->values[stack->length].ptr + STACK_MIN_SIZE;
-	}
+	void *n_inst;
+	const AZImplementation *n_impl = az_value_get_inst_autobox(impl, (const AZValue *) value, &n_inst);
+	stack_ensure_size (stack, 1, az_value_store_block_size (n_impl));
+	stack_set (stack, stack->length, n_impl, n_inst);
 	stack->length += 1;
 }
 
 void
 azo_stack_push_value_transfer (AZOStack *stack, const AZImplementation *impl, void *value)
 {
-	unsigned int size;
-	stack->impls[stack->length] = impl;
-	if (impl) {
-		size = STACK_VALUE_SIZE(AZ_CLASS_FROM_IMPL(impl));
-		stack_ensure_size (stack, 1, size);
-		az_value_transfer (impl, azo_stack_value (stack, stack->length), value);
-		stack->values[stack->length + 1].ptr = stack->values[stack->length].ptr + size;
-	} else {
-		stack_ensure_size (stack, 1, STACK_MIN_SIZE);
-		stack->values[stack->length + 1].ptr = stack->values[stack->length].ptr + STACK_MIN_SIZE;
-	}
+	void *n_inst;
+	const AZImplementation *n_impl = az_value_get_inst_autobox(impl, (const AZValue *) value, &n_inst);
+	stack_ensure_size (stack, 1, az_value_store_block_size (n_impl));
+	stack_set (stack, stack->length, n_impl, n_inst);
+	az_value_clear(impl, (AZValue *) value);
 	stack->length += 1;
 }
 
 void
 azo_stack_push_instance (AZOStack *stack, const AZImplementation *impl, void *inst)
 {
-	unsigned int size;
-	stack->impls[stack->length] = impl;
-	if (impl) {
-		size = STACK_VALUE_SIZE(AZ_CLASS_FROM_IMPL(impl));
-		stack_ensure_size (stack, 1, size);
-		az_value_set_from_inst (impl, azo_stack_value (stack, stack->length), inst);
-		stack->values[stack->length + 1].ptr = stack->values[stack->length].ptr + size;
-	} else {
-		stack_ensure_size (stack, 1, STACK_MIN_SIZE);
-		stack->values[stack->length + 1].ptr = stack->values[stack->length].ptr + STACK_MIN_SIZE;
-	}
+	impl = stack_unbox (impl, &inst);
+	stack_ensure_size (stack, 1, az_value_store_block_size (impl));
+	stack_set (stack, stack->length, impl, inst);
 	stack->length += 1;
+}
+
+void
+azo_stack_push_elements (AZOStack *stack, unsigned int n_elements, const AZStoreElement elements[], AZValue data[])
+{
+	for (unsigned int i = 0; i < n_elements; i++) {
+		const AZImplementation *impl = elements[i].impl;
+		void *inst = az_value_store_instance_at ((AZStoreElement *) elements, i, data);
+		impl = stack_unbox (impl, &inst);
+		stack_ensure_size (stack, 1, az_value_store_block_size (impl));
+		stack_set (stack, stack->length, impl, inst);
+		stack->length += 1;
+	}
 }
 
 void
 azo_stack_duplicate (AZOStack *stack, unsigned int pos)
 {
-	azo_stack_push_value (stack, azo_stack_impl (stack, pos), azo_stack_value (stack, pos));
+	azo_stack_push_value (stack, stack->elements[pos].impl, azo_stack_value (stack, pos));
 }
 
 void
 azo_stack_exchange (AZOStack *stack, unsigned int pos)
 {
-	unsigned int size_a, size_b;
-	const AZImplementation *impl;
 	arikkei_return_if_fail (pos < stack->length - 1);
-	size_a = STACK_IMPL_VALUE_SIZE(azo_stack_impl(stack, pos));
-	size_b = STACK_IMPL_VALUE_SIZE(azo_stack_impl(stack, stack->length - 1));
-	if (size_a == size_b) {
-		/* Sizes are equal, swap positions */
-		stack_ensure_size (stack, 0, size_a);
-		/* Copy A to the end of stack  */
-		memcpy(stack->values[stack->length].ptr, stack->values[pos].ptr, size_a);
-		/* Copy B to A-s position */
-		memcpy(stack->values[pos].ptr, stack->values[stack->length - 1].ptr, size_b);
-		/* Copy A to the original B-s position */
-		memcpy(stack->values[stack->length - 1].ptr, stack->values[stack->length].ptr, size_a);
-	} else if (size_a > size_b) {
-		/* SIZE(A) > SIZE(B), values have to be shifted left */
-		unsigned int shift = size_a - size_b;
-		stack_ensure_size (stack, 0, size_a);
-		/* Copy A to the end of stack  */
-		memcpy(stack->values[stack->length].ptr, stack->values[pos].ptr, size_a);
-		/* Copy B to A-s position */
-		memcpy(stack->values[pos].ptr, stack->values[stack->length - 1].ptr, size_b);
-		/* Shift remainder left  */
-		memmove(stack->values[pos + 1].ptr - shift, stack->values[pos + 1].ptr, stack->values[stack->length - 1].ptr - stack->values[pos + 1].ptr);
-		/* Copy A to the new last position */
-		memmove (stack->values[stack->length - 1].ptr - shift, stack->values[stack->length].ptr, size_a);
-		/* Shift entries */
-		for (unsigned i = pos + 1; i <= stack->length; i++) stack->values[i].ptr -= shift;
-	} else {
-		unsigned int i;
-		unsigned int shift = size_b - size_a;
-		/* Ensure we have shift + size_a free space */
-		stack_ensure_size (stack, 0, size_b);
-		/* Shift right to make room for B at A-s position */
-		memmove(stack->values[pos + 1].ptr + shift, stack->values[pos + 1].ptr, stack->values[stack->length].ptr - stack->values[pos + 1].ptr);
-		/* Copy A to the end of shifted stack  */
-		memcpy (stack->values[stack->length].ptr + shift, stack->values[pos].ptr, size_a);
-		/* Copy shifted B to A-s position */
-		memcpy (stack->values[pos].ptr, stack->values[stack->length - 1].ptr + shift, size_b);
-		/* Copy A to the new last position */
-		memcpy (stack->values[stack->length - 1].ptr + shift, stack->values[stack->length].ptr + shift, size_a);
-		/* Shift entries */
-		for (i = pos + 1; i <= stack->length; i++) stack->values[i].ptr += shift;
-	}
-	impl = stack->impls[pos];
-	stack->impls[pos] = stack->impls[stack->length - 1];
-	stack->impls[stack->length - 1] = impl;
+	/* Data slots are position-independent so swapping the elements suffices */
+	AZStoreElement el = stack->elements[pos];
+	stack->elements[pos] = stack->elements[stack->length - 1];
+	stack->elements[stack->length - 1] = el;
 }
 
 void
 azo_stack_roll (AZOStack *stack, unsigned int pos)
 {
 	arikkei_return_if_fail (pos < stack->length - 1);
-	unsigned int size_last = STACK_IMPL_VALUE_SIZE (stack->impls[stack->length - 1]);
-	/* Ensure scratch space beyond the current end of values */
-	stack_ensure_size (stack, 0, size_last);
-	/* Shift everything from pos right by the rolled element's size: the elements
-	 * pos..length-2 move up one slot and the rolled element lands at the end */
-	memmove (stack->values[pos].ptr + size_last, stack->values[pos].ptr, stack->values[stack->length].ptr - stack->values[pos].ptr);
-	/* Move the rolled element from the end to pos */
-	memcpy (stack->values[pos].ptr, stack->values[stack->length].ptr, size_last);
-	/* Roll the implementation slot */
-	const AZImplementation *impl = stack->impls[stack->length - 1];
-	memmove (&stack->impls[pos + 1], &stack->impls[pos], (stack->length - 1 - pos) * sizeof (const AZImplementation *));
-	stack->impls[pos] = impl;
-	/* Recompute value offsets from pos + 1 onwards */
-	for (unsigned int i = pos + 1; i <= stack->length; i++) {
-		stack->values[i].ptr = stack->values[i - 1].ptr + STACK_IMPL_VALUE_SIZE (stack->impls[i - 1]);
+	/* Move-insert the top element to pos (data slots are position-independent) */
+	AZStoreElement el = stack->elements[stack->length - 1];
+	memmove (&stack->elements[pos + 1], &stack->elements[pos], (stack->length - 1 - pos) * sizeof (AZStoreElement));
+	stack->elements[pos] = el;
+}
+
+void
+azo_stack_store_transfer (AZOStack *stack, unsigned int pos, const AZImplementation *impl, void *value)
+{
+	AZStoreElement *el = &stack->elements[pos];
+	/* Boxed values are unboxed and the box released (transfer) */
+	AZBoxedValue *box = NULL;
+	if (impl && (AZ_CLASS_FROM_IMPL (impl) == (AZClass *) &AZBoxedValueKlass)) {
+		box = *((AZBoxedValue **) value);
+		impl = &box->klass->impl;
+		value = &box->val;
 	}
+	unsigned int new_blocks = az_value_store_block_size (impl);
+	/* Release the old reference (plain values need no destruction) */
+	if (el->impl && AZ_IMPL_IS_REFERENCE (el->impl) && el->reference) {
+		az_reference_unref ((AZReferenceClass *) el->impl, el->reference);
+	}
+	if (new_blocks) {
+		unsigned int old_blocks = (el->impl && !AZ_IMPL_IS_BLOCK (el->impl)) ? az_value_store_block_size_at (stack->elements, pos) : 0;
+		if (old_blocks >= new_blocks) {
+			/* Reuse the existing data slot */
+			memcpy (stack->data + el->val_idx, value, AZ_CLASS_FROM_IMPL (impl)->instance_size);
+		} else {
+			/* Append a fresh slot (the old one is reclaimed at frame rewind) */
+			stack_ensure_size (stack, 0, new_blocks);
+			el->val_idx = stack->data_pos;
+			memcpy (stack->data + stack->data_pos, value, AZ_CLASS_FROM_IMPL (impl)->instance_size);
+			stack->data_pos += new_blocks;
+		}
+	} else if (impl) {
+		AZClass *klass = AZ_CLASS_FROM_IMPL (impl);
+		if (AZ_CLASS_IS_BLOCK (klass)) {
+			el->block = *((void **) value);
+		} else {
+			memcpy (el->val, value, klass->instance_size);
+		}
+	}
+	el->impl = impl;
+	if (box) az_boxed_value_unref (box);
 }
 
 unsigned int
 azo_stack_convert (AZOStack *stack, unsigned int pos, unsigned int to_type)
 {
-	AZClass *klass;
-	arikkei_return_val_if_fail (pos < stack->length, 0);
-	klass = az_type_get_class (to_type);
-	stack_ensure_element_size (stack, pos, az_class_value_size(klass));
-	// fixme: Should go to EXACT
-	if (az_value_convert_in_place_autobox(&stack->impls[pos], (AZValue *) stack->values[pos].ptr, 16, to_type, AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
+	const AZImplementation *impl = stack->elements[pos].impl;
+	unsigned int src_type = impl ? AZ_IMPL_TYPE (impl) : 0;
+	/* Primitive identity: the conversion is a no-op (impl stays concrete) */
+	if (impl && AZ_TYPE_IS_PRIMITIVE (src_type) && ((to_type == src_type) || (to_type == AZ_TYPE_ANY))) return 1;
+	if (!impl && (to_type == AZ_TYPE_ANY)) return 1;
+	/* Convert into a scratch and store back; the only storage-allocating
+	 * result is complex double (all other values fit inline, blocks are
+	 * pointers) so the slot data storage is never grown in place */
+	AZValue scratch;
+	const AZImplementation *new_impl = impl;
+	if (az_value_convert_autobox (&new_impl, &scratch, 16, impl, azo_stack_value (stack, pos), to_type, AZ_CONVERT_CONDITIONAL) == AZ_CONVERSION_FAILED) {
 		return 0;
 	}
+	azo_stack_store_transfer (stack, pos, new_impl, &scratch);
 	return 1;
 }
 
@@ -328,14 +350,16 @@ azo_stack_print_element(AZOStack *stack, unsigned int pos, uint8_t *d, unsigned 
 	uint8_t buf[1024];
 	const char *name = "NONE";
 	unsigned int type = azo_stack_type (stack, pos);
+	unsigned int size = 0;
 	if (type) {
-		unsigned int len;
-		name = (const char *) AZ_CLASS_FROM_TYPE(type)->name;
+		AZClass *klass = AZ_CLASS_FROM_TYPE (type);
+		size = AZ_CLASS_IS_BLOCK (klass) ? 0 : klass->instance_size;
+		name = (const char *) klass->name;
 		az_instance_to_string (AZ_IMPL_FROM_TYPE(type), azo_stack_instance (stack, pos), buf, 1024);
 	} else {
 		buf[0] = 0;
 	}
-	unsigned int len = snprintf((char *) d, d_len, "%u: %2u\t%u %s %s", pos, (unsigned int) (stack->values[pos + 1].ptr - stack->values[pos].ptr), type, name, buf);
+	unsigned int len = snprintf((char *) d, d_len, "%u: %2u\t%u %s %s", pos, size, type, name, buf);
 	if (d_len && (len >= d_len)) d[d_len - 1] = 0;
 	return len;
 }
@@ -349,15 +373,16 @@ azo_stack_print_contents (AZOStack *stack, unsigned int start, unsigned int end,
 		const unsigned char *name;
 		unsigned int pos = end - 1 - (i - start);
 		unsigned int type = azo_stack_type (stack, pos);
+		unsigned int size = 0;
 		if (type) {
-			unsigned int len;
-			name = AZ_CLASS_FROM_TYPE(type)->name;
+			AZClass *klass = AZ_CLASS_FROM_TYPE (type);
+			size = AZ_CLASS_IS_BLOCK (klass) ? 0 : klass->instance_size;
+			name = klass->name;
 			az_instance_to_string (AZ_IMPL_FROM_TYPE(type), azo_stack_instance (stack, pos), b, 1024);
 		} else {
 			name = (const unsigned char *) "NONE";
 			b[0] = 0;
 		}
-		fprintf (stderr, "%u: %2u\t%u %s %s\n", pos, (unsigned int) (stack->values[pos + 1].ptr - stack->values[pos].ptr), type, name, b);
+		fprintf (stderr, "%u: %2u\t%u %s %s\n", pos, size, type, name, b);
 	}
 }
-

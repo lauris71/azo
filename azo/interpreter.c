@@ -46,8 +46,9 @@ azo_interpreter_new (AZOContext *ctx)
 	memset (intr, 0, sizeof (AZOInterpreter));
 
 	intr->size_frames = 16;
-	intr->frames = (unsigned int *) malloc (intr->size_frames * 4);
-	intr->frames[0] = 0;
+	intr->frames = (AZOFrameBase *) malloc (intr->size_frames * sizeof (AZOFrameBase));
+	intr->frames[0].elem_base = 0;
+	intr->frames[0].data_base = 0;
 	intr->n_frames = 1;
 	intr->ctx = ctx;
 
@@ -87,12 +88,9 @@ azo_intepreter_push_value (AZOInterpreter *intr, const AZImplementation *impl, c
 }
 
 void
-azo_intepreter_push_values (AZOInterpreter *intr, const AZImplementation **impls, const AZValue **vals, unsigned int n_vals)
+azo_intepreter_push_elements (AZOInterpreter *intr, unsigned int n_elements, const AZStoreElement elements[], AZValue data[])
 {
-	unsigned int i;
-	for (i = 0; i < n_vals; i++) {
-		azo_stack_push_value (&intr->stack, impls[i], vals[i]);
-	}
+	azo_stack_push_elements (&intr->stack, n_elements, elements, data);
 }
 
 static void azo_interpreter_run_code(AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *ipc, const uint8_t *end);
@@ -120,7 +118,7 @@ static const uint8_t *
 intr_unwind (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 {
 	assert(intr->ctx->az_ctx.exc.type);
-	unsigned int frame_base = intr->frames[intr->n_frames - 1];
+	unsigned int frame_base = intr->frames[intr->n_frames - 1].elem_base;
 	while (intr->stack.length > frame_base) {
 		const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, 0);
 		if (impl == &azo_defer_handle_class->impl) {
@@ -224,16 +222,19 @@ azo_interpreter_push_frame (AZOInterpreter *intr, unsigned int n_elements)
 {
 	if (intr->n_frames >= intr->size_frames) {
 		intr->size_frames = intr->size_frames << 1;
-		intr->frames = (unsigned int *) realloc (intr->frames, intr->size_frames * 4);
+		intr->frames = (AZOFrameBase *) realloc (intr->frames, intr->size_frames * sizeof (AZOFrameBase));
 	}
-	intr->frames[intr->n_frames] = intr->stack.length - n_elements;
+	intr->frames[intr->n_frames].elem_base = intr->stack.length - n_elements;
+	intr->frames[intr->n_frames].data_base = intr->stack.data_pos;
 	return intr->n_frames++;
 }
 
 unsigned int
 azo_interpreter_pop_frame (AZOInterpreter *intr, AZOInterpreterCtx *ictx)
 {
-	intr_rewind(intr, ictx, intr->stack.length - intr->frames[intr->n_frames - 1]);
+	intr_rewind(intr, ictx, intr->stack.length - intr->frames[intr->n_frames - 1].elem_base);
+	/* Rewind the data area, reclaiming all temporaries and transient holes */
+	intr->stack.data_pos = intr->frames[intr->n_frames - 1].data_base;
 	intr->n_frames -= 1;
 	return intr->n_frames;
 }
@@ -669,9 +670,9 @@ interpret_DUPLICATE_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const 
 {
 	uint32_t pos;
 	memcpy (&pos, ip + 1, 4);
-	CHECK((intr->frames[intr->n_frames - 1] + pos) < intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
+	CHECK((intr->frames[intr->n_frames - 1].elem_base + pos) < intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
 	TEST_OVERFLOW(1);
-	azo_stack_duplicate (&intr->stack, intr->frames[intr->n_frames - 1] + pos);
+	azo_stack_duplicate (&intr->stack, intr->frames[intr->n_frames - 1].elem_base + pos);
 	return ip + 5;
 }
 
@@ -700,8 +701,8 @@ interpret_EXCHANGE_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const u
 {
 	unsigned int pos;
 	memcpy (&pos, ip + 1, 4);
-	CHECK((intr->frames[intr->n_frames - 1] + pos) < intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
-	azo_stack_exchange (&intr->stack, intr->frames[intr->n_frames - 1] + pos);
+	CHECK((intr->frames[intr->n_frames - 1].elem_base + pos) < intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
+	azo_stack_exchange (&intr->stack, intr->frames[intr->n_frames - 1].elem_base + pos);
 	return ip + 5;
 }
 
@@ -711,11 +712,10 @@ interpret_CLEAR_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsi
 	unsigned int pos, count;
 	memcpy (&pos, ip + 1, 4);
 	memcpy (&count, ip + 5, 4);
-	unsigned int first = intr->frames[intr->n_frames - 1] + pos;
+	unsigned int first = intr->frames[intr->n_frames - 1].elem_base + pos;
 	CHECK((first + count) <= intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
 	for (unsigned int i = first; i < first + count; i++) {
-		az_value_clear (intr->stack.impls[i], azo_stack_value (&intr->stack, i));
-		intr->stack.impls[i] = NULL;
+		azo_stack_clear (&intr->stack, i);
 	}
 	return ip + 9;
 }
@@ -899,8 +899,7 @@ interpret_convert (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t 
 			EXCEPTION_THROW_MASKED(AZO_EXCEPTION_NOT_FINITE, AZO_INTR_NOT_FINITE_MASK);
 		}
 		/* Write the converted value back and update the element type */
-		*from_val = to_val;
-		*azo_stack_impls_bw (&intr->stack, 0) = AZ_IMPL_FROM_TYPE (to_type);
+		azo_stack_store_transfer_bw (&intr->stack, 0, AZ_IMPL_FROM_TYPE (to_type), &to_val);
 		return ip + 5;
 	}
 	/* Assignment conversion (strict): values already assignable to the target pass
@@ -1495,10 +1494,10 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 	}
 	unsigned int prev = azo_interpreter_push_frame(intr, pos);
 	AZPackedValue64 ret_val = {0};
-	az_function_invoke_vals (func_impl, func_inst,
-		azo_stack_impls_bw(&intr->stack, sig_n_args - 1),
-		(const AZValue **)azo_stack_values_bw (&intr->stack, sig_n_args - 1),
-		&ret_val.impl, &ret_val.v, &intr->ctx->az_ctx);
+	/* The argument elements are passed directly from the stack (zero-copy) */
+	az_function_invoke (func_impl, func_inst, sig_n_args,
+		&intr->stack.elements[intr->stack.length - sig_n_args], intr->stack.data,
+		&ret_val.impl, &ret_val.v.value, AZ_VALUE_MAX_SIZE, &intr->ctx->az_ctx);
 	unsigned int new_prev = azo_interpreter_pop_frame(intr, ictx);
 	assert(new_prev == prev);
 	/* Pop function */
@@ -1676,7 +1675,6 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uin
 	CHECK_TYPE_EXACT(0, AZ_TYPE_STRING);
 	CHECK_UNDERFLOW(2);
 	key = (AZString *) azo_stack_instance_bw (&intr->stack, 0);
-	/* fixme: Implement automatic unboxing (in stack?) or not? */
 	impl = azo_stack_impl_bw (&intr->stack, 1);
 	if (!impl) {
 		EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
@@ -1690,7 +1688,6 @@ interpret_GET_PROPERTY (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uin
 	if (!inst) {
 		EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
 	}
-
 	/* Try simple property */
 	if (az_instance_get_property_by_key (impl, inst, key->str, &intr->vals[0].impl, &intr->vals[0].v, 64) == AZ_OK) {
 		/* Ordinary property */
@@ -2275,12 +2272,12 @@ azo_intepreter_print_stack (AZOInterpreter *intr, FILE *ofs)
 	unsigned int i;
 	for (i = 0; i < intr->n_frames; i++) {
 		unsigned int frame = intr->n_frames - 1 - i;
-		unsigned int end = (frame == (intr->n_frames - 1)) ? intr->stack.length : intr->frames[frame + 1];
-		if (end > intr->frames[frame]) {
-			fprintf (stderr, "Frame %u (%u - %u)\n", frame, intr->frames[frame], end - 1);
+		unsigned int end = (frame == (intr->n_frames - 1)) ? intr->stack.length : intr->frames[frame + 1].elem_base;
+		if (end > intr->frames[frame].elem_base) {
+			fprintf (stderr, "Frame %u (%u - %u)\n", frame, intr->frames[frame].elem_base, end - 1);
 		} else {
 			fprintf (stderr, "Frame %u EMPTY\n", frame);
 		}
-		azo_stack_print_contents (&intr->stack, intr->frames[frame], end, stderr);
+		azo_stack_print_contents (&intr->stack, intr->frames[frame].elem_base, end, stderr);
 	}
 }

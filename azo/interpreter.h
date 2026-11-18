@@ -37,14 +37,20 @@ extern "C" {
 /* Exceptions masked (suppressed) by default */
 #define AZO_INTR_DEFAULT_MASK (AZO_INTR_CHANGE_OF_PRECISION_MASK | AZO_INTR_NOT_FINITE_MASK)
 
+/* Frame base: the first element of the frame (may be end of stack) plus the
+ * data high-water mark at frame entry (rewind restores both) */
+typedef struct _AZOFrameBase {
+	unsigned int elem_base;
+	unsigned int data_base;
+} AZOFrameBase;
+
 struct _AZOInterpreter {
 	AZOContext *ctx;
 
-	/* Separate stack of frame pointers */
+	/* Separate stack of frame bases */
 	unsigned int n_frames;
 	unsigned int size_frames;
-	/* Points to the first element of frame (may be end of stack) */
-	unsigned int *frames;
+	AZOFrameBase *frames;
 	AZOStack stack;
 	uint32_t flags;
 	/* Scratch area */
@@ -71,7 +77,7 @@ void azo_interpreter_init(AZOInterpreter *intr);
 
 void azo_intepreter_push_instance (AZOInterpreter *intr, const AZImplementation *impl, void *inst);
 void azo_intepreter_push_value (AZOInterpreter *intr, const AZImplementation *impl, const AZValue *val);
-void azo_intepreter_push_values (AZOInterpreter *intr, const AZImplementation **impls, const AZValue **vals, unsigned int n_vals);
+void azo_intepreter_push_elements (AZOInterpreter *intr, unsigned int n_elements, const AZStoreElement elements[], AZValue data[]);
 
 /**
  * @brief Pushes a new frame to the top of the frame stack

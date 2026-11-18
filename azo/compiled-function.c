@@ -31,7 +31,7 @@ static void aosora_compiled_function_finalize (AZOCompiledFunctionClass *klass, 
 static void compiled_function_shutdown (AZObject *obj);
 /* AZFunction implementation */
 static const AZFunctionSignature *compiled_function_signature(const AZFunctionImplementation *impl, void *inst);
-static unsigned int compiled_function_invoke(const AZFunctionImplementation *impl, void *inst, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx);
+static int compiled_function_invoke(const AZFunctionImplementation *impl, void *inst, unsigned int n_args, AZStoreElement args[], AZValue data[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size, AZContext *ctx);
 
 // Method implementations
 static unsigned int compiled_function_call_list (const AZImplementation **arg_impls, const AZValue **arg_vals, const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx);
@@ -63,7 +63,7 @@ aosora_compiled_function_class_init (AZOCompiledFunctionClass *klass)
 	/* Implementation */
 	klass->object_class.shutdown = compiled_function_shutdown;
 	klass->function_impl.signature = compiled_function_signature;
-	klass->function_impl.invoke_vals = compiled_function_invoke;
+	klass->function_impl.invoke = compiled_function_invoke;
 }
 
 static void
@@ -106,8 +106,8 @@ AZFunctionSignature *compiled_function_signature(const AZFunctionImplementation 
 	return cfunc->signature;
 }
 
-static unsigned int
-compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx)
+static int
+compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, unsigned int n_args, AZStoreElement args[], AZValue data[], const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size, AZContext *ctx)
 {
 	AZOCompiledFunction *cfunc = (AZOCompiledFunction *) inst;
 
@@ -116,11 +116,12 @@ compiled_function_invoke (const AZFunctionImplementation *impl, void *inst, cons
 
 	azo_context_clear_exception((AZOContext *) ctx);
 
-	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, &cfunc->static_data, AZ_SIGNATURE_N_ARGS(cfunc->signature), arg_impls, arg_vals, ret_impl, &ret_val->value, 64);
+	azo_program_interpret(cfunc->prog, cfunc->ctx->intr, &cfunc->static_data, n_args, args, data, ret_impl, ret_val, ret_size);
 
 	az_object_unref ((AZObject *) cfunc);
 
-	return 1;
+	if (ctx->exc.type) return ctx->exc.type;
+	return AZ_OK;
 }
 
 AZOCompiledFunction *
