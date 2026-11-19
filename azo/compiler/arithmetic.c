@@ -16,17 +16,19 @@
 static uint8_t uint8_one = 1;
 
 static void
-compile_arithmetic_op (AZOCode *code, unsigned int use_typed, unsigned int typed_op, unsigned int generic_op, unsigned int type, const AZONode *expr)
+compile_arithmetic_op (AZOCompilerContext *ctx, AZOCode *code, unsigned int use_typed, unsigned int typed_op, unsigned int generic_op, unsigned int type, const AZONode *expr)
 {
+	/* Binary operation: [lhs, rhs] -> [result] */
 	if (use_typed) {
 		azo_code_write_ic_u8 (code, typed_op, AZ_TYPE_INDEX (type), expr);
 	} else {
 		azo_code_write_ic (code, generic_op, expr);
 	}
+	ctx->n_stack -= 1;
 }
 
 static unsigned int
-compile_arithmetic_boolean (AZOCode *code, unsigned int operation, const AZONode *expr, unsigned int lhs_is_boolean, unsigned int rhs_is_boolean)
+compile_arithmetic_boolean (AZOCompilerContext *ctx, AZOCode *code, unsigned int operation, const AZONode *expr, unsigned int lhs_is_boolean, unsigned int rhs_is_boolean)
 {
 	if (!lhs_is_boolean) {
 		azo_code_write_ic_u32_u32 (code, AZO_TC_EXCEPTION_IF_TYPE_IS_NOT, 1, AZ_TYPE_BOOLEAN, expr);
@@ -36,8 +38,10 @@ compile_arithmetic_boolean (AZOCode *code, unsigned int operation, const AZONode
 	}
 	if (operation == AZO_TERM_ARITHMETIC_ANDAND) {
 		azo_code_write_ic (code, AZO_TC_LOGICAL_AND, expr);
+		ctx->n_stack -= 1;
 	} else if (operation == AZO_TERM_ARITHMETIC_OROR) {
 		azo_code_write_ic (code, AZO_TC_LOGICAL_OR, expr);
+		ctx->n_stack -= 1;
 	}
 	return 1;
 }
@@ -55,38 +59,43 @@ azo_compiler_compile_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, con
 		(AZ_TYPE_INDEX (lhs->type) <= AZ_TYPE_IDX_COMPLEX_DOUBLE);
 	switch (expr->term.subtype) {
 	case AZO_TERM_ARITHMETIC_PLUS:
-		compile_arithmetic_op (&ctx->frame->code, use_typed, AZO_TC_ADD_TYPED, AZO_TC_ADD, lhs->type, expr);
+		compile_arithmetic_op (ctx, &ctx->frame->code, use_typed, AZO_TC_ADD_TYPED, AZO_TC_ADD, lhs->type, expr);
 		return 1;
 	case AZO_TERM_ARITHMETIC_MINUS:
-		compile_arithmetic_op (&ctx->frame->code, use_typed, AZO_TC_SUBTRACT_TYPED, AZO_TC_SUBTRACT, lhs->type, expr);
+		compile_arithmetic_op (ctx, &ctx->frame->code, use_typed, AZO_TC_SUBTRACT_TYPED, AZO_TC_SUBTRACT, lhs->type, expr);
 		return 1;
 	case AZO_TERM_ARITHMETIC_SLASH:
-		compile_arithmetic_op (&ctx->frame->code, use_typed, AZO_TC_DIVIDE_TYPED, AZO_TC_DIVIDE, lhs->type, expr);
+		compile_arithmetic_op (ctx, &ctx->frame->code, use_typed, AZO_TC_DIVIDE_TYPED, AZO_TC_DIVIDE, lhs->type, expr);
 		return 1;
 	case AZO_TERM_ARITHMETIC_STAR:
-		compile_arithmetic_op (&ctx->frame->code, use_typed, AZO_TC_MULTIPLY_TYPED, AZO_TC_MULTIPLY, lhs->type, expr);
+		compile_arithmetic_op (ctx, &ctx->frame->code, use_typed, AZO_TC_MULTIPLY_TYPED, AZO_TC_MULTIPLY, lhs->type, expr);
 		return 1;
 	case AZO_TERM_ARITHMETIC_PERCENT:
-		compile_arithmetic_op (&ctx->frame->code, use_typed, AZO_TC_MODULO_TYPED, AZO_TC_MODULO, lhs->type, expr);
+		compile_arithmetic_op (ctx, &ctx->frame->code, use_typed, AZO_TC_MODULO_TYPED, AZO_TC_MODULO, lhs->type, expr);
 		return 1;
 	case AZO_TERM_ARITHMETIC_SHIFT_LEFT:
 		azo_code_write_ic (&ctx->frame->code, AZO_TC_SHIFT_LEFT, expr);
+		ctx->n_stack -= 1;
 		return 1;
 	case AZO_TERM_ARITHMETIC_SHIFT_RIGHT:
 		azo_code_write_ic (&ctx->frame->code, AZO_TC_SHIFT_RIGHT, expr);
+		ctx->n_stack -= 1;
 		return 1;
 	case AZO_TERM_ARITHMETIC_AND:
 		azo_code_write_ic (&ctx->frame->code, AZO_TC_BITWISE_AND, expr);
+		ctx->n_stack -= 1;
 		return 1;
 	case AZO_TERM_ARITHMETIC_OR:
 		azo_code_write_ic (&ctx->frame->code, AZO_TC_BITWISE_OR, expr);
+		ctx->n_stack -= 1;
 		return 1;
 	case AZO_TERM_ARITHMETIC_CARET:
 		azo_code_write_ic (&ctx->frame->code, AZO_TC_BITWISE_XOR, expr);
+		ctx->n_stack -= 1;
 		return 1;
 	case AZO_TERM_ARITHMETIC_ANDAND:
 	case AZO_TERM_ARITHMETIC_OROR:
-		return compile_arithmetic_boolean (&ctx->frame->code, expr->term.subtype, expr, lhs->type == AZ_TYPE_BOOLEAN, rhs->type == AZ_TYPE_BOOLEAN);
+		return compile_arithmetic_boolean (ctx, &ctx->frame->code, expr->term.subtype, expr, lhs->type == AZ_TYPE_BOOLEAN, rhs->type == AZ_TYPE_BOOLEAN);
 	default:
 		fprintf (stderr, "azo_compiler_compile_arithmetic: operation %u is not implemented in bytecode\n", expr->term.subtype);
 		break;
@@ -110,11 +119,11 @@ azo_compiler_compile_tilde (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 		}
 	}
 	if (!azo_compiler_compile_expression (comp, ctx, expr, src)) return 0;
-	azo_code_compile_type_is_in_range (code, 0, AZ_TYPE_INT8, AZ_TYPE_INT64, expr, &lt_i8, &gt_i64);
+	azo_code_compile_type_is_in_range (ctx, code, 0, AZ_TYPE_INT8, AZ_TYPE_INT64, expr, &lt_i8, &gt_i64);
 	azo_code_write_ic (code, AZO_TC_BITWISE_NOT, expr);
 	finished_1 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	azo_code_update_JMP32 (code, gt_i64);
-	azo_code_compile_type_is_in_range (code, 0, AZ_TYPE_COMPLEX_FLOAT, AZ_TYPE_COMPLEX_DOUBLE, expr, NULL, &gt_cd);
+	azo_code_compile_type_is_in_range (ctx, code, 0, AZ_TYPE_COMPLEX_FLOAT, AZ_TYPE_COMPLEX_DOUBLE, expr, NULL, &gt_cd);
 	azo_code_write_ic (code, AZO_TC_CONJUGATE, expr);
 	finished_2 = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 	azo_code_update_JMP32 (code, lt_i8);
@@ -135,21 +144,29 @@ azo_compiler_compile_increment (AZOCompiler *comp, AZOCompilerContext *ctx, cons
 
 	/* Stack: LHS RHS */
 	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-	azo_code_compile_type_is_in_range (code, 0, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_min, &lhs_type_gt_max);
+	azo_code_compile_type_is_in_range (ctx, code, 0, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_min, &lhs_type_gt_max);
 
 	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_INT8, (const AZValue *) &uint8_one, expr);
+	ctx->n_stack += 1;
 
 	azo_code_write_TYPE_OF (code, 1, expr);
+	ctx->n_stack += 1;
 	azo_code_write_TYPE_OF (code, 1, expr);
+	ctx->n_stack += 1;
 	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_UINT32, expr);
+	ctx->n_stack -= 1;
 	types_equal = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
+	ctx->n_stack -= 1;
 	/* Promote RHS */
 	azo_code_write_TYPE_OF (code, 1, expr);
+	ctx->n_stack += 1;
 	azo_code_write_PROMOTE (code, 1, expr);
+	ctx->n_stack -= 1;
 	/* Types_equal */
 	azo_code_update_JMP32 (code, types_equal);
 
 	azo_code_write_ic (code, AZO_TC_ADD, expr);
+	ctx->n_stack -= 1;
 	finished = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 
 	/* Invalid_type */
@@ -173,21 +190,29 @@ azo_compiler_compile_decrement (AZOCompiler *comp, AZOCompilerContext *ctx, cons
 
 	/* Stack: LHS RHS */
 	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
-	azo_code_compile_type_is_in_range (code, 0, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_min, &lhs_type_gt_max);
+	azo_code_compile_type_is_in_range (ctx, code, 0, AZ_TYPE_INT8, AZ_TYPE_COMPLEX_DOUBLE, expr, &lhs_type_lt_min, &lhs_type_gt_max);
 
 	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_INT8, (const AZValue *) &uint8_one, expr);
+	ctx->n_stack += 1;
 
 	azo_code_write_TYPE_OF (code, 1, expr);
+	ctx->n_stack += 1;
 	azo_code_write_TYPE_OF (code, 1, expr);
+	ctx->n_stack += 1;
 	azo_code_write_EQUAL_TYPED (code, AZ_TYPE_UINT32, expr);
+	ctx->n_stack -= 1;
 	types_equal = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
+	ctx->n_stack -= 1;
 	/* Promote RHS */
 	azo_code_write_TYPE_OF (code, 1, expr);
+	ctx->n_stack += 1;
 	azo_code_write_PROMOTE (code, 1, expr);
+	ctx->n_stack -= 1;
 	/* Types_equal */
 	azo_code_update_JMP32 (code, types_equal);
 
 	azo_code_write_ic (code, AZO_TC_SUBTRACT, expr);
+	ctx->n_stack -= 1;
 	finished = azo_code_write_JMP32 (code, JMP_32, 0, expr);
 
 	/* Invalid_type */

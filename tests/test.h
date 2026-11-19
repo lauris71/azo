@@ -34,5 +34,6 @@ void test_cycles(void);
 void test_function(void);
 void test_calculate(void);
 void test_calculate_binary(void);
+void test_stack(void);
 
 #endif /* AZO_TEST_H */

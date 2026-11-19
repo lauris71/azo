@@ -666,6 +666,18 @@ interpret_DUPLICATE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsign
 }
 
 static const unsigned char *
+interpret_DEBUG_CHECK_STACK (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	uint32_t pos;
+	memcpy (&pos, ip + 1, 4);
+	/* The frame's variable area plus the compiler-tracked temporaries must match exactly */
+	if (intr->stack.length != intr->frames[intr->n_frames - 1].elem_base + ictx->prog->n_locals + pos) {
+		EXCEPTION_THROW (AZO_EXCEPTION_STACK_UNDERFLOW);
+	}
+	return ip + 5;
+}
+
+static const unsigned char *
 interpret_DUPLICATE_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t pos;
@@ -2014,6 +2026,9 @@ switch (*ip) {
 			break;
 		case AZO_TC_EXCHANGE_FRAME:
 			ip = interpret_EXCHANGE_FRAME (intr, ictx, ip);
+			break;
+		case AZO_TC_DEBUG_CHECK_STACK:
+			ip = interpret_DEBUG_CHECK_STACK (intr, ictx, ip);
 			break;
 		case AZO_TC_CLEAR_FRAME:
 			ip = interpret_CLEAR_FRAME (intr, ictx, ip);

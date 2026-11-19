@@ -122,6 +122,12 @@ azo_code_write_REMOVE (AZOCode *code, unsigned int first, unsigned int n_values,
 	azo_code_write_ic_u32_u32(code, AZO_TC_REMOVE, first, n_values, expr);
 }
 
+ARIKKEI_INLINE
+void azo_code_write_DEBUG_CHECK_STACK (AZOCode *code, uint32_t pos, const AZONode *expr)
+{
+	azo_code_write_ic_u32 (code, AZO_TC_DEBUG_CHECK_STACK, pos, expr);
+}
+
 static inline void
 azo_code_write_CLEAR_FRAME (AZOCode *code, unsigned int pos, unsigned int count, const AZONode *expr)
 {

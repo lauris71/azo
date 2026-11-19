@@ -140,7 +140,7 @@ static inline AZValue *
 azo_stack_value(AZOStack *stack, unsigned int idx)
 {
 	/* Uninitialized (NULL impl) elements have no value storage */
-	return (stack->elements[idx].impl) ? az_value_store_value_at(stack->elements, idx, stack->data) : NULL;
+	return az_value_store_value_at(stack->elements, idx, stack->data);
 }
 
 static inline AZValue *
@@ -164,7 +164,7 @@ azo_stack_primitive_bw(AZOStack *stack, unsigned int pos_from_last)
 ARIKKEI_INLINE
 void *azo_stack_instance (AZOStack *stack, unsigned int idx)
 {
-	return (stack->elements[idx].impl) ? az_value_store_instance_at(stack->elements, idx, stack->data) : NULL;
+	return az_value_store_instance_at(stack->elements, idx, stack->data);
 }
 
 ARIKKEI_INLINE

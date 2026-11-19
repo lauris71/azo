@@ -109,6 +109,7 @@ compile_PUSH_VALUE_const(AZOCompiler *comp, AZOCompilerContext *ctx, unsigned in
 {
 	unsigned int pos = azo_frame_append_value (ctx->frame, type, val);
 	azo_code_write_PUSH_VALUE(&ctx->frame->code, pos, node);
+	ctx->n_stack += 1;
 }
 
 static void
@@ -116,6 +117,7 @@ compile_PUSH_VALUE_const_string(AZOCompiler *comp, AZOCompilerContext *ctx, AZSt
 {
 	unsigned int pos = azo_frame_append_string (ctx->frame, str);
 	azo_code_write_PUSH_VALUE(&ctx->frame->code, pos, node);
+	ctx->n_stack += 1;
 }
 
 static void
@@ -123,6 +125,7 @@ compile_PUSH_VALUE_const_object(AZOCompiler *comp, AZOCompilerContext *ctx, AZOb
 {
 	unsigned int pos = azo_frame_append_object (ctx->frame, obj);
 	azo_code_write_PUSH_VALUE(&ctx->frame->code, pos, node);
+	ctx->n_stack += 1;
 }
 
 /* End temporary */
@@ -159,8 +162,10 @@ azo_compiler_compile_constant (AZOCompiler *comp, AZOCompilerContext *ctx, const
 	if (expr->type == AZ_TYPE_NONE) {
 		/* Constant none is NULL */
 		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_NONE, NULL, expr);
+		ctx->n_stack += 1;
 	} else if (AZ_TYPE_IS_PRIMITIVE (expr->type)) {
 		azo_code_write_PUSH_IMMEDIATE (code, expr->type, &expr->value.v, expr);
+		ctx->n_stack += 1;
 	} else if (expr->type == AZ_TYPE_STRING) {
 		compile_PUSH_VALUE_const_string (comp, ctx, expr->value.v.string, expr);
 	} else if (az_type_is_a (expr->type, AZ_TYPE_OBJECT)) {
@@ -191,14 +196,17 @@ compile_this(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZ
 		case AZO_COMPILER_THIS_IS_STACK:
 			//fprintf(stderr, "This as varaible at frame:%u\n", ctx->this_var_pos);
 			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, ctx->this_var_pos, node);
+			ctx->n_stack += 1;
 			break;
 		case AZO_COMPILER_THIS_IS_SHARED:
 			//fprintf(stderr, "This is shared at pos:%u\n", ctx->this_static_pos);
 			azo_code_write_PUSH_VALUE(&ctx->frame->code, ctx->this_static_pos, node);
+			ctx->n_stack += 1;
 			break;
 		case AZO_COMPILER_THIS_IS_CAPTURE:
 			//fprintf(stderr, "This is captured at pos:%u\n", ctx->this_capture_pos);
 			azo_code_write_PUSH_CAPTURE(&ctx->frame->code, ctx->this_capture_pos, node);
+			ctx->n_stack += 1;
 			break;
 	}
 	return 1;
@@ -220,13 +228,16 @@ compile_assign_to_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, LValue *lv
 		azo_code_write_ic_u32 (code, AZO_TC_EXCHANGE_FRAME, lval->pos, expr);
 		/* [..., value, ..., prev] */
 		azo_code_write_POP (code, 1, expr);
+		ctx->n_stack -= (1);
 		/* [..., value, ...] */
 	} else if (lval->type == LVALUE_PROPERTY) {
 		/* [instance, key, value] */
 		azo_code_write_SET_PROPERTY (code, expr);
+		ctx->n_stack -= 2;
 		/* [true] */
 		/* [instance, key, value, false] */
 		unsigned int finished = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
+		ctx->n_stack -= 1;
 		/* [instance, key, value] */
 		azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_PROPERTY, expr);
 		/* [] */
@@ -234,30 +245,39 @@ compile_assign_to_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, LValue *lv
 	} else if (lval->type == LVALUE_ATTRIBUTE) {
 		/* [instance, key, value] */
 		azo_code_write_SET_ATTRIBUTE (code, expr);
+		ctx->n_stack -= 3;
 		/* [] */
 	} else if (lval->type == LVALUE_PROPERTY_OR_ATTRIBUTE) {
 		/* [instance, key, value] */
 		azo_code_write_SET_PROPERTY (code, expr);
+		ctx->n_stack -= 2;
 		/* [true] */
 		/* [instance, key, value, false] */
 		unsigned int finished = azo_code_write_JMP32 (code, JMP_32_IF, 0, expr);
-		/* [instance, key, value] */
+		ctx->n_stack -= 1;
+		/* [instance, key, value] (the failed property path preserves its inputs) */
+		ctx->n_stack += 3;
 		azo_code_write_SET_ATTRIBUTE (code, expr);
+		ctx->n_stack -= 3;
 		/* [] */
 		azo_code_update_JMP32 (code, finished);
 	} else if (lval->type == LVALUE_ELEMENT) {
 		/* [array, index, value] */
 		azo_code_write_ic (code, WRITE_ARRAY_ELEMENT, expr);
+		ctx->n_stack -= 2;
 		/* [array] */
 		azo_code_write_POP (code, 1, expr);
+		ctx->n_stack -= (1);
 		/* [] */
 	} else if (lval->type == LVALUE_SHARED) {
 		/* [value] */
 		azo_code_write_STORE_VALUE (code, lval->pos, lval->flags, expr);
+		ctx->n_stack -= 1;
 		/* [] */
 	} else if (lval->type == LVALUE_STATIC) {
 		/* [value] */
 		azo_code_write_STORE_CAPTURE (code, lval->pos, lval->flags, expr);
+		ctx->n_stack -= 1;
 		/* [] */
 	} else {
 		fprintf (stderr, "Unassignable lvalue type\n");
@@ -376,8 +396,10 @@ compile_call_inst_func_args (AZOCompiler *comp, AZOCompilerContext *ctx, unsigne
 	AZOCode *code = &ctx->frame->code;
 	/* [inst, func, arg1...] */
 	azo_code_write_ic_u8 (code, AZO_TC_INVOKE_MEMBER, n_args, expr);
+	ctx->n_stack -= (n_args);
 	/* [inst, retval] */
 	azo_code_write_REMOVE(code, 1, 1, NULL);
+	ctx->n_stack -= (1);
 	/* [retval] */
 }
 
@@ -386,9 +408,13 @@ compile_call_property_or_attribute_ (AZOCompiler *comp, AZOCompilerContext *ctx,
 {
 	unsigned int is_member_function, is_class, not_active_obj, no_static_function, invalid_type, finished, finished_2, finished_3;
 	AZOCode *code = &ctx->frame->code;
+	/* The alternative invocation paths rejoin with different tracked depths;
+	 * reconcile at the end against the known net effect ([inst, name] -> [retval]) */
+	unsigned int saved_stack = ctx->n_stack;
 
 	/* [inst, name] */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, 1, func);
+	ctx->n_stack += 1;
 	/* [inst, name, inst] */
 	unsigned int n_args = 1;
 	for (const AZONode *child = list->children; child; child = child->next) {
@@ -399,23 +425,28 @@ compile_call_property_or_attribute_ (AZOCompiler *comp, AZOCompilerContext *ctx,
 	/* Try GET_FUNCTION */
 	/* Instance, String, Arguments */
 	azo_code_write_GET_FUNCTION(code, n_args, func);
+	ctx->n_stack += 1;
 	/* Instance, String, Arguments, Function|null */
-	azo_code_compile_last_is_none (code, NULL, &is_member_function, func);
+	azo_code_compile_last_is_none (ctx, code, NULL, &is_member_function, func);
 
 	/* Instance, String, Arguments, null */
 	azo_code_write_POP (code, 1, func);
+	ctx->n_stack -= (1);
 	/* Instance, String, Arguments */
-	azo_code_compile_type_is_immediate (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, n_args + 1, AZ_TYPE_CLASS, &is_class, NULL, func);
+	azo_code_compile_type_is_immediate (ctx, code, AZO_TC_TYPE_EQUALS_IMMEDIATE, n_args + 1, AZ_TYPE_CLASS, &is_class, NULL, func);
 
 	/* Try GET_ATTRIBUTE */
 	/* Instance, String, Arguments */
-	azo_code_compile_type_is_immediate (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, n_args + 1, AZ_TYPE_ATTRIBUTE_DICT, NULL, &not_active_obj, func);
+	azo_code_compile_type_is_immediate (ctx, code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, n_args + 1, AZ_TYPE_ATTRIBUTE_DICT, NULL, &not_active_obj, func);
 	/* ActiveObj, String, Arguments */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, func);
+	ctx->n_stack += 1;
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, func);
+	ctx->n_stack += 1;
 	azo_code_write_GET_ATTRIBUTE(code, func);
+	ctx->n_stack -= 1;
 	/* ActiveObj, String, Arguments, Value|null */
-	azo_code_compile_type_is_immediate (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, NULL, &invalid_type, func);
+	azo_code_compile_type_is_immediate (ctx, code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 0, AZ_TYPE_FUNCTION, NULL, &invalid_type, func);
 	/* ActiveObj, String, Arguments, Function */
 
 	/* Invoke member function */
@@ -424,6 +455,7 @@ compile_call_property_or_attribute_ (AZOCompiler *comp, AZOCompilerContext *ctx,
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_EXCHANGE, n_args + 1, func);
 	/* Instance, Function, Arguments, String */
 	azo_code_write_POP (code, 1, func);
+	ctx->n_stack -= (1);
 	/* Instance, Function, Arguments */
 	compile_call_inst_func_args (comp, ctx, n_args, func);
 	/* Retval */
@@ -434,15 +466,18 @@ compile_call_property_or_attribute_ (AZOCompiler *comp, AZOCompilerContext *ctx,
 	n_args -= 1;
 	/* Class, String, Class, Arguments */
 	azo_code_write_REMOVE (code, n_args, 1, func);
+	ctx->n_stack -= (1);
 	/* Class, String, Arguments */
 	azo_code_write_GET_STATIC_FUNCTION(code, n_args, func);
+	ctx->n_stack += 1;
 	/* Class, String, Arguments, Function | null */
-	azo_code_compile_last_is_none (code, &no_static_function, NULL, func);
+	azo_code_compile_last_is_none (ctx, code, &no_static_function, NULL, func);
 
 	/* Class, String, Arguments, Function */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_EXCHANGE, n_args + 1, func);
 	/* Class, Function, Arguments, String */
 	azo_code_write_POP (code, 1, func);
+	ctx->n_stack -= (1);
 	/* Class, Function, Arguments */
 	compile_call_inst_func_args (comp, ctx, n_args, func);
 	/* Retval */
@@ -458,6 +493,8 @@ compile_call_property_or_attribute_ (AZOCompiler *comp, AZOCompilerContext *ctx,
 	azo_code_update_JMP32 (code, finished);
 	azo_code_update_JMP32 (code, finished_2);
 	azo_code_update_JMP32 (code, finished_3);
+	/* [retval] */
+	ctx->n_stack = saved_stack - 1;
 	return 1;
 }
 
@@ -471,8 +508,9 @@ compile_call_static (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *
 	//azo_compiler_write_DEBUG_STACK(comp, ctx, name);
 	/* [inst, name, arg1...] */
 	azo_code_write_GET_STATIC_FUNCTION(code, n_args, name);
+	ctx->n_stack += 1;
 	/* [inst, name, arg1..., func|null] */
-	azo_code_compile_type_is_immediate(code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_exact_sig, NULL, name);
+	azo_code_compile_type_is_immediate (ctx, code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_exact_sig, NULL, name);
 
 	/* Function property with exact signature */
 	/* [inst, name, arg1..., func] */
@@ -480,12 +518,14 @@ compile_call_static (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *
 	azo_code_write_ic_u32(code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, name);
 	/* [inst, name, arg1..., func] */
 	azo_code_write_REMOVE(code, n_args + 1, 2, name);
+	ctx->n_stack -= (2);
 	/* [arg1..., func] */
 	if (n_args) {
 		azo_code_write_ROLL(code, n_args, name);
 	}
 	/* [func, arg1...] */
 	azo_code_write_ic_u8(code, AZO_TC_INVOKE, n_args, name);
+	ctx->n_stack -= (n_args);
 	/* [retval] */
 	finished = azo_code_write_JMP32 (code, JMP_32, 0, name);
 
@@ -502,13 +542,17 @@ compile_call_property_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const 
 {
 	unsigned int not_exact_sig, not_member_sig, not_prop;
 	AZOCode *code = &ctx->frame->code;
+	/* The lookup attempt paths rejoin with different tracked depths; reconcile
+	 * at the end against the net effect ([inst, name, args] -> [retval]) */
+	unsigned int saved_stack = ctx->n_stack;
 
 	/* [inst, name, arg1...] */
 	//azo_compiler_write_DEBUG_STRING(comp, ctx, "get function A", name);
 	//azo_compiler_write_DEBUG_STACK(comp, ctx, name);
 	azo_code_write_GET_FUNCTION(code, n_args, name);
+	ctx->n_stack += 1;
 	/* [inst, name, arg1..., func|null] */
-	azo_code_compile_type_is_immediate(code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_exact_sig, NULL, name);
+	azo_code_compile_type_is_immediate (ctx, code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_exact_sig, NULL, name);
 
 	/* Function property with exact signature */
 	/* [inst, name, arg1..., func] */
@@ -516,10 +560,12 @@ compile_call_property_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const 
 	azo_code_write_ic_u32(code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, name);
 	/* [inst, name, arg1..., func] */
 	azo_code_write_REMOVE(code, n_args + 1, 2, name);
+	ctx->n_stack -= (2);
 	/* [arg1..., func] */
 	azo_code_write_ROLL(code, n_args, name);
 	/* [func, arg1...] */
 	azo_code_write_ic_u8(code, AZO_TC_INVOKE, n_args, name);
+	ctx->n_stack -= (n_args);
 	/* [retval] */
 	*finished = azo_code_write_JMP32 (code, JMP_32, 0, name);
 
@@ -527,16 +573,19 @@ compile_call_property_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const 
 	azo_code_update_JMP32 (code, not_exact_sig);
 	/* [inst, name, arg1..., null] */
 	azo_code_write_POP (code, 1, name);
+	ctx->n_stack -= (1);
 	/* [inst, name, arg1...] */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, name);
+	ctx->n_stack += 1;
 	/* [inst, name, arg1..., inst] */
 	if (n_args) {
 		azo_code_write_ROLL(code, n_args, name);
 	}
 	/* [inst, name, inst, arg1...] */
 	azo_code_write_GET_FUNCTION(code, n_args + 1, name);
+	ctx->n_stack += 1;
 	/* [inst, name, inst, arg1..., func|null] */
-	azo_code_compile_type_is_immediate(code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_member_sig, NULL, name);
+	azo_code_compile_type_is_immediate (ctx, code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_member_sig, NULL, name);
 
 	/* Function property with member signature */
 	/* [inst, name, inst, arg1..., func] */
@@ -544,10 +593,12 @@ compile_call_property_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const 
 	azo_code_write_ic_u32(code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, name);
 	/* [inst, name, inst, arg1..., func] */
 	azo_code_write_REMOVE(code, n_args + 2, 2, name);
+	ctx->n_stack -= (2);
 	/* [inst, arg1..., func] */
 	azo_code_write_ROLL(code, n_args + 1, name);
 	/* [func, inst, arg1...] */
 	azo_code_write_ic_u8(code, AZO_TC_INVOKE, n_args + 1, name);
+	ctx->n_stack -= (n_args + 1);
 	/* [retval] */
 	*finished = azo_code_write_JMP32 (code, JMP_32, *finished, name);
 
@@ -556,46 +607,61 @@ compile_call_property_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const 
 	azo_code_update_JMP32 (code, not_member_sig);
 	/* [inst, name, inst, arg1..., null] */
 	azo_code_write_POP (code, 1, name);
+	ctx->n_stack -= (1);
 	/* [inst, name, inst, arg1...] */
 	azo_code_write_DUPLICATE(code, n_args + 2, name);
+	ctx->n_stack += 1;
 	azo_code_write_DUPLICATE(code, n_args + 2, name);
+	ctx->n_stack += 1;
 	/* [inst, name, inst, arg1..., inst, name] */
 	azo_code_write_GET_PROPERTY(code, name);
+	ctx->n_stack -= 1;
 	/* [inst, name, inst, arg1..., value|null] */
-	azo_code_compile_type_is_immediate(code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_prop, NULL, name);
+	azo_code_compile_type_is_immediate (ctx, code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, &not_prop, NULL, name);
 	/* [inst, name, inst, arg1..., value] */
 	azo_code_write_ROLL(code, n_args + 1, name);
 	/* [inst, name, value, inst, arg1... */
 	azo_code_write_ic_u8(code, AZO_TC_INVOKE_MEMBER, n_args + 1, name);
+	ctx->n_stack -= (n_args + 1);
 	/* [inst, name, retval] */
 	azo_code_write_REMOVE(code, 1, 2, name);
+	ctx->n_stack -= (2);
 	/* [retval] */
 	*finished = azo_code_write_JMP32 (code, JMP_32, *finished, name);
 	azo_code_update_JMP32(code, not_prop);
 	/* [inst, name, inst, arg1..., null] */
 	azo_code_write_REMOVE(code, n_args + 1, 1, name);
+	ctx->n_stack -= (1);
 	/* [inst, name, arg1..., null] */
 	*not_property = azo_code_write_JMP32 (code, JMP_32, 0, name);
+	ctx->n_stack = saved_stack - n_args - 1;
 #else
 	/* Plain property */
 	azo_code_update_JMP32 (code, not_member_sig);
 	/* [inst, name, inst, arg1..., null] */
 	azo_code_write_POP (code, 1, name);
+	ctx->n_stack -= (1);
 	/* [inst, name, inst, arg1...] */
 	azo_code_write_DUPLICATE(code, n_args + 2, name);
+	ctx->n_stack += 1;
 	azo_code_write_DUPLICATE(code, n_args + 2, name);
+	ctx->n_stack += 1;
 	/* [inst, name, inst, arg1..., inst, name] */
 	azo_code_write_REMOVE(code, n_args + 2, 1, name);
+	ctx->n_stack -= (1);
 	/* [inst, name, arg1..., inst, name] */
 	azo_code_write_GET_PROPERTY(code, name);
+	ctx->n_stack -= 1;
 	/* [inst, name, arg1..., value|null] */
-	azo_code_compile_type_is_immediate(code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, not_property, NULL, name);
+	azo_code_compile_type_is_immediate (ctx, code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, not_property, NULL, name);
 	/* [inst, name, arg1..., value] */
 	azo_code_write_ROLL(code, n_args + 1, name);
 	/* [inst, name, value, arg1... */
 	azo_code_write_ic_u8(code, AZO_TC_INVOKE_MEMBER, n_args + 1, name);
+	ctx->n_stack -= (n_args + 1);
 	/* [inst, name, retval] */
 	azo_code_write_REMOVE(code, 1, 2, name);
+	ctx->n_stack -= (2);
 	/* [retval] */
 	*finished = azo_code_write_JMP32 (code, JMP_32, *finished, name);
 #endif
@@ -610,7 +676,8 @@ compile_call_property (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 	unsigned int result = compile_call_property_lookup(comp, ctx, name, list, n_args, &not_property, &finished, src);
 	if (!result) return 0;
 	compiler_update_jmp_chain(comp, ctx, not_property);
-	/* [arg1..., null] */
+	/* [arg1..., null] (this path throws and does not rejoin; the success paths
+	 * were already reconciled at the end of compile_call_property_lookup) */
 	azo_code_write_POP (code, 1, name);
 	/* [arg1...] */
 	azo_code_write_EXCEPTION (code, AZO_EXCEPTION_INVALID_PROPERTY, name);
@@ -633,23 +700,28 @@ compile_call_attribute (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 	//azo_compiler_write_DEBUG_STRING(comp, ctx, "attribute A", name);
 	//azo_compiler_write_DEBUG_STACK(comp, ctx, name);
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, inst);
+	ctx->n_stack += 1;
 	/* [inst, name, arg1..., inst] */
 	if (!inst->type || !az_type_is_a(inst->type, AZ_TYPE_ATTRIBUTE_DICT)) {
 		azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_ATTRIBUTE_DICT, inst);
 	}
 	/* [inst, name, arg1..., adict] */
 	azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE, n_args + 1, name);
+	ctx->n_stack += 1;
 	/* [inst, name, arg1..., adict, name] */
 	azo_code_write_GET_ATTRIBUTE(code, name);
+	ctx->n_stack -= 1;
 	/* [inst, name, arg1..., value|null] */
 	/* Get interface throws on null */
 	azo_code_write_ic_u32 (code, AZO_TC_GET_INTERFACE_IMMEDIATE, AZ_TYPE_FUNCTION, name);
 	/* [inst, name, arg1..., function */
 	azo_code_write_REMOVE(&ctx->frame->code, n_args + 1, 1, name);
+	ctx->n_stack -= (1);
 	/* [inst, arg1..., function */
 	azo_code_write_ROLL(code, n_args + 1, name);
 	/* [function, inst, arg1... */
 	azo_code_write_ic_u8 (code, AZO_TC_INVOKE_MEMBER, n_args + 1, name);
+	ctx->n_stack -= (n_args + 1);
 	/* [retval] */
 	return 1;
 }
@@ -660,11 +732,14 @@ compile_call_property_or_attribute (AZOCompiler *comp, AZOCompilerContext *ctx, 
 	unsigned int not_property, finished;
 	AZOCode *code = &ctx->frame->code;
 	/* [inst, name, arg1...] */
+	unsigned int saved_stack = ctx->n_stack;
 	unsigned int result = compile_call_property_lookup(comp, ctx, func, list, n_args, &not_property, &finished, src);
 	if (!result) return 0;
 	compiler_update_jmp_chain(comp, ctx, not_property);
 	/* [inst, name, arg1..., null] */
 	azo_code_write_POP (code, 1, func);
+	/* The attribute path starts from the entry depth (the lookup attempt is discarded) */
+	ctx->n_stack = saved_stack;
 	compile_call_attribute(comp, ctx, func, func, list, n_args, src);
 	compiler_update_jmp_chain(comp, ctx, finished);
 	return result;
@@ -728,6 +803,7 @@ compile_call_plain (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *f
 	azo_code_write_ROLL(code, n_args, func);
 	/* [func, arg1...] */
 	azo_code_write_ic_u8 (code, AZO_TC_INVOKE, n_args, func);
+	ctx->n_stack -= (n_args);
 	/* [retval] */
 	return 0;
 }
@@ -746,6 +822,7 @@ compile_function_call (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 	}
 	if (silent) {
 		azo_code_write_POP (code, 1, node);
+		ctx->n_stack -= (1);
 	}
 	return 1;
 }
@@ -770,6 +847,7 @@ compile_prefix_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 		compile_assign_to_lvalue (comp, ctx, &lval, NULL);
 	} else {
 		azo_code_write_PUSH_EMPTY (code, AZ_TYPE_NONE, expr);
+		ctx->n_stack += 1;
 		/* null */
 		if (!compile_lvalue (comp, ctx, left, src, &lval, 0)) return 0;
 		/* null, [LValue] */
@@ -785,8 +863,10 @@ compile_prefix_arithmetic (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 		azo_code_write_EXCHANGE (code, lval.n_elements + 1, expr);
 		/* Value, [LValue], null */
 		azo_code_write_POP(code, 1, expr);
+		ctx->n_stack -= (1);
 		/* Value, [LValue] */
 		azo_code_write_DUPLICATE (code, lval.n_elements, expr);
+		ctx->n_stack += 1;
 		/* Value, [LValue], Value */
 		compile_assign_to_lvalue (comp, ctx, &lval, NULL);
 		/* Value */
@@ -878,6 +958,10 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	AZOCompilerContext func_ctx = *ctx;
 	func_ctx.signature = az_function_signature_new(ret_type, n_args, arg_types);
 	func_ctx.frame = func_frame;
+	/* The function's frame starts with an empty evaluation stack */
+	func_ctx.n_stack = 0;
+	/* Each function frame tracks its own temporaries (args are frame variables) */
+	func_ctx.n_stack = 0;
 	
 	prog = azo_compiler_compile(comp, &func_ctx, body, src);
 	/* Restore the previous frame */
@@ -899,16 +983,21 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 		AZOVariable *var = list->var.parent;
 		if (var->parent) {
 			azo_code_write_PUSH_CAPTURE(code, var->pos, node);
+			ctx->n_stack += 1;
 		} else if (var->flags & AZO_VARIABLE_FLAG_STATIC) {
 			azo_code_write_PUSH_CAPTURE(code, ctx->frame->n_captures + var->pos, node);
+			ctx->n_stack += 1;
 		} else if (var->flags & AZO_VARIABLE_FLAG_SHARED) {
 			azo_code_write_PUSH_VALUE(code, var->pos, node);
+			ctx->n_stack += 1;
 		} else {
 			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, var->pos, node);
+			ctx->n_stack += 1;
 		}
 	}
 	/* program [this] val1 ... */
 	azo_code_write_ic_u32(code, AZO_TC_CLOSURE, prog->n_captures, node);
+	ctx->n_stack -= (prog->n_captures);
 	/* closure */
 
 	azo_program_unref(prog);
@@ -926,11 +1015,14 @@ compile_array_literal (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode
 	for (child = node->children; child; child = child->next) size += 1;
 	/* Create new array */
 	azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_UINT32, (const AZValue *) &size, node);
+	ctx->n_stack += 1;
 	azo_code_write_ic (code, NEW_ARRAY, node);
 	for (child = node->children; child; child = child->next) {
 		azo_code_write_PUSH_IMMEDIATE (code, AZ_TYPE_UINT32, (const AZValue *) &idx, node);
+		ctx->n_stack += 1;
 		azo_compiler_compile_expression (comp, ctx, child, src);
 		azo_code_write_ic (code, WRITE_ARRAY_ELEMENT, node);
+		ctx->n_stack -= 2;
 		idx += 1;
 	}
 	return 1;
@@ -946,12 +1038,14 @@ compile_test (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, A
 	if (!azo_compiler_compile_expression (comp, ctx, lhs, src)) return 0;
 	if (!azo_compiler_compile_expression (comp, ctx, rhs, src)) return 0;
 	azo_code_write_ic_u8(code, AZO_TC_TYPE_OF_CLASS, 0, node);
+	ctx->n_stack += 1;
 	if (node->term.subtype == AZO_TERM_TEST_IS) {
 		azo_code_write_TEST_TYPE (code, AZO_TC_TYPE_IS, 2, node);
 	} else {
 		azo_code_write_TEST_TYPE (code, AZO_TC_TYPE_IMPLEMENTS, 2, node);
 	}
 	azo_code_write_REMOVE (code, 1, 2, node);
+	ctx->n_stack -= (2);
 	return 1;
 }
 
@@ -998,6 +1092,7 @@ compile_mode_flags_enter (AZOCompiler *comp, AZOCompilerContext *ctx, const AZON
 
 	/* Push a flags handle (restored by rewind), then apply the new mode */
 	azo_code_write_ic (code, AZO_TC_PUSH_FLAGS, node);
+	ctx->n_stack += 1;
 	uint32_t mask_ops[2] = { and_mask, or_mask };
 	azo_code_write_ic_u32_u32 (code, AZO_TC_SET_FLAGS_MASK, mask_ops[0], mask_ops[1], node);
 }
@@ -1008,6 +1103,7 @@ compile_mode_flags_leave (AZOCompiler *comp, AZOCompilerContext *ctx, const AZON
 {
 	AZOCode *code = &ctx->frame->code;
 	azo_code_write_ic (code, AZO_TC_STORE_FLAGS, node);
+	ctx->n_stack -= 1;
 }
 
 /* Compile rvalue expression (this, null, literal...) */
@@ -1021,12 +1117,16 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 	if (node->term.type == AZO_TERM_VARIABLE) {
 		if (node->term.subtype == AZO_TERM_VARIABLE_LOCAL) {
 			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, node->var_idx, node);
+			ctx->n_stack += 1;
 		} else if (node->term.subtype == AZO_TERM_VARIABLE_SHARED) {
 			azo_code_write_PUSH_VALUE(code, node->var_idx, node);
+			ctx->n_stack += 1;
 		} else if (node->term.subtype == AZO_TERM_VARIABLE_CAPTURE) {
 			azo_code_write_PUSH_CAPTURE(code, node->var_idx, node);
+			ctx->n_stack += 1;
 		} else if (node->term.subtype == AZO_TERM_VARIABLE_STATIC) {
 			azo_code_write_PUSH_CAPTURE(code, ctx->frame->n_captures + node->var_idx, node);
+			ctx->n_stack += 1;
 		} else {
 			fprintf (stderr, "compile_expression_rvalue: Invalid variable subtype %u\n", node->term.subtype);
 			return 0;
@@ -1063,6 +1163,8 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 		lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
 		lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
 		if (!azo_compiler_compile_expression (comp, &lctx, node->children, src)) return 0;
+		/* The expression was tracked in lctx (the mode flags ops are in ctx) */
+		ctx->n_stack = lctx.n_stack;
 		/* [saved, value] -> [value, saved], then STORE_FLAGS pops [saved] */
 		azo_code_write_EXCHANGE (code, 1, node);
 		compile_mode_flags_leave (comp, ctx, node);
@@ -1089,6 +1191,7 @@ compile_array_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONo
 	azo_code_write_ic (code, LOAD_ARRAY_ELEMENT, array_ref);
 	/* Array, Value */
 	azo_code_write_REMOVE (code, 1, 1, NULL);
+	ctx->n_stack -= (1);
 	return 1;
 }
 
@@ -1100,21 +1203,29 @@ compile_reference_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const AZON
 
 	/* InstanceA */
 	azo_code_write_DUPLICATE (code, 0, expr);
+	ctx->n_stack += 1;
 	compile_PUSH_VALUE_const_string (comp, ctx, str, expr);
 	/* InstanceA, InstanceA, String */
 	azo_code_write_ic (code, AZO_TC_GET_PROPERTY, expr);
+	ctx->n_stack -= 1;
 	/* InstanceA, Value|null */
 	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, expr);
+	ctx->n_stack += 1;
 	property_not_null = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
+	ctx->n_stack -= 1;
 
 	/* InstanceA, null */
 	azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 1, AZ_TYPE_ATTRIBUTE_DICT, expr);
+	ctx->n_stack += 1;
 	not_active_obj = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, expr);
+	ctx->n_stack -= 1;
 	/* ActiveObj, null */
 	azo_code_write_POP (code, 1, expr);
+	ctx->n_stack -= (1);
 	compile_PUSH_VALUE_const_string (comp, ctx, str, expr);
 	/* ActiveObj, String */
 	azo_code_write_GET_ATTRIBUTE (code, expr);
+	ctx->n_stack -= 1;
 	/* Value */
 	finished = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
 
@@ -1122,7 +1233,9 @@ compile_reference_lookup (AZOCompiler *comp, AZOCompilerContext *ctx, const AZON
 	azo_code_update_JMP32 (code, not_active_obj);
 	/* InstanceA, Value */
 	azo_code_write_REMOVE (code, 1, 1, NULL);
+	ctx->n_stack -= (1);
 	/* Value */
+	ctx->n_stack += 1;
 	azo_code_update_JMP32 (code, finished);
 	return 1;
 }
@@ -1137,34 +1250,46 @@ compile_variable_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 	if (type == AZO_TERM_REFERENCE_PROPERTY) {
 		compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, node);
 		azo_code_write_ic (code, AZO_TC_GET_PROPERTY, node);
+		ctx->n_stack -= 1;
 	} else if (type == AZO_TERM_REFERENCE_ATTRIBUTE) {
 		compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, node);
 		azo_code_write_GET_ATTRIBUTE (code, node);
+		ctx->n_stack -= 1;
 	} else if (type == AZO_TERM_REFERENCE_PROPERTY_OR_ATTRIBUTE) {
 		/* inst */
 		azo_code_write_DUPLICATE (code, 0, node);
+		ctx->n_stack += 1;
 		compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, node);
 		/* inst, inst, name */
 		azo_code_write_ic (code, AZO_TC_GET_PROPERTY, node);
+		ctx->n_stack -= 1;
 		/* inst, value|null */
 		azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_EQUALS_IMMEDIATE, 0, AZ_TYPE_NONE, node);
+		ctx->n_stack += 1;
 		unsigned int property_not_null = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, node);
+		ctx->n_stack -= 1;
 
 		/* inst, null */
 		azo_code_write_TEST_TYPE_IMMEDIATE (code, AZO_TC_TYPE_IMPLEMENTS_IMMEDIATE, 1, AZ_TYPE_ATTRIBUTE_DICT, node);
+		ctx->n_stack += 1;
 		unsigned int not_active_obj = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, node);
+		ctx->n_stack -= 1;
 		/* inst, null */
 		azo_code_write_POP (code, 1, node);
+		ctx->n_stack -= (1);
 		compile_PUSH_VALUE_const_string (comp, ctx, right->value.v.string, node);
 		/* inst, name */
 		azo_code_write_GET_ATTRIBUTE (code, node);
+		ctx->n_stack -= 1;
 		/* Value */
 		unsigned int finished = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
 
 		azo_code_update_JMP32 (code, property_not_null);
 		azo_code_update_JMP32 (code, not_active_obj);
-		/* inst, value|null */
+		/* inst, value|null (one element deeper than the attribute path above) */
+		ctx->n_stack += 1;
 		azo_code_write_REMOVE (code, 1, 1, NULL);
+		ctx->n_stack -= (1);
 		/* value */
 		azo_code_update_JMP32 (code, finished);
 	} else {
@@ -1300,9 +1425,11 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 			} else {
 				/* fixme: Implement runtime (or at least compile-time) type */
 				azo_code_write_PUSH_EMPTY (code, type, node);
+				ctx->n_stack += 1;
 			}
 			/* [value] -> store into static datablock */
 			azo_code_write_STORE_CAPTURE (code, pos, dflags, node);
+			ctx->n_stack -= 1;
 			azo_code_update_JMP32 (code, jmp);
 			return 1;
 		} else if (name->term.subtype == AZO_TERM_VARIABLE_SHARED) {
@@ -1315,9 +1442,11 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 			} else {
 				/* fixme: Implement runtime (or at least compile-time) type */
 				azo_code_write_PUSH_EMPTY (code, type, node);
+				ctx->n_stack += 1;
 			}
 			/* [value] -> store into shared datablock */
 			azo_code_write_STORE_VALUE (code, pos, dflags, node);
+			ctx->n_stack -= 1;
 			azo_code_update_JMP32 (code, jmp);
 			return 1;
 		}
@@ -1329,11 +1458,13 @@ compile_single_declaration (AZOCompiler *comp, AZOCompilerContext *ctx, const AZ
 	} else {
 		/* fixme: Implement runtime (or at least compile-time) type */
 		azo_code_write_PUSH_EMPTY (code, type, node);
+		ctx->n_stack += 1;
 		//azo_compiler_write_PUSH_EMPTY (comp, type);
 	}
 	/* [value] -> slot, [old] is discarded */
 	azo_code_write_ic_u32 (code, AZO_TC_EXCHANGE_FRAME, name->var_idx, node);
 	azo_code_write_POP (code, 1, node);
+	ctx->n_stack -= (1);
 	return 1;
 }
 
@@ -1372,6 +1503,7 @@ compile_throw_arg (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *no
 {
 	if (node->term.type == AZO_TERM_EMPTY) {
 		azo_code_write_PUSH_IMMEDIATE (&ctx->frame->code, AZ_TYPE_NONE, NULL, node);
+		ctx->n_stack += 1;
 		return 1;
 	}
 	return azo_compiler_compile_expression(comp, ctx, node, src);
@@ -1388,6 +1520,7 @@ compile_throw (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 		if (!compile_throw_arg (comp, ctx, typecode->next, src)) return 0;
 		if (!compile_throw_arg (comp, ctx, typecode->next->next, src)) return 0;
 		azo_code_write_ic_u32 (code, AZO_TC_THROW, typecode->value.v.uint32_v, node);
+		ctx->n_stack -= 2;
 		return 1;
 	}
 	/* General form (throw e): evaluate the value, check it is an exception
@@ -1398,7 +1531,9 @@ compile_throw (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 	compile_PUSH_VALUE_const(comp, ctx, az_function_value_get_type(), (const AZValue *) azo_exception_get_throw_function(), node);
 	azo_code_write_ic_u32(code, AZO_TC_EXCHANGE, 1, node);
 	azo_code_write_ic_u8(code, AZO_TC_INVOKE, 1, node);
+	ctx->n_stack -= (1);
 	azo_code_write_ic_u32(code, AZO_TC_POP, 1, node);
+	ctx->n_stack -= (1);
 	return 1;
 }
 
@@ -1459,6 +1594,7 @@ compile_try (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZ
 	/* Normal exit: discard the flags word and handles (nested blocks have
 	 * restored their own flags) */
 	azo_code_write_POP (code, n_handles + 1, body);
+	ctx->n_stack -= (n_handles + 1);
 	ctx->n_stack = base;
 	to_end[n_jumps++] = azo_code_write_JMP32 (code, JMP_32, 0, NULL);
 	/* Catch bodies in declaration order; the exception value occupies the binding slot */
@@ -1494,6 +1630,7 @@ compile_statement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *no
 			// if (!compile_expression_rvalue (comp, expr->children, src)) return 0;
 			if (!azo_compiler_compile_expression(comp, ctx, node->children, src)) return 0;
 			azo_code_write_ic (code, AZO_TC_RETURN_VALUE, node);
+			ctx->n_stack -= 1;
 		} else {
 			azo_code_write_ic (code, AZO_TC_RETURN, node);
 		}
@@ -1528,12 +1665,12 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 
 	if (node->term.flags & AZO_TERM_FLAG_MODE_MASK) {
 		compile_mode_flags_enter (comp, ctx, node);
-		ctx->n_stack += 1;
 		AZOCompilerContext lctx = *ctx;
 		lctx.exception_mask = azo_compiler_mode_mask (lctx.exception_mask, node->term.flags);
 		lctx.calc_mode = azo_compiler_mode_calc (node->term.flags);
 		unsigned int result = compile_sentences(comp, &lctx, child, src);
-		/* Pop everything the block added to the data stack */
+		/* Pop everything the block added to the data stack (the rewind happens
+		 * inside the block's own flow; the outer tracking is unaffected) */
 		if (lctx.n_stack > ctx->n_stack) {
 			azo_code_write_REWIND(code, lctx.n_stack - ctx->n_stack, node);
 		}
@@ -1542,7 +1679,6 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 			azo_code_write_CLEAR_FRAME (code, node->var_idx, ctx->frame->max_n_locals - node->var_idx, node);
 		}
 		compile_mode_flags_leave (comp, ctx, node);
-		ctx->n_stack -= 1;
 		return result;
 	} else if (node->term.subtype == AZO_TERM_BLOCK_DEFER) {
 		unsigned int to_end = azo_code_write_JMP32(code, JMP_32, 0, NULL);
@@ -1550,7 +1686,8 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 		AZOCompilerContext lctx = *ctx;
 		unsigned int result = compile_sentences(comp, &lctx, child, src);
 		/* No need to end with return because we interpret until len */
-		/* Pop everything the block added to the data stack */
+		/* Pop everything the block added to the data stack (the rewind happens
+		 * inside the block's own flow; the outer tracking is unaffected) */
 		if (lctx.n_stack > ctx->n_stack) {
 			azo_code_write_REWIND(code, lctx.n_stack - ctx->n_stack, node);
 		}
@@ -1565,12 +1702,12 @@ compile_block (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 			.len = len
 		};
 		compile_PUSH_VALUE_const(comp, ctx, AZO_TYPE_DEFER_HANDLE, (const AZValue *) &defer, node);
-		ctx->n_stack += 1;
 		return result;
 	} else {
 		AZOCompilerContext lctx = *ctx;
 		unsigned int result = compile_sentences(comp, &lctx, child, src);
-		/* Pop everything the block added to the data stack */
+		/* Pop everything the block added to the data stack (the rewind happens
+		 * inside the block's own flow; the outer tracking is unaffected) */
 		if (lctx.n_stack > ctx->n_stack) {
 			azo_code_write_REWIND(code, lctx.n_stack - ctx->n_stack, node);
 		}
@@ -1619,6 +1756,7 @@ compile_member_block_ex(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 		 * where the stack top is above the frame variables) */
 		azo_code_write_ic_u32 (code, AZO_TC_EXCHANGE_FRAME, node->var_idx, node);
 		azo_code_write_POP (code, 1, node);
+		ctx->n_stack -= (1);
 	}
 	/* The block child manages its own scope/stack */
 	if (!compile_block(comp, &lctx, block, src)) return 0;
@@ -1631,6 +1769,8 @@ compile_member_block_ex(AZOCompiler *comp, AZOCompilerContext *ctx, const AZONod
 		/* Expression: yield the head value (from its slot for an evaluated head,
 		 * the variable itself otherwise) */
 		if (!compile_this(comp, &lctx, node, src)) return 0;
+		/* The block and yield were tracked in lctx */
+		ctx->n_stack = lctx.n_stack;
 	}
 	return 1;
 }
@@ -1671,6 +1811,7 @@ compile_cycle (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node,
 		azo_code_compile_expression_and_type_check(comp, ctx, test_at_begin, 0, AZ_TYPE_BOOLEAN, src);
 		/* Jump out of cycle if condition was FALSE */
 		cycle_end = azo_code_write_JMP32 (code, JMP_32_IF_NOT, 0, NULL);
+		ctx->n_stack -= 1;
 	}
 	/* Cycle content; break/continue rewind to this baseline */
 	body_base = ctx->n_stack;
@@ -1684,6 +1825,7 @@ compile_cycle (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node,
 		azo_code_compile_expression_and_type_check(comp, ctx, test_at_end, 0, AZ_TYPE_BOOLEAN, src);
 		/* Jump back if condition is true */
 		azo_code_write_JMP32 (code, JMP_32_IF, cycle_begin, NULL);
+		ctx->n_stack -= 1;
 	} else {
 		/* Unconditionally jump back */
 		azo_code_write_JMP32 (code, JMP_32, cycle_begin, NULL);
@@ -1698,6 +1840,7 @@ compile_cycle (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node,
 	ctx->cycle_body_base = saved_body_base;
 	if (ctx->n_stack > n_stack) {
 		azo_code_write_POP (code, ctx->n_stack - n_stack, node);
+		ctx->n_stack -= (ctx->n_stack - n_stack);
 		ctx->n_stack = n_stack;
 	}
 	return 1;
@@ -1769,6 +1912,7 @@ compile_if (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, AZO
 	azo_code_compile_expression_and_type_check(comp, ctx, cond, 0, AZ_TYPE_BOOLEAN, src);
 	/* Jump conditionally to NOT TRUE statement */
 	unsigned int not_true = azo_code_write_JMP32(code, JMP_32_IF_NOT, 0, cond);
+	ctx->n_stack -= 1;
 	/* TRUE sentence */
 	compile_sentence (comp, ctx, iftrue, src);
 	if (iffalse) {
@@ -1834,6 +1978,10 @@ compile_sentences (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *no
 {
 	while (node) {
 		if (!compile_sentence(comp, ctx, node, src)) return 0;
+#if AZO_COMPILER_DEBUG_STACK
+		/* Verify the runtime stack matches the compile-time model at the boundary */
+		azo_code_write_DEBUG_CHECK_STACK (&ctx->frame->code, ctx->n_stack, node);
+#endif
 		node = node->next;
 	}
 	return 1;

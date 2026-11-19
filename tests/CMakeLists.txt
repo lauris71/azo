@@ -16,6 +16,7 @@ add_executable(azo_test
     test_calculate.c
     test_calculate_binary.c
     test_function.c
+    test_stack.c
 )
 
 target_compile_definitions(azo_test PRIVATE UNITY_INCLUDE_DOUBLE)
@@ -48,3 +49,4 @@ add_test(NAME cycles COMMAND azo_test cycles)
 add_test(NAME function COMMAND azo_test function)
 add_test(NAME calculate COMMAND azo_test calculate)
 add_test(NAME calculate_binary COMMAND azo_test calculate_binary)
+add_test(NAME stack COMMAND azo_test stack)

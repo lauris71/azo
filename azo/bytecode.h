@@ -409,6 +409,14 @@ enum {
 	 * Skips (static/shared) initializer if the entry is already initialized
 	 */
 	AZO_TC_JMP_IF_CAPTURE_SET,
+	/**
+	 * @brief Verify the stack position against the compiler-tracked value
+	 *
+	 * DEBUG_CHECK_STACK U32:POS
+	 * Throws if the stack length does not equal frame base + locals + POS
+	 * (compiler sanity check, emitted at sentence/block boundaries)
+	 */
+	AZO_TC_DEBUG_CHECK_STACK,
 	AZO_TC_END
 };
 

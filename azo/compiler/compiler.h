@@ -193,7 +193,11 @@ struct _AZOCompilerContext {
 	};
 
 	/* Compiler */
-	/* The number of variables pushed into stack */
+	/* Compile-time stack-depth checking: emit DEBUG_CHECK_STACK at sentence
+	 * boundaries verifying the runtime stack position against the tracked model */
+#define AZO_COMPILER_DEBUG_STACK 1
+	/* The number of values pushed onto the stack above the frame's variable area
+	 * (tracked by every emitted stack operation, verified at sentence boundaries) */
 	unsigned int n_stack;
 	/* debug */
 	unsigned int print_tree;

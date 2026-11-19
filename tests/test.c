@@ -22,6 +22,11 @@ void tearDown(void) {
     // clean stuff up here
 }
 
+/*
+ * NB!
+ *
+ * The failing unity test line number is from the actual .c file, but unity reports the failure as coming from test.c
+ */
 int
 main(int argc, const char *argv[])
 {
@@ -49,6 +54,8 @@ main(int argc, const char *argv[])
             RUN_TEST(test_calculate);
         } else if (!strcmp(argv[i], "calculate_binary")) {
             RUN_TEST(test_calculate_binary);
+        } else if (!strcmp(argv[i], "stack")) {
+            RUN_TEST(test_stack);
         } else {
             fprintf(stderr, "Unknown test: %s\n", argv[i]);
         }
