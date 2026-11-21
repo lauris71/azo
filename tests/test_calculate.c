@@ -283,20 +283,20 @@ test_calculate(void)
     }
 	/* Increment/Decrement prefix operations */
     {
-		print_code = 1;
+		print_code = 0;
         const AZImplementation *ret_impl;
         AZValue ret_val;
 		az_buffer_output_stream_reset(bostream);
         const char *src = ""
 "int32 a = 31;\n"
 "string space = \" \";\n"
-"debug interpreter_stack;\n"
+//"debug interpreter_stack;\n"
 "ofs.print(++a);\n"
-"debug interpreter_stack;\n"
+//"debug interpreter_stack;\n"
 "ofs.print(space);\n"
 "ofs.print(a);\n"
 "ofs.print(space);\n"
-"debug interpreter_stack;\n"
+//"debug interpreter_stack;\n"
 "ofs.print(++a);\n"
 "ofs.print(space);\n"
 "ofs.print(a);\n"
@@ -687,7 +687,7 @@ test_calculate(void)
     }
 	/* Arithmetic assignment is allowed (converted at runtime) */
     {
-		print_code = 1;
+		print_code = 0;
         const AZImplementation *ret_impl;
         AZValue ret_val;
         TEST_ASSERT(test_program(globals, "int8 x = 42;x = x + 1;return x;\n", 0, arg_names, arg_impls, arg_vals, AZ_TYPE_INT8, &ret_impl, &ret_val) == 0);

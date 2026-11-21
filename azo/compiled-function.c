@@ -56,10 +56,20 @@ azo_compiled_function_get_type (void)
 }
 
 static void
+compiled_function_list (AZOCompiledFunction *func)
+{
+	if (func->prog) {
+		azo_program_print_bytecode (func->prog);
+	} else {
+		fprintf (stdout, "NO CODE");
+	}
+}
+
+static void
 aosora_compiled_function_class_init (AZOCompiledFunctionClass *klass)
 {
 	az_class_declare_interface ((AZClass *) klass, 0, AZ_TYPE_FUNCTION, ARIKKEI_OFFSET (AZOCompiledFunctionClass, function_impl), 0);
-	az_class_define_method_va ((AZClass *) klass, FUNC_LIST, (const unsigned char *) "list", compiled_function_call_list, AZ_TYPE_NONE, 0);
+	az_class_define_method_native_va ((AZClass *) klass, FUNC_LIST, (const uint8_t *) "list", (void (*) ()) compiled_function_list, AZ_TYPE_NONE, 0);
 	/* Implementation */
 	klass->object_class.shutdown = compiled_function_shutdown;
 	klass->function_impl.signature = compiled_function_signature;
@@ -85,18 +95,6 @@ compiled_function_shutdown (AZObject *obj)
 		cfunc->prog = NULL;
 	}
 	azo_datablock_clear(&cfunc->static_data);
-}
-
-static unsigned int
-compiled_function_call_list (const AZImplementation **arg_impls, const AZValue **arg_vals, const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx)
-{
-	AZOCompiledFunction *func = (AZOCompiledFunction *) arg_vals[0]->reference;
-	if (func->prog) {
-		azo_program_print_bytecode (func->prog);
-	} else {
-		fprintf (stdout, "NO CODE");
-	}
-	return 1;
 }
 
 static const

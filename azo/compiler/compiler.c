@@ -1528,7 +1528,7 @@ compile_throw (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *node, 
 	 * exception after the invoke */
 	if (!azo_compiler_compile_expression(comp, ctx, typecode, src)) return 0;
 	azo_code_write_ic_u32_u32(code, AZO_TC_EXCEPTION_IF_TYPE_IS_NOT, 0, azo_exception_get_type(), node);
-	compile_PUSH_VALUE_const(comp, ctx, az_function_value_get_type(), (const AZValue *) azo_exception_get_throw_function(), node);
+	compile_PUSH_VALUE_const(comp, ctx, AZ_TYPE_FUNCTION_VALUE, (const AZValue *) azo_exception_get_throw_function(), node);
 	azo_code_write_ic_u32(code, AZO_TC_EXCHANGE, 1, node);
 	azo_code_write_ic_u8(code, AZO_TC_INVOKE, 1, node);
 	ctx->n_stack -= (1);
@@ -1629,6 +1629,16 @@ compile_statement (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *no
 			// fixme: Why it was rvalue here?
 			// if (!compile_expression_rvalue (comp, expr->children, src)) return 0;
 			if (!azo_compiler_compile_expression(comp, ctx, node->children, src)) return 0;
+			/* A return value of a narrower arithmetic type has to be widened to the
+			 * declared return type (the resolver only converts constant return values,
+			 * and a folded value would otherwise be returned raw, leaving the high bytes
+			 * of the destination undefined). Widening-only: a wider value keeps its
+			 * natural type, matching the resolver's conditional conversion. */
+			unsigned int ret_type = AZ_SIGNATURE_RET_TYPE(ctx->frame->signature);
+			if (ret_type && node->children->type && (node->children->type != ret_type)
+				&& azo_type_is_magnitude_safe (ret_type, node->children->type)) {
+				azo_code_write_ic_u32 (code, AZO_TC_CONVERT_TYPE_ASSIGN, ret_type, node->children);
+			}
 			azo_code_write_ic (code, AZO_TC_RETURN_VALUE, node);
 			ctx->n_stack -= 1;
 		} else {

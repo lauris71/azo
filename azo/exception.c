@@ -206,11 +206,11 @@ azo_exception_set_context(AZOContext *ctx, const AZOException *exception)
 
 /* throw e: deconstructs the value into the context exception state; the
  * interpreter unwinds on the pending exception after the invoke returns */
-static unsigned int
-exception_throw_invoke (const AZImplementation *arg_impls[], const AZValue *arg_vals[], const AZImplementation **ret_impl, AZValue64 *ret_val, AZContext *ctx)
+static int
+exception_throw_invoke (unsigned int n_args, AZStoreElement *elems, AZValue *vals, const AZImplementation **ret_impl, AZValue *ret_val, unsigned int ret_size, AZContext *ctx)
 {
-    azo_exception_set_context ((AZOContext *) ctx, (AZOException *) arg_vals[0]->reference);
-    return 1;
+    azo_exception_set_context ((AZOContext *) ctx, (AZOException *) elems[0].reference);
+    return AZ_OK;
 }
 
 static const AZFunctionSignature *exception_throw_signature;
