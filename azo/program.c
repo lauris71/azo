@@ -209,9 +209,9 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 		azo_interpreter_run_frame(intr, &ictx);
 	}
 	if (AZ_SIGNATURE_RET_TYPE(prog->signature)) {
-		*ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
+		if (ret_impl) *ret_impl = az_value_transfer_autobox(intr->vals[0].impl, ret_val, &intr->vals[0].v.value, ret_size);
 	} else {
-		*ret_impl = NULL;
+		if (ret_impl) *ret_impl = NULL;
 	}
 	unsigned int new_prev = azo_interpreter_pop_frame(intr, &ictx);
 	assert(new_prev == prev_frame);
