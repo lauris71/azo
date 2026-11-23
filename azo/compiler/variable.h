@@ -14,6 +14,10 @@ typedef struct _AZOVariableList AZOVariableList;
 #define AZO_VARIABLE_FLAG_SHARED 2
 #define AZO_VARIABLE_FLAG_FINAL 4
 #define AZO_VARIABLE_FLAG_WEAK 8
+/* The variable is the variadic tail of a function signature: it is not a real
+ * value, only the extras region, and may only be indexed (vals[i]) or read via
+ * .length - it must never resolve as a general value (that would be an escape) */
+#define AZO_VARIABLE_FLAG_VARARG 16
 
 #include <az/string.h>
 

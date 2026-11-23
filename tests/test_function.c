@@ -205,6 +205,65 @@ test_function(void)
         TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
         TEST_ASSERT_EQUAL_INT(128, ret_val.int32_v);
     }
+	/* Variadic lambda: fixed arguments are passed correctly with any count of extras */
+    {
+        static const char *src = ""
+            "function f = (int32 a, int32... rest) int32 => a;\n"
+            "return f(10) + f(20, 30) + f(40, 50, 60);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(70, ret_val.int32_v);
+    }
+	/* Variadic lambda: several fixed arguments followed by the variadic tail */
+    {
+        static const char *src = ""
+            "function f = (int32 a, int32 b, int32... rest) int32 => a + b;\n"
+            "return f(1, 2) + f(10, 20, 30) + f(100, 200, 300, 400);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(333, ret_val.int32_v);
+    }
+	/* Variadic tail: .length yields the extra argument count */
+    {
+        static const char *src = ""
+            "function f = (int32 a, int32... rest) int32 => rest.length;\n"
+            "return f(1) + f(1, 2) + f(1, 2, 3, 4);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(4, ret_val.int32_v);
+    }
+	/* Variadic tail: indexed access and iteration */
+    {
+        static const char *src = ""
+            "function f = (int32... rest) int32 => { int32 s = 0; for (int32 i = 0; i < rest.length; i++) { s = s + rest[i]; } return s; }\n"
+            "return f(1, 2, 3, 4);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(10, ret_val.int32_v);
+    }
+	/* Variadic tail: out-of-bounds index throws */
+    {
+        static const char *src = ""
+            "function f = (int32... rest) int32 => rest[5];\n"
+            "return f(1, 2);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_UINT32(AZ_EXCEPTION_OUT_OF_BOUNDS, globals->az_ctx.exc.type);
+        azo_context_clear_exception(globals);
+    }
+	/* Variadic tail: bare use as a general value fails to resolve */
+    {
+        static const char *src = ""
+            "function f = (int32... rest) int32 => rest;\n"
+            "return f(1);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) != 0);
+    }
+	/* Variadic tail: it cannot be captured by a nested closure */
+    {
+        static const char *src = ""
+            "function f = (int32... rest) => { function g = () => rest[0]; return g(); }\n"
+            "return f(1);\n";
+        TEST_ASSERT(test_program_with_this(globals, src, NULL, NULL, 4, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) != 0);
+    }
     /* Unresolved function name fails compile-time */
     {
         static const char *src =

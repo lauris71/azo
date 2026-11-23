@@ -42,6 +42,11 @@ extern "C" {
 typedef struct _AZOFrameBase {
 	unsigned int elem_base;
 	unsigned int data_base;
+	/* Base of the local variable area (frame slots >= the fixed argument count).
+	 * For variadic programs the actual (extra) arguments sit between the fixed
+	 * arguments and the locals, so locals = elem_base + n_extra; for non-variadic
+	 * programs n_extra = 0 and locals = elem_base. */
+	unsigned int locals;
 } AZOFrameBase;
 
 struct _AZOInterpreter {

@@ -11,10 +11,15 @@ typedef struct _AZOCompilerContext AZOResolveCtx;
 
 #include <azo/node.h>
 #include <azo/compiler/compiler.h>
+#include <azo/compiler/variable.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* If the node is a reference to a variadic-tail local variable, return it (else NULL) */
+AZOVariable *resolve_get_vararg(AZOResolveCtx *rctx, const AZONode *node);
+
 
 unsigned int azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr);
 

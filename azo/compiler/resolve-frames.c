@@ -457,6 +457,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 	unsigned int ret_type = ret->type;
 	unsigned int n_args = 0;
 	unsigned int arg_types[32];
+	unsigned int sig_flags = 0;
 	/* Argument list */
 	for (AZONode *decl = args->children; decl; decl = decl->next) {
 		if (decl->term.type != AZO_TERM_ARGUMENT_DECLARATION) {
@@ -480,11 +481,13 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, decl->term.start, decl->term.end, "Too many function arguments (maximum %u)\n", AZO_FUNCTION_MAX_ARGS);
 			return 1;
 		}
+		/* The variadic tail is the last argument and carries the element type */
+		if (decl->term.subtype == AZO_TERM_ARGUMENT_DECLARATION_VARARG) sig_flags |= AZ_SIGNATURE_FLAG_VA_ARGS;
 		arg_types[n_args++] = type->type;
 	}
 
 	AZOResolveCtx fctx = *rctx;
-	fctx.signature = az_function_signature_new(0, ret_type, n_args, arg_types);
+	fctx.signature = az_function_signature_new(sig_flags, ret_type, n_args, arg_types);
 	fctx.print_tree = 0;
 
 	unsigned int frame_idx;
@@ -508,7 +511,8 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 	for (AZONode *child = args->children; child; child = child->next) {
 		AZONode *type = child->children;
 		AZONode *name = type->next;
-		if (!azo_frame_declare_variable (fctx.frame, name->value.v.string, type->type, 0)) {
+		unsigned int var_flags = (child->term.subtype == AZO_TERM_ARGUMENT_DECLARATION_VARARG) ? AZO_VARIABLE_FLAG_VARARG : 0;
+		if (!azo_frame_declare_variable (fctx.frame, name->value.v.string, type->type, var_flags)) {
 			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, name->term.start, name->term.end, "Repeated variable name %s\n", name->value.v.string->str);
 			return 1;
 		}
@@ -1178,6 +1182,19 @@ azo_compiler_resolve_node(AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 		case AZO_TERM_FUNCTION_CALL:
 			return resolve_function_call (comp, rctx, node);
 		case AZO_TERM_ARRAY_ELEMENT:
+			/* Variadic slice element access: vals[idx] is compiled to VA_ELEMENT */
+			if (resolve_get_vararg(rctx, node->children)) {
+				AZONode *base = node->children;
+				AZOVariable *va = resolve_get_vararg(rctx, base);
+				if (azo_compiler_resolve_node (comp, rctx, base->next)) return 1;
+				base->term.type = AZO_TERM_VARIABLE;
+				base->term.subtype = AZO_TERM_VARIABLE_VARARG;
+				base->type = va->type;
+				base->var_idx = va->pos;
+				node->type = va->type;
+				return 0;
+			}
+			return resolve_children(comp, rctx, node);
 		case AZO_TERM_LIST:
 			return resolve_children(comp, rctx, node);
 		case AZO_TERM_REFERENCE:

@@ -124,10 +124,34 @@ resolve_attribute_reference (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *ex
  *   AZO_TERM_REFERENCE_MEMBER
  */
 
+AZOVariable *
+resolve_get_vararg (AZOResolveCtx *rctx, const AZONode *node)
+{
+	if (!AZO_NODE_IS(node, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_VARIABLE)) return NULL;
+	AZOVariable *var = azo_frame_lookup_local_var (rctx->frame, node->value.v.string);
+	if (var && (var->flags & AZO_VARIABLE_FLAG_VARARG)) return var;
+	return NULL;
+}
+
 static unsigned int
 resolve_property (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *node)
 {
 	AZONode *parent = node->children;
+	/* A variadic tail may only be read via .length (vals.length yields the count) */
+	AZOVariable *va = resolve_get_vararg(rctx, parent);
+	if (va) {
+		AZONode *member = parent->next;
+		if (AZO_NODE_IS(member, AZO_TERM_REFERENCE, AZO_TERM_REFERENCE_MEMBER) && !strcmp((const char *) member->value.v.string->str, "length")) {
+			node->term.type = AZO_TERM_VARIABLE;
+			node->term.subtype = AZO_TERM_VARIABLE_VARARG_LEN;
+			node->type = AZ_TYPE_INT32;
+			node->var_idx = va->pos;
+			azo_node_clear_children(node);
+			return 0;
+		}
+		azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, member->term.start, member->term.end, "Variadic argument may only be indexed or read via .length\n");
+		return 1;
+	}
 	unsigned int result = azo_compiler_resolve_node (comp, rctx, parent);
 	if (result) return result;
 	AZONode *member = parent->next;
@@ -182,6 +206,12 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	 */
 	AZOVariable *var = azo_frame_lookup_local_var (rctx->frame, expr->value.v.string);
 	if (var) {
+		if (var->flags & AZO_VARIABLE_FLAG_VARARG) {
+			/* The variadic tail is not a general value: only vals[i] and vals.length
+			 * are allowed, and those are intercepted before variable resolution */
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, expr->term.start, expr->term.end, "Variadic argument %s may only be indexed or read via .length\n", expr->value.v.string->str);
+			return 1;
+		}
 		DBG_PRINTF("resolve_variable: Local %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
 		expr->term.flags = var->flags;
@@ -203,6 +233,11 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 	 */
 	var = azo_frame_lookup_parent_var (rctx->frame, expr->value.v.string);
 	if (var) {
+		if (var->flags & AZO_VARIABLE_FLAG_VARARG) {
+			/* A variadic tail cannot be captured by a nested frame */
+			azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, expr->term.start, expr->term.end, "Variadic argument %s may only be indexed or read via .length\n", expr->value.v.string->str);
+			return 1;
+		}
 		DBG_PRINTF("resolve_variable: Parent %s at pos %u\n", expr->value.v.string->str, var->pos);
 		expr->term.type = AZO_TERM_VARIABLE;
 		expr->term.subtype = AZO_TERM_VARIABLE_CAPTURE;
@@ -220,7 +255,13 @@ resolve_variable (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *expr)
 		 * The variable was not found neither in local nor already known parent variables
 		 * Try chained lookup through all parent frames
 		 */
-		if (azo_frame_lookup_chained (rctx->frame->parent, expr->value.v.string)) {
+		AZOVariable *src_var = azo_frame_lookup_chained (rctx->frame->parent, expr->value.v.string);
+		if (src_var) {
+			if (src_var->flags & AZO_VARIABLE_FLAG_VARARG) {
+				/* A variadic tail cannot be captured by a nested frame */
+				azo_compiler_printf_message (comp, stderr, AZO_MESSAGE_ERROR, AZO_SUBSYSTEM_RESOLVER, expr->term.start, expr->term.end, "Variadic argument %s may only be indexed or read via .length\n", expr->value.v.string->str);
+				return 1;
+			}
 			/*
 			 * Ensure that variable is defined (as parent) in this and all intermediate frames
 			 * so it's value is passed through function calls to current frame

@@ -317,7 +317,11 @@ enum {
 	AZO_TERM_VARIABLE_LOCAL,
 	AZO_TERM_VARIABLE_SHARED,
 	AZO_TERM_VARIABLE_CAPTURE,
-	AZO_TERM_VARIABLE_STATIC
+	AZO_TERM_VARIABLE_STATIC,
+	/* The base of a variadic-slice element access (vals[i]): never a general value */
+	AZO_TERM_VARIABLE_VARARG,
+	/* A variadic-slice length read (vals.length): yields the extra count */
+	AZO_TERM_VARIABLE_VARARG_LEN
 };
 
 /* Function subtypes */

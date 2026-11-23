@@ -49,6 +49,7 @@ azo_interpreter_new (AZOContext *ctx)
 	intr->frames = (AZOFrameBase *) malloc (intr->size_frames * sizeof (AZOFrameBase));
 	intr->frames[0].elem_base = 0;
 	intr->frames[0].data_base = 0;
+	intr->frames[0].locals = 0;
 	intr->n_frames = 1;
 	intr->ctx = ctx;
 
@@ -226,6 +227,9 @@ azo_interpreter_push_frame (AZOInterpreter *intr, unsigned int n_elements)
 	}
 	intr->frames[intr->n_frames].elem_base = intr->stack.length - n_elements;
 	intr->frames[intr->n_frames].data_base = intr->stack.data_pos;
+	/* The locals base is adjusted for variadic frames once the extra argument
+	 * count is known (azo_program_interpret); by default there are no extras */
+	intr->frames[intr->n_frames].locals = intr->frames[intr->n_frames].elem_base;
 	return intr->n_frames++;
 }
 
@@ -665,13 +669,26 @@ interpret_DUPLICATE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsign
 	return ip + 5;
 }
 
+/* The absolute stack address of a frame variable slot. Fixed argument slots
+ * ([0, n_fixed)) live at elem_base; the variadic extras sit between them and
+ * the remaining locals, which are therefore addressed from the locals base.
+ * For non-variadic frames locals == elem_base and this reduces to elem_base + pos. */
+static inline unsigned int
+frame_slot_addr (AZOInterpreter *intr, AZOInterpreterCtx *ictx, unsigned int pos)
+{
+	unsigned int elem_base = intr->frames[intr->n_frames - 1].elem_base;
+	unsigned int locals = intr->frames[intr->n_frames - 1].locals;
+	unsigned int n_fixed = AZ_SIGNATURE_N_FIXED_ARGS(ictx->prog->signature);
+	return (pos < n_fixed) ? (elem_base + pos) : (locals + pos);
+}
+
 static const unsigned char *
 interpret_DEBUG_CHECK_STACK (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
 {
 	uint32_t pos;
 	memcpy (&pos, ip + 1, 4);
 	/* The frame's variable area plus the compiler-tracked temporaries must match exactly */
-	if (intr->stack.length != intr->frames[intr->n_frames - 1].elem_base + ictx->prog->n_locals + pos) {
+	if (intr->stack.length != intr->frames[intr->n_frames - 1].locals + ictx->prog->n_locals + pos) {
 		EXCEPTION_THROW (AZO_EXCEPTION_STACK_UNDERFLOW);
 	}
 	return ip + 5;
@@ -682,9 +699,9 @@ interpret_DUPLICATE_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const 
 {
 	uint32_t pos;
 	memcpy (&pos, ip + 1, 4);
-	CHECK((intr->frames[intr->n_frames - 1].elem_base + pos) < intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
+	CHECK(frame_slot_addr (intr, ictx, pos) < intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
 	TEST_OVERFLOW(1);
-	azo_stack_duplicate (&intr->stack, intr->frames[intr->n_frames - 1].elem_base + pos);
+	azo_stack_duplicate (&intr->stack, frame_slot_addr (intr, ictx, pos));
 	return ip + 5;
 }
 
@@ -713,8 +730,8 @@ interpret_EXCHANGE_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const u
 {
 	unsigned int pos;
 	memcpy (&pos, ip + 1, 4);
-	CHECK((intr->frames[intr->n_frames - 1].elem_base + pos) < intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
-	azo_stack_exchange (&intr->stack, intr->frames[intr->n_frames - 1].elem_base + pos);
+	CHECK(frame_slot_addr (intr, ictx, pos) < intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
+	azo_stack_exchange (&intr->stack, frame_slot_addr (intr, ictx, pos));
 	return ip + 5;
 }
 
@@ -724,12 +741,44 @@ interpret_CLEAR_FRAME (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsi
 	unsigned int pos, count;
 	memcpy (&pos, ip + 1, 4);
 	memcpy (&count, ip + 5, 4);
-	unsigned int first = intr->frames[intr->n_frames - 1].elem_base + pos;
+	unsigned int first = frame_slot_addr (intr, ictx, pos);
 	CHECK((first + count) <= intr->stack.length, AZO_EXCEPTION_STACK_UNDERFLOW);
 	for (unsigned int i = first; i < first + count; i++) {
 		azo_stack_clear (&intr->stack, i);
 	}
 	return ip + 9;
+}
+
+static const unsigned char *
+interpret_VA_LEN (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	/* The extra count is the distance between the locals base and elem_base */
+	unsigned int n_extra = intr->frames[intr->n_frames - 1].locals - intr->frames[intr->n_frames - 1].elem_base;
+	int32_t val = (int32_t) n_extra;
+	TEST_OVERFLOW(1);
+	azo_stack_push_value (&intr->stack, AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), &val);
+	return ip + 1;
+}
+
+static const unsigned char *
+interpret_VA_ELEMENT (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const unsigned char *ip)
+{
+	unsigned int idx;
+	CHECK_UNDERFLOW(1);
+	const AZImplementation *idx_impl = azo_stack_impl_bw (&intr->stack, 0);
+	if (!idx_impl) EXCEPTION_THROW(AZ_EXCEPTION_NULL_DEREFERENCE);
+	if (!convert_to_u32 (intr, ictx, &idx, idx_impl, azo_stack_value_bw(&intr->stack, 0), ip)) {
+		EXCEPTION_THROW(AZO_EXCEPTION_INVALID_CONVERSION);
+	}
+	unsigned int elem_base = intr->frames[intr->n_frames - 1].elem_base;
+	unsigned int n_extra = intr->frames[intr->n_frames - 1].locals - elem_base;
+	if (idx >= n_extra) EXCEPTION_THROW(AZ_EXCEPTION_OUT_OF_BOUNDS);
+	/* The extras sit between the fixed arguments and the locals: elem_base + n_fixed + idx */
+	unsigned int pos = elem_base + AZ_SIGNATURE_N_FIXED_ARGS(ictx->prog->signature) + idx;
+	azo_stack_duplicate (&intr->stack, pos);
+	/* [idx, value] -> [value] */
+	azo_stack_remove (&intr->stack, intr->stack.length - 2, 1);
+	return ip + 1;
 }
 
 /* Instance-aware "implements" test: the static type relation first, then
@@ -1488,16 +1537,27 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 	const AZFunctionImplementation *func_impl = (const AZFunctionImplementation *) az_instance_get_interface (azo_stack_impl_bw (&intr->stack, pos), azo_stack_instance_bw (&intr->stack, pos), AZ_TYPE_FUNCTION, (void **) &func_inst);
 	if (!func_impl) EXCEPTION_THROW(AZ_EXCEPTION_INVALID_TYPE);
 	const AZFunctionSignature *sig = az_function_get_signature (func_impl, func_inst);
-	unsigned int sig_n_args = AZ_SIGNATURE_N_ARGS(sig);
-	if (sig_n_args != pos) {
-		if ((*ip != AZO_TC_INVOKE_MEMBER) || (pos != (sig_n_args + 1))) {
-			EXCEPTION_THROW(AZ_EXCEPTION_SIGNATURE_MISMATCH);
+	unsigned int n_fixed = AZ_SIGNATURE_N_FIXED_ARGS(sig);
+	unsigned int n_actual;
+	if (AZ_SIGNATURE_IS_VA_ARGS(sig)) {
+		/* Variadic functions accept any count of extra arguments beyond the fixed ones */
+		if (pos < n_fixed) EXCEPTION_THROW(AZ_EXCEPTION_SIGNATURE_MISMATCH);
+		n_actual = pos;
+	} else {
+		unsigned int sig_n_args = AZ_SIGNATURE_N_ARGS(sig);
+		if (sig_n_args != pos) {
+			if ((*ip != AZO_TC_INVOKE_MEMBER) || (pos != (sig_n_args + 1))) {
+				EXCEPTION_THROW(AZ_EXCEPTION_SIGNATURE_MISMATCH);
+			}
+			/* The special case - compiler assigned this value but the function does not expect it */
+			fprintf(stderr, "Function expects %u arguments, got %u\n", sig_n_args, pos);
 		}
-		/* The special case - compiler assigned this value but the function does not expect it */
-		fprintf(stderr, "Function expects %u arguments, got %u\n", sig_n_args, pos);
+		n_actual = sig_n_args;
 	}
-	for (unsigned int i = 0; i < sig_n_args; i++) {
-		if (!azo_stack_convert_bw (&intr->stack, sig_n_args - 1 - i, AZ_SIGNATURE_ARG_TYPE(sig, i))) {
+	for (unsigned int i = 0; i < n_actual; i++) {
+		/* The fixed arguments have their declared types, the extras the tail type */
+		unsigned int arg_type = (i < n_fixed) ? AZ_SIGNATURE_ARG_TYPE(sig, i) : AZ_SIGNATURE_VA_ARG_TYPE(sig);
+		if (!azo_stack_convert_bw (&intr->stack, n_actual - 1 - i, arg_type)) {
 			uint8_t *str = az_instance_to_string_new(AZ_IMPL_FROM_TYPE(AZ_TYPE_FUNCTION_SIGNATURE), (void *) sig);
 			fprintf(stderr, "%s\n", str);
 			free(str);
@@ -1506,9 +1566,10 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 	}
 	unsigned int prev = azo_interpreter_push_frame(intr, pos);
 	AZPackedValue64 ret_val = {0};
-	/* The argument elements are passed directly from the stack (zero-copy) */
-	int result = az_function_invoke (func_impl, func_inst, sig_n_args,
-		&intr->stack.elements[intr->stack.length - sig_n_args], intr->stack.data,
+	/* The argument elements are passed directly from the stack (zero-copy);
+	 * n_actual may be smaller than pos if the callee ignores a member 'this' */
+	int result = az_function_invoke (func_impl, func_inst, n_actual,
+		&intr->stack.elements[intr->stack.length - n_actual], intr->stack.data,
 		&ret_val.impl, &ret_val.v.value, AZ_VALUE_MAX_SIZE, &intr->ctx->az_ctx);
 	unsigned int new_prev = azo_interpreter_pop_frame(intr, ictx);
 	assert(new_prev == prev);
@@ -2035,6 +2096,12 @@ switch (*ip) {
 			break;
 		case AZO_TC_CLEAR_FRAME:
 			ip = interpret_CLEAR_FRAME (intr, ictx, ip);
+			break;
+		case AZO_TC_VA_LEN:
+			ip = interpret_VA_LEN (intr, ictx, ip);
+			break;
+		case AZO_TC_VA_ELEMENT:
+			ip = interpret_VA_ELEMENT (intr, ictx, ip);
 			break;
 		case AZO_TC_PUSH_FLAGS:
 			ip = interpret_PUSH_FLAGS (intr, ictx, ip);

@@ -192,15 +192,23 @@ azo_program_interpret(AZOProgram *prog, AZOInterpreter *intr, AZODataBlock *stat
 	};
 	azo_intepreter_push_elements (intr, n_args, args, data);
 	/* The program signature is the final truth about the argument region (it
-	 * includes 'this' for member programs); the caller has to match it exactly */
-	assert (n_args == (unsigned int) AZ_SIGNATURE_N_ARGS (prog->signature));
+	 * includes 'this' for member programs); variadic programs accept any count
+	 * of extra arguments beyond the fixed ones */
+	unsigned int n_fixed = AZ_SIGNATURE_N_FIXED_ARGS (prog->signature);
+	if (AZ_SIGNATURE_IS_VA_ARGS (prog->signature)) {
+		assert (n_args >= n_fixed);
+	} else {
+		assert (n_args == (unsigned int) AZ_SIGNATURE_N_ARGS (prog->signature));
+	}
+	/* The variadic extras sit between the fixed arguments and the locals */
+	intr->frames[prev_frame].locals = intr->frames[prev_frame].elem_base + (n_args - n_fixed);
 	/* Pre-allocate the locals region (all local/reserved slots are addressed by
 	 * frame position and have to exist before any code runs) */
-	for (unsigned int i = AZ_SIGNATURE_N_ARGS (prog->signature); i < prog->n_locals; i++) {
+	for (unsigned int i = n_fixed; i < prog->n_locals; i++) {
 		azo_stack_push_value (&intr->stack, NULL, NULL);
 	}
 	/* The pushed arguments + reserved slots make up the whole frame variable area */
-	assert (intr->stack.length == intr->frames[prev_frame].elem_base + prog->n_locals);
+	assert (intr->stack.length == intr->frames[prev_frame].locals + prog->n_locals);
 	if (0 && prog->debug.n_terms) {
 		AZODebugger *debugger = azo_debugger_new(intr);
 		azo_debugger_run(debugger, prog);

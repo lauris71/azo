@@ -372,8 +372,13 @@ compile_lvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *expr,
 			return 0;
 		}
 	} else if (expr->term.type == AZO_TERM_ARRAY_ELEMENT) {
-		lvalue->type = LVALUE_ELEMENT;
 		AZONode *left = expr->children;
+		/* A variadic tail is read-only: it cannot be an assignment target */
+		if (left->term.type == AZO_TERM_VARIABLE && left->term.subtype == AZO_TERM_VARIABLE_VARARG) {
+			fprintf (stderr, "compile_lvalue: cannot assign to a variadic argument\n");
+			return 0;
+		}
+		lvalue->type = LVALUE_ELEMENT;
 		AZONode *right = left->next;
 		if (!azo_compiler_compile_expression (comp, ctx, left, src)) return 0;
 		/* Normalize the array reference to a list interface value unless it is statically
@@ -944,11 +949,14 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	unsigned int ret_type = type->type;
 	unsigned int n_args = 0;
 	unsigned int arg_types[32];
+	unsigned int sig_flags = 0;
 	/* Argument types */
 	for (AZONode *arg = args->children; arg; arg = arg->next) {
 		/* Children are AZO_TERM_ARGUMENT_DECLARATION, first grandchild is either CONSTANT or TYPE, in both cases node->type is correct type  */
 		AZONode *type = arg->children;
 		assert(type->type != 0);
+		/* The variadic tail is the last argument and carries the element type */
+		if (arg->term.subtype == AZO_TERM_ARGUMENT_DECLARATION_VARARG) sig_flags |= AZ_SIGNATURE_FLAG_VA_ARGS;
 		arg_types[n_args++] = type->type;
 	}
 	/* Compile function body in it's own resolved frame */
@@ -956,7 +964,7 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	AZOFrame *func_frame = comp->frames[node->frame_idx];
 
 	AZOCompilerContext func_ctx = *ctx;
-	func_ctx.signature = az_function_signature_new(0, ret_type, n_args, arg_types);
+	func_ctx.signature = az_function_signature_new(sig_flags, ret_type, n_args, arg_types);
 	func_ctx.frame = func_frame;
 	/* The function's frame starts with an empty evaluation stack */
 	func_ctx.n_stack = 0;
@@ -1118,6 +1126,13 @@ compile_expression_rvalue (AZOCompiler *comp, AZOCompilerContext *ctx, const AZO
 		if (node->term.subtype == AZO_TERM_VARIABLE_LOCAL) {
 			azo_code_write_ic_u32(&ctx->frame->code, AZO_TC_DUPLICATE_FRAME, node->var_idx, node);
 			ctx->n_stack += 1;
+		} else if (node->term.subtype == AZO_TERM_VARIABLE_VARARG_LEN) {
+			/* vals.length: push the variadic extra count */
+			azo_code_write_ic(&ctx->frame->code, AZO_TC_VA_LEN, node);
+			ctx->n_stack += 1;
+		} else if (node->term.subtype == AZO_TERM_VARIABLE_VARARG) {
+			fprintf (stderr, "compile_expression_rvalue: variadic argument may only be indexed\n");
+			return 0;
 		} else if (node->term.subtype == AZO_TERM_VARIABLE_SHARED) {
 			azo_code_write_PUSH_VALUE(code, node->var_idx, node);
 			ctx->n_stack += 1;
@@ -1179,6 +1194,14 @@ static unsigned int
 compile_array_reference (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *array_ref, const AZONode *idx, AZOSource *src)
 {
 	AZOCode *code = &ctx->frame->code;
+	/* A variadic tail is indexed directly from the frame extras (VA_ELEMENT),
+	 * not through the list interface */
+	if (array_ref->term.type == AZO_TERM_VARIABLE && array_ref->term.subtype == AZO_TERM_VARIABLE_VARARG) {
+		azo_compiler_compile_expression (comp, ctx, idx, src);
+		/* [idx] -> [value] */
+		azo_code_write_ic (code, AZO_TC_VA_ELEMENT, array_ref);
+		return 1;
+	}
 	azo_compiler_compile_expression (comp, ctx, array_ref, src);
 	/* Normalize the array reference to a list interface value unless it is statically
 	 * known to be one (GET_INTERFACE throws INVALID_TYPE otherwise) */

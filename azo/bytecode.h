@@ -417,6 +417,19 @@ enum {
 	 * (compiler sanity check, emitted at sentence/block boundaries)
 	 */
 	AZO_TC_DEBUG_CHECK_STACK,
+	/**
+	 * @brief Push the count of variadic extra arguments of the current frame
+	 *
+	 * VA_LEN
+	 * [...] -> [..., count]
+	 */
+	AZO_TC_VA_LEN,
+	/**
+	 * @brief Push the idx-th variadic extra argument of the current frame
+	 *
+	 * [idx] -> [value]; throws OUT_OF_BOUNDS if idx is not below the extra count
+	 */
+	AZO_TC_VA_ELEMENT,
 	AZO_TC_END
 };
 

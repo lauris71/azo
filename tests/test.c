@@ -174,6 +174,22 @@ test_language(void)
     arg_vals[0] = &vals[0];
 	const char *arg_names[] = {"ofs"};
 
+	/* Varargs are correctly passed to the underlying system */
+    {
+        const char *src =
+        "ofs.print(1, \" \", 25, \" \", 99);\n"
+        "return 42;\n";
+        const AZImplementation *ret_impl;
+        AZValue ret_val;
+		az_buffer_output_stream_reset(bostream);
+        TEST_ASSERT(test_program(ctx, src, 1, arg_names, arg_impls, arg_vals, AZ_TYPE_INT32, &ret_impl, &ret_val) == 0);
+        TEST_ASSERT_EQUAL_PTR(AZ_IMPL_FROM_TYPE(AZ_TYPE_INT32), ret_impl);
+        TEST_ASSERT_EQUAL_INT(42, ret_val.int32_v);
+		char *str = strndup((const char *) bostream->buffer, bostream->pos);
+		fprintf(stderr, "Output: %s\n", str);
+		TEST_ASSERT_EQUAL_STRING("1 25 99", str);
+		free(str);
+    }
 	/* Deferred block is executed at the end of the scope */
     {
         const char *src =
