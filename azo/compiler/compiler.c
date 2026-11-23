@@ -956,7 +956,7 @@ compile_function (AZOCompiler *comp, AZOCompilerContext *ctx, const AZONode *nod
 	AZOFrame *func_frame = comp->frames[node->frame_idx];
 
 	AZOCompilerContext func_ctx = *ctx;
-	func_ctx.signature = az_function_signature_new(ret_type, n_args, arg_types);
+	func_ctx.signature = az_function_signature_new(0, ret_type, n_args, arg_types);
 	func_ctx.frame = func_frame;
 	/* The function's frame starts with an empty evaluation stack */
 	func_ctx.n_stack = 0;

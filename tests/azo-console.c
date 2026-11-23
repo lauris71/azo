@@ -39,7 +39,7 @@ main(int argc, const char *argv[])
 	AZOCompiler comp;
 	azo_compiler_setup(&comp, globals, src);
     AZOResolveCtx rctx = {
-        .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
+        .signature = az_function_signature_new(0, AZ_TYPE_NONE, 0, NULL),
         .exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
         .calc_mode = AZO_CALCULATE_MODE_SATURATE
     };
@@ -51,7 +51,7 @@ main(int argc, const char *argv[])
     AZOOptimizer opt;
 	azo_optimizer_setup(&opt, &comp);
     AZOOptimizerCtx opt_ctx = {
-        .signature = az_function_signature_new(AZ_TYPE_NONE, 0, NULL),
+        .signature = az_function_signature_new(0, AZ_TYPE_NONE, 0, NULL),
         .exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
         .calc_mode = AZO_CALCULATE_MODE_SATURATE
     };

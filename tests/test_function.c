@@ -73,8 +73,8 @@ test_program_with_this(AZOContext *ctx, const char *text, const AZImplementation
 	AZOCompilerContext comp_ctx = {
 		/* Member programs (this_impl without instance): the signature includes 'this' as argument 0 */
 		.signature = (this_impl && !this_inst)
-			? az_function_signature_new_with_this (AZ_IMPL_TYPE (this_impl), ret_type, n_args, arg_types)
-			: az_function_signature_new (ret_type, n_args, arg_types),
+			? az_function_signature_new_with_this(0, AZ_IMPL_TYPE (this_impl), ret_type, n_args, arg_types)
+			: az_function_signature_new (0, ret_type, n_args, arg_types),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
@@ -778,8 +778,8 @@ test_object_func_obj_str(TestObject *tobj, AZString *str)
 static void
 test_object_class_init (TestObjectClass *klass)
 {
-    sig_i32 = az_function_signature_new_va(AZ_TYPE_INT32, 1, AZ_TYPE_INT32);
-    sig_tobj_i32 = az_function_signature_new_va(AZ_TYPE_INT32, 2, TYPE_TESTOBJ, AZ_TYPE_INT32);
+    sig_i32 = az_function_signature_new_va(0, AZ_TYPE_INT32, 1, AZ_TYPE_INT32);
+    sig_tobj_i32 = az_function_signature_new_va(0, AZ_TYPE_INT32, 2, TYPE_TESTOBJ, AZ_TYPE_INT32);
 	/* Properties */
 	az_class_define_static_method_native_va ((AZClass *) klass, FUNC_NEW_STR, (const unsigned char *) "new", (void (*)()) test_object_new_str, TYPE_TESTOBJ, 1, AZ_TYPE_STRING);
 	az_class_define_static_method_native_va ((AZClass *) klass, FUNC_BUILD_STR, (const unsigned char *) "build", (void (*)()) test_object_build_str, TYPE_TESTOBJ, 1, AZ_TYPE_STRING);

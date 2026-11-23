@@ -484,7 +484,7 @@ resolve_function (AZOCompiler *comp, AZOResolveCtx *rctx, AZONode *func)
 	}
 
 	AZOResolveCtx fctx = *rctx;
-	fctx.signature = az_function_signature_new(ret_type, n_args, arg_types);
+	fctx.signature = az_function_signature_new(0, ret_type, n_args, arg_types);
 	fctx.print_tree = 0;
 
 	unsigned int frame_idx;

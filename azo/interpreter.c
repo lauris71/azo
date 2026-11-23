@@ -1507,19 +1507,22 @@ interpret_INVOKE (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uint8_t *
 	unsigned int prev = azo_interpreter_push_frame(intr, pos);
 	AZPackedValue64 ret_val = {0};
 	/* The argument elements are passed directly from the stack (zero-copy) */
-	az_function_invoke (func_impl, func_inst, sig_n_args,
+	int result = az_function_invoke (func_impl, func_inst, sig_n_args,
 		&intr->stack.elements[intr->stack.length - sig_n_args], intr->stack.data,
 		&ret_val.impl, &ret_val.v.value, AZ_VALUE_MAX_SIZE, &intr->ctx->az_ctx);
 	unsigned int new_prev = azo_interpreter_pop_frame(intr, ictx);
 	assert(new_prev == prev);
 	/* Pop function */
 	azo_stack_pop(&intr->stack, 1);
-	azo_stack_push_value_transfer (&intr->stack, ret_val.impl, &ret_val.v);
 	/* On exception run_code unwinds: the trace records the call ip and the
 	 * exception keeps the ip set by its throwing site */
 	if(intr->ctx->az_ctx.exc.type) {
 		return NULL;
 	}
+	if (result != AZ_OK) {
+		EXCEPTION_THROW(azo_exception_from_az_error(result));
+	}
+	azo_stack_push_value_transfer (&intr->stack, ret_val.impl, &ret_val.v);
 	return ip + 2;
 }
 
@@ -1758,7 +1761,7 @@ interpret_GET_FUNCTION (AZOInterpreter *intr, AZOInterpreterCtx *ictx, const uin
 		arg_types[i] = azo_stack_type_bw (&intr->stack, n_args - 1 - i);
 	}
 	/* fixme: Whether to ignore return type or not should depend on calling context */
-	const AZFunctionSignature *sig = az_function_signature_new(AZ_TYPE_NONE, n_args, arg_types);
+	const AZFunctionSignature *sig = az_function_signature_new(0, AZ_TYPE_NONE, n_args, arg_types);
 	AZString *key = (AZString *) azo_stack_instance_bw (&intr->stack, n_args);
 	const AZImplementation *impl = azo_stack_impl_bw (&intr->stack, n_args + 1);
 	if (!impl) {
@@ -1884,7 +1887,7 @@ interpret_GET_STATIC_FUNCTION (AZOInterpreter *intr, AZOInterpreterCtx *ictx, co
 		if (i >= 32) break;
 		arg_types[i] = azo_stack_type_bw (&intr->stack, n_args - 1 - i);
 	}
-	const AZFunctionSignature *sig = az_function_signature_new(AZ_TYPE_ANY, n_args, arg_types);
+	const AZFunctionSignature *sig = az_function_signature_new(0, AZ_TYPE_ANY, n_args, arg_types);
 	const AZClass *def_class;
 	int idx = az_class_lookup_function(klass, NULL, NULL, key, sig, &def_class, NULL, NULL);
 	if (idx >= 0) {

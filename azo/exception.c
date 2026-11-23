@@ -224,7 +224,7 @@ azo_exception_get_throw_function (void)
     if (t) return &exception_throw_fval;
     AZ_TYPES_LOCK();
     if (!initialized) {
-        exception_throw_signature = az_function_signature_new_va(AZ_TYPE_NONE, 1, azo_exception_get_type());
+        exception_throw_signature = az_function_signature_new_va(0, AZ_TYPE_NONE, 1, azo_exception_get_type());
         az_function_value_setup(&exception_throw_fval, exception_throw_signature, exception_throw_invoke);
         initialized = 1;
     }

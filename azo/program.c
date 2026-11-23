@@ -111,8 +111,8 @@ azo_program_compile(AZOContext *globals, AZOSource *src,
 	AZOCompilerContext comp_ctx = {
 		/* Member programs (this_impl without instance): the signature includes 'this' as argument 0 */
 		.signature = (this_impl && !this_inst)
-			? az_function_signature_new_with_this (AZ_IMPL_TYPE (this_impl), ret_type, n_args, arg_types)
-			: az_function_signature_new (ret_type, n_args, arg_types),
+			? az_function_signature_new_with_this(0, AZ_IMPL_TYPE (this_impl), ret_type, n_args, arg_types)
+			: az_function_signature_new (0, ret_type, n_args, arg_types),
 		.exception_mask = AZO_COMPILER_DEFAULT_EXCEPTION_MASK,
 		.calc_mode = AZO_CALCULATE_MODE_SATURATE
 	};
